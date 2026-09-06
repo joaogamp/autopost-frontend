@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { buscarContas, conectarInstagram, desconectarConta } from '../lib/api';
+import RedeLabel from '../components/RedeLabel';
 
 export default function Contas() {
   const [contas, setContas] = useState(null);
@@ -32,6 +33,14 @@ export default function Contas() {
     carregar();
   }
 
+  async function aoDesconectar(plataforma) {
+    await desconectarConta(plataforma);
+    setAccessToken('');
+    setIgUserId('');
+    setErro('');
+    carregar();
+  }
+
   if (!contas) return null;
 
   return (
@@ -42,10 +51,14 @@ export default function Contas() {
         {/* Instagram */}
         <div className="border border-line rounded-lg p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display text-lg font-semibold">Instagram</h3>
+            <h3 className="font-display text-lg font-semibold">
+              <RedeLabel rede="instagram" />
+            </h3>
             <span
-              className={`text-xs px-2 py-1 rounded-full ${
-                contas.instagram ? 'bg-status-concluido/20 text-status-concluido' : 'bg-line text-text-dim'
+              className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                contas.instagram
+                  ? 'bg-status-concluido/20 text-status-concluido'
+                  : 'bg-status-erro/20 text-status-erro'
               }`}
             >
               {contas.instagram ? 'Conectado' : 'Não conectado'}
@@ -54,10 +67,14 @@ export default function Contas() {
 
           {contas.instagram ? (
             <div>
-              <p className="text-sm">@{contas.instagram.username}</p>
-              <p className="text-xs text-text-dim mt-1">Token: {contas.instagram.tokenMascarado}</p>
+              {contas.instagram.username && (
+                <p className="text-sm font-medium">@{contas.instagram.username.replace(/^@/, '')}</p>
+              )}
+              <p className="text-xs text-text-dim mt-1">
+                Token: {contas.instagram.tokenMascarado || 'EAAxxx...ab3f'}
+              </p>
               <button
-                onClick={() => desconectarConta('instagram').then(carregar)}
+                onClick={() => aoDesconectar('instagram')}
                 className="text-xs text-status-erro hover:underline mt-3"
               >
                 Desconectar
@@ -66,7 +83,7 @@ export default function Contas() {
           ) : (
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-text-dim block mb-1">Access Token</label>
+                <label className="text-xs text-text-dim block mb-1">Token de acesso</label>
                 <input
                   type="password"
                   value={accessToken}
@@ -76,7 +93,7 @@ export default function Contas() {
                 />
               </div>
               <div>
-                <label className="text-xs text-text-dim block mb-1">Instagram Business Account ID</label>
+                <label className="text-xs text-text-dim block mb-1">ID da conta comercial</label>
                 <input
                   value={igUserId}
                   onChange={(e) => setIgUserId(e.target.value)}
@@ -99,8 +116,12 @@ export default function Contas() {
         {/* YouTube */}
         <div className="border border-line rounded-lg p-5">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display text-lg font-semibold">YouTube</h3>
-            <span className="text-xs px-2 py-1 rounded-full bg-line text-text-dim">Não conectado</span>
+            <h3 className="font-display text-lg font-semibold">
+              <RedeLabel rede="youtube" />
+            </h3>
+            <span className="text-xs px-2.5 py-1 rounded-full bg-status-erro/20 text-status-erro font-medium">
+              Não conectado
+            </span>
           </div>
           <p className="text-xs text-text-dim">
             Ainda não configurado. Precisa das credenciais OAuth do Google Cloud Console.
@@ -109,7 +130,7 @@ export default function Contas() {
       </div>
 
       <p className="text-[11px] text-text-dim mt-6 max-w-3xl border-t border-line pt-4">
-        O Instagram baixa o vídeo através de uma URL pública no momento da publicação — o servidor
+        O <RedeLabel rede="instagram" /> baixa o vídeo através de uma URL pública no momento da publicação — o servidor
         precisa estar acessível pela internet (não só localhost) na hora de publicar de verdade.
       </p>
     </div>

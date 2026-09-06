@@ -3,6 +3,7 @@ import { buscarBiblioteca, listarAgendamentos, criarAgendamento, cancelarAgendam
 import StatusDot from '../components/StatusDot';
 import CalendarioAgendamentos from '../components/CalendarioAgendamentos';
 import RegraPublicacao from '../components/RegraPublicacao';
+import RedeLabel from '../components/RedeLabel';
 
 const REDES_DISPONIVEIS = [
   { id: 'instagram', label: 'Instagram' },
@@ -30,8 +31,14 @@ function ItensDoDia({ itens, onCancelar }) {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm truncate">{ag.nomeVideo}</p>
-            <p className="text-xs text-text-dim">
-              {ag.horario} · {ag.redes.join(', ')}
+            <p className="text-xs text-text-dim flex items-center gap-1">
+              <span>{ag.horario} ·</span>
+              {ag.redes.map((r, idx) => (
+                <span key={r} className="inline-flex items-center">
+                  <RedeLabel rede={r} />
+                  {idx < ag.redes.length - 1 && <span className="mr-1">,</span>}
+                </span>
+              ))}
             </p>
           </div>
           <StatusDot status={mapaStatus[ag.status] || ag.status} comRotulo />
@@ -144,12 +151,13 @@ export default function Agendamento() {
               return (
                 <button
                   key={rede.id}
+                  type="button"
                   onClick={() => alternarRede(rede.id)}
-                  className={`text-sm px-3 py-1.5 rounded-md border ${
-                    ativo ? 'border-marquee text-marquee bg-marquee/10' : 'border-line text-text-dim'
+                  className={`text-sm px-3 py-1.5 rounded-md border font-medium transition-colors ${
+                    ativo ? 'border-marquee bg-marquee/10' : 'border-line opacity-60 hover:opacity-100'
                   }`}
                 >
-                  {rede.label}
+                  <RedeLabel rede={rede.id} />
                 </button>
               );
             })}
@@ -188,7 +196,7 @@ export default function Agendamento() {
 
           <p className="text-[11px] text-text-dim mt-3 border-t border-line pt-3">
             A publicação automática de verdade só roda depois que as Contas
-            (Instagram/YouTube) estiverem conectadas — por enquanto isso só
+            (<RedeLabel rede="instagram" />/<RedeLabel rede="youtube" />) estiverem conectadas — por enquanto isso só
             organiza o calendário.
           </p>
         </div>

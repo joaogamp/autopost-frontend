@@ -18,6 +18,9 @@
   --color-status-processando: #4c8dff;
   --color-status-concluido: #2dd4bf;
   --color-status-erro: #ff5470;
+
+  --color-brand-instagram: #e1306c;
+  --color-brand-youtube: #ff0000;
 }
 
 body {

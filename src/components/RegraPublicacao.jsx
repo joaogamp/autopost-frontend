@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { buscarRegraPublicacao, salvarRegraPublicacao } from '../lib/api';
+import RedeLabel from './RedeLabel';
 
 const DIAS = [
   { valor: 1, label: 'Seg' },
@@ -136,12 +137,13 @@ export default function RegraPublicacao() {
               return (
                 <button
                   key={rede.id}
+                  type="button"
                   onClick={() => alternarRede(rede.id)}
-                  className={`text-xs px-3 py-1.5 rounded-md border ${
-                    ativo ? 'border-marquee text-marquee bg-marquee/10' : 'border-line text-text-dim'
+                  className={`text-xs px-3 py-1.5 rounded-md border font-medium transition-colors ${
+                    ativo ? 'border-marquee bg-marquee/10' : 'border-line opacity-60 hover:opacity-100'
                   }`}
                 >
-                  {rede.label}
+                  <RedeLabel rede={rede.id} />
                 </button>
               );
             })}
