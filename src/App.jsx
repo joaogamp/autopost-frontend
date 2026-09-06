@@ -10,9 +10,9 @@ export default function App() {
   const [pagina, setPagina] = useState('dashboard');
 
   return (
-    <div className="flex h-screen bg-base text-text font-body">
+    <div className="flex h-screen bg-base text-text font-body overflow-hidden">
       <Sidebar paginaAtiva={pagina} aoMudarPagina={setPagina} />
-      <main className="flex-1 overflow-y-auto px-8 py-8">
+      <main className="flex-1 overflow-y-auto px-6 sm:px-10 py-10 transition-all">
         {pagina === 'dashboard' && <Dashboard />}
         {pagina === 'biblioteca' && <Biblioteca />}
         {pagina === 'templates' && <Templates />}

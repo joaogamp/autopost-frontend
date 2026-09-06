@@ -65,26 +65,38 @@ export default function RegraPublicacao() {
   }
 
   return (
-    <div className="border border-line rounded-lg p-5 mb-6">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="font-display text-lg font-semibold">Publicação automática</h3>
+    <div className="glass-panel rounded-2xl p-6 border border-slate-200 shadow-sm mb-8">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <h3 className="font-display text-lg font-bold text-slate-900">Publicação automática</h3>
+        </div>
+
         <button
           onClick={() => setRegra({ ...regra, ativa: !regra.ativa })}
-          className={`text-xs px-3 py-1.5 rounded-full border ${
-            regra.ativa ? 'border-marquee text-marquee bg-marquee/10' : 'border-line text-text-dim'
+          className={`text-xs px-3.5 py-1.5 rounded-full font-bold border transition-all flex items-center gap-1.5 ${
+            regra.ativa
+              ? 'border-emerald-200 text-emerald-700 bg-emerald-50'
+              : 'border-slate-200 text-slate-500 bg-slate-100'
           }`}
         >
-          {regra.ativa ? 'Ativada' : 'Desativada'}
+          <span className={`w-1.5 h-1.5 rounded-full ${regra.ativa ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+          <span>{regra.ativa ? 'Ativada' : 'Desativada'}</span>
         </button>
       </div>
-      <p className="text-[11px] text-text-dim mb-4">
+
+      <p className="text-xs text-slate-500 mb-6 max-w-2xl leading-relaxed font-medium">
         Quando ativada, todo vídeo que terminar de processar no template entra sozinho no próximo
         horário livre — sem precisar agendar manualmente.
       </p>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-slate-200/80">
         <div>
-          <label className="text-xs text-text-dim block mb-2">
+          <label className="text-xs font-bold text-slate-600 block mb-2.5">
             Vídeos por dia ({regra.horarios.length})
           </label>
           <div className="space-y-2">
@@ -94,23 +106,29 @@ export default function RegraPublicacao() {
                   type="time"
                   value={horario}
                   onChange={(e) => mudarHorario(i, e.target.value)}
-                  className="bg-surface border border-line rounded-md px-2 py-1.5 text-sm outline-none focus:border-marquee"
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-semibold text-slate-900 outline-none focus:border-indigo-600 transition-colors"
                 />
                 {regra.horarios.length > 1 && (
-                  <button onClick={() => removerHorario(i)} className="text-status-erro text-xs">
+                  <button
+                    onClick={() => removerHorario(i)}
+                    className="text-rose-600 hover:text-rose-700 text-xs font-bold px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                  >
                     remover
                   </button>
                 )}
               </div>
             ))}
-            <button onClick={adicionarHorario} className="text-xs text-marquee hover:underline">
-              + horário
+            <button
+              onClick={adicionarHorario}
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:underline pt-1 inline-block"
+            >
+              + Adicionar horário
             </button>
           </div>
         </div>
 
         <div>
-          <label className="text-xs text-text-dim block mb-2">Dias da semana</label>
+          <label className="text-xs font-bold text-slate-600 block mb-2.5">Dias da semana</label>
           <div className="flex flex-wrap gap-1.5">
             {DIAS.map((dia) => {
               const ativo = regra.diasSemana.includes(dia.valor);
@@ -118,8 +136,10 @@ export default function RegraPublicacao() {
                 <button
                   key={dia.valor}
                   onClick={() => alternarDia(dia.valor)}
-                  className={`text-xs w-11 py-1.5 rounded-md border ${
-                    ativo ? 'border-marquee text-marquee bg-marquee/10' : 'border-line text-text-dim'
+                  className={`text-xs font-bold w-10 py-2 rounded-xl border transition-all ${
+                    ativo
+                      ? 'border-indigo-200 text-indigo-700 bg-indigo-50 shadow-xs'
+                      : 'border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-900 bg-slate-50'
                   }`}
                 >
                   {dia.label}
@@ -130,7 +150,7 @@ export default function RegraPublicacao() {
         </div>
 
         <div>
-          <label className="text-xs text-text-dim block mb-2">Redes sociais</label>
+          <label className="text-xs font-bold text-slate-600 block mb-2.5">Redes sociais</label>
           <div className="flex gap-2">
             {REDES_DISPONIVEIS.map((rede) => {
               const ativo = regra.redes.includes(rede.id);
@@ -139,8 +159,10 @@ export default function RegraPublicacao() {
                   key={rede.id}
                   type="button"
                   onClick={() => alternarRede(rede.id)}
-                  className={`text-xs px-3 py-1.5 rounded-md border font-medium transition-colors ${
-                    ativo ? 'border-marquee bg-marquee/10' : 'border-line opacity-60 hover:opacity-100'
+                  className={`text-xs px-4 py-2 rounded-xl border font-bold transition-all ${
+                    ativo
+                      ? 'border-indigo-200 text-indigo-700 bg-indigo-50 shadow-xs'
+                      : 'border-slate-200 text-slate-400 bg-slate-50 hover:text-slate-600'
                   }`}
                 >
                   <RedeLabel rede={rede.id} />
@@ -151,13 +173,15 @@ export default function RegraPublicacao() {
         </div>
       </div>
 
-      <button
-        onClick={salvar}
-        disabled={salvando}
-        className="mt-4 text-sm bg-marquee text-base px-4 py-2 rounded-md font-medium hover:brightness-110 disabled:opacity-50"
-      >
-        {salvando ? 'Salvando...' : 'Salvar regra'}
-      </button>
+      <div className="pt-5 mt-4 border-t border-slate-200/80 flex items-center justify-end">
+        <button
+          onClick={salvar}
+          disabled={salvando}
+          className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 flex items-center gap-2"
+        >
+          <span>{salvando ? 'Salvando...' : 'Salvar regra'}</span>
+        </button>
+      </div>
     </div>
   );
 }
