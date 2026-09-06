@@ -1,0 +1,116 @@
+const BASE_URL = 'https://autopostjoao.duckdns.org';
+
+export async function buscarBiblioteca() {
+  const r = await fetch(`${BASE_URL}/api/biblioteca`);
+  return r.json();
+}
+
+export async function buscarFila() {
+  const r = await fetch(`${BASE_URL}/api/fila`);
+  return r.json();
+}
+
+export async function enviarVideos(arquivos) {
+  const formData = new FormData();
+  for (const arquivo of arquivos) formData.append('videos', arquivo);
+  const r = await fetch(`${BASE_URL}/api/upload`, { method: 'POST', body: formData });
+  return r.json();
+}
+
+export async function processarLote(templateId, videos) {
+  const r = await fetch(`${BASE_URL}/api/lote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ templateId, videos }),
+  });
+  return r.json();
+}
+
+export function urlArquivo(caminhoRelativo) {
+  if (!caminhoRelativo) return null;
+  return `${BASE_URL}${caminhoRelativo}`;
+}
+
+export async function listarTemplates() {
+  const r = await fetch(`${BASE_URL}/api/templates`);
+  return r.json();
+}
+
+export async function salvarTemplate(dados, arquivoLogo) {
+  const formData = new FormData();
+  Object.entries(dados).forEach(([chave, valor]) => {
+    if (valor === null || valor === undefined) return;
+    formData.append(chave, typeof valor === 'object' ? JSON.stringify(valor) : valor);
+  });
+  if (arquivoLogo) formData.append('logo', arquivoLogo);
+
+  const r = await fetch(`${BASE_URL}/api/templates`, { method: 'POST', body: formData });
+  return r.json();
+}
+
+export function urlPreviewTemplate(id) {
+  return `${BASE_URL}/api/templates/${id}/preview.png?t=${Date.now()}`;
+}
+
+export async function excluirTemplate(id) {
+  await fetch(`${BASE_URL}/api/templates/${id}`, { method: 'DELETE' });
+}
+
+export async function importarTemplateCanva({ nome, arquivoOverlay, corMarcadorTexto }) {
+  const formData = new FormData();
+  formData.append('nome', nome);
+  formData.append('overlay', arquivoOverlay);
+  if (corMarcadorTexto) formData.append('corMarcadorTexto', corMarcadorTexto);
+  const r = await fetch(`${BASE_URL}/api/templates/importar-canva`, { method: 'POST', body: formData });
+  return r.json();
+}
+
+export async function listarAgendamentos() {
+  const r = await fetch(`${BASE_URL}/api/agendamentos`);
+  return r.json();
+}
+
+export async function criarAgendamento(dados) {
+  const r = await fetch(`${BASE_URL}/api/agendamentos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(dados),
+  });
+  return r.json();
+}
+
+export async function cancelarAgendamento(id) {
+  await fetch(`${BASE_URL}/api/agendamentos/${id}`, { method: 'DELETE' });
+}
+
+export async function buscarRegraPublicacao() {
+  const r = await fetch(`${BASE_URL}/api/regra-publicacao`);
+  return r.json();
+}
+
+export async function salvarRegraPublicacao(regra) {
+  const r = await fetch(`${BASE_URL}/api/regra-publicacao`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(regra),
+  });
+  return r.json();
+}
+
+export async function buscarContas() {
+  const r = await fetch(`${BASE_URL}/api/contas`);
+  return r.json();
+}
+
+export async function conectarInstagram(accessToken, igUserId) {
+  const r = await fetch(`${BASE_URL}/api/contas/instagram`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accessToken, igUserId }),
+  });
+  return r.json();
+}
+
+export async function desconectarConta(plataforma) {
+  await fetch(`${BASE_URL}/api/contas/${plataforma}`, { method: 'DELETE' });
+}
