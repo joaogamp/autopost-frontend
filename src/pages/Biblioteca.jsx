@@ -46,7 +46,7 @@ export default function Biblioteca() {
 
     if (lista.length === 0) return;
     setProcessandoLote(true);
-    await processarLote('cineplay-review', lista);
+    await processarLote('fd01b39a-551d-4043-bf62-794f3f05403d', lista);
     setSelecionados(new Set());
     setProcessandoLote(false);
     carregar();
