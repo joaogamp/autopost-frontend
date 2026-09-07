@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import CaixaArrastavel from '../components/CaixaArrastavel';
-import { listarTemplates, salvarTemplate, urlPreviewTemplate, excluirTemplate } from '../lib/api';
+import ListaProgreso from '../components/ListaProgreso';
+import { listarTemplates, salvarTemplate, urlPreviewTemplate, excluirTemplate, enviarVideos, processarLote } from '../lib/api';
 import ModalImportarCanva from '../components/ModalImportarCanva';
-import { Plus, Download, Trash2, Edit3, Save, Image, Type, Lightbulb, Layers } from 'lucide-react';
+import { Plus, Download, Trash2, Edit3, Save, Image, Type, Lightbulb, Layers, Zap, Upload } from 'lucide-react';
 
 const CANVAS_LARGURA = 1080;
 const CANVAS_ALTURA = 1920;
@@ -15,19 +16,27 @@ function novoTemplateEmBranco() {
     id: null,
     nome: '',
     corFundo: '#15131A',
-    areaVideo: { x: 90, y: 300, largura: 900, altura: 1200 },
+    areaVideo: { x: 90, y: 300, largura: 900, altura: 1200, fit: 'cobrir', detectarContenido: false },
     logo: null, // { x, y, largura, altura }
     texto: null, // { x, y, largura, altura, tamanhoFonte, cor }
   };
 }
 
-export default function Templates() {
+export default function Templates({ aoMudarPagina = null }) {
   const [templates, setTemplates] = useState([]);
   const [editando, setEditando] = useState(null); // null = lista; objeto = editor aberto
   const [arquivoLogo, setArquivoLogo] = useState(null);
   const [previewLogoUrl, setPreviewLogoUrl] = useState(null);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [importando, setImportando] = useState(false);
+  // Fluxo "Aplicar este template"
+  const [aplicandoTemplate, setAplicandoTemplate] = useState(null); // { id, nome } | null
+  const [lote, setLote] = useState(null); // { ids, terminado } | null
+  const [enviandoLote, setEnviandoLote] = useState(false);
+  const [erroAplicar, setErroAplicar] = useState('');
+  const [resumenLote, setResumenLote] = useState(null); // { total, concluido, erro } | null
+  const inputVideosRef = useRef(null);
 
   async function carregar() {
     setTemplates(await listarTemplates());
@@ -41,12 +50,21 @@ export default function Templates() {
     setEditando(novoTemplateEmBranco());
     setArquivoLogo(null);
     setPreviewLogoUrl(null);
+    setPreviewVideoUrl(null);
   }
 
   function abrirExistente(template) {
-    setEditando({ ...template });
+    // Compatibilidad: templates guardados sin las opciones nuevas reciben
+    // los valores por defecto (comportamiento actual: cubrir, sin detección).
+    const areaVideo = {
+      fit: 'cobrir',
+      detectarContenido: false,
+      ...(template.areaVideo || {}),
+    };
+    setEditando({ ...template, areaVideo });
     setArquivoLogo(null);
     setPreviewLogoUrl(template.logo?.url ? `http://localhost:3333${template.logo.url}` : null);
+    setPreviewVideoUrl(null);
   }
 
   function aoEscolherLogo(e) {
@@ -57,6 +75,15 @@ export default function Templates() {
     if (!editando.logo) {
       setEditando({ ...editando, logo: { x: 40, y: 60, largura: 260, altura: 100 } });
     }
+  }
+
+  // Preview LOCAL (solo navegador) para ver cómo encajará el vídeo en la zona,
+  // respetando el modo Cubrir/Ajustar. No se sube al servidor.
+  function aoElegirPreviewVideo(e) {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    setPreviewVideoUrl(URL.createObjectURL(arquivo));
+    e.target.value = '';
   }
 
   function alternarAreaTexto() {
@@ -93,6 +120,50 @@ export default function Templates() {
     if (!confirm('Excluir esse template?')) return;
     await excluirTemplate(id);
     carregar();
+  }
+
+  // ---------- FLUXO "APLICAR TEMPLATE" ----------
+  function abrirAplicar(template) {
+    setAplicandoTemplate({ id: template.id, nome: template.nome });
+    setLote(null);
+    setErroAplicar('');
+    setResumenLote(null);
+  }
+
+  function cerrarAplicar() {
+    setAplicandoTemplate(null);
+    setLote(null);
+    setErroAplicar('');
+    setResumenLote(null);
+  }
+
+  async function aoAplicarVideos(e) {
+    const arquivos = Array.from(e.target.files || []);
+    if (arquivos.length === 0 || !aplicandoTemplate) return;
+    setEnviandoLote(true);
+    setErroAplicar('');
+    try {
+      // 1) Envía os vídeos (vão a Biblioteca como "aguardando")
+      const { videos } = await enviarVideos(arquivos);
+      // 2) Dispara o lote com ESTE template (nunca hardcoded)
+      const lista = videos.map((v) => ({
+        bibliotecaId: v.id,
+        tituloIA: v.nomeOriginal.replace(/\.[^.]+$/, ''),
+      }));
+      const resultado = await processarLote(aplicandoTemplate.id, lista);
+      setLote({ ids: resultado.ids || [], terminado: false });
+    } catch (err) {
+      setErroAplicar(err.message || 'Erro ao enviar/processar os vídeos.');
+    } finally {
+      setEnviandoLote(false);
+      e.target.value = '';
+    }
+  }
+
+  function aoTerminarLote(items) {
+    const concluido = items.filter((it) => it.status === 'concluido').length;
+    setResumenLote({ total: items.length, concluido, erro: items.length - concluido });
+    setLote((actual) => (actual ? { ...actual, terminado: true } : actual));
   }
 
   // ---------- TELA DE LISTA ----------
@@ -173,7 +244,14 @@ export default function Templates() {
                   <p className="text-xs font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors mb-2">
                     {t.nome}
                   </p>
-                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                  <button
+                    onClick={() => abrirAplicar(t)}
+                    className="w-full text-[11px] bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center justify-center gap-1"
+                  >
+                    <Zap className="w-3 h-3" />
+                    <span>Aplicar este template</span>
+                  </button>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 mt-1">
                     {t.tipo !== 'importado' ? (
                       <button
                         onClick={() => abrirExistente(t)}
@@ -196,6 +274,102 @@ export default function Templates() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {aplicandoTemplate && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="glass-panel rounded-2xl p-6 max-w-xl w-full border border-slate-200 shadow-xl space-y-5 relative bg-white">
+              <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+                <div>
+                  <h3 className="font-display text-lg font-bold text-slate-900">Aplicar template</h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed font-medium">
+                    “{aplicandoTemplate.nome}” será aplicado tal qual — o vídeo não se edita: nada de cortes,
+                    filtros, legendas, áudio ou duração alterados.
+                  </p>
+                </div>
+                <button
+                  onClick={cerrarAplicar}
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                  aria-label="Cerrar"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {!lote ? (
+                <div className="space-y-4">
+                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                    Selecciona uno o varios vídeos. Se enviarán e entrarán na fila de processamento com este
+                    template. Os concluídos ficam guardados automáticamente na <b>Biblioteca</b>, listos pra
+                    <b>Programar</b>.
+                  </p>
+
+                  {erroAplicar && (
+                    <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 p-3 rounded-xl">
+                      {erroAplicar}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                    <button
+                      onClick={cerrarAplicar}
+                      className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-4 py-2.5 rounded-xl transition-all shadow-xs"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => inputVideosRef.current?.click()}
+                      disabled={enviandoLote}
+                      className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>{enviandoLote ? 'Enviando...' : 'Seleccionar vídeos'}</span>
+                    </button>
+                    <input
+                      ref={inputVideosRef}
+                      type="file"
+                      accept="video/*"
+                      multiple
+                      hidden
+                      onChange={aoAplicarVideos}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <ListaProgreso ids={lote.ids} onTerminado={aoTerminarLote} />
+
+                  {resumenLote && (
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-800 flex items-start gap-2">
+                      <span className="shrink-0">✓</span>
+                      <span>
+                        Lote terminado: {resumenLote.concluido} concluído(s), {resumenLote.erro} com erro.
+                        Os vídeos concluídos já estão na <b>Biblioteca</b>.
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                    <button
+                      onClick={cerrarAplicar}
+                      className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-4 py-2.5 rounded-xl transition-all shadow-xs"
+                    >
+                      Cerrar
+                    </button>
+                    <button
+                      onClick={() => aoMudarPagina?.('biblioteca')}
+                      className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-md shadow-indigo-600/20 transition-all flex items-center gap-2"
+                    >
+                      <Zap className="w-4 h-4" />
+                      <span>Ir a Biblioteca → Programar</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -249,6 +423,19 @@ export default function Templates() {
               cor="#2563eb"
               rotulo="Vídeo"
               onChange={(nova) => setEditando({ ...editando, areaVideo: nova })}
+              filho={
+                previewVideoUrl ? (
+                  <img
+                    src={previewVideoUrl}
+                    className="absolute inset-0 w-full h-full pointer-events-none"
+                    style={{ objectFit: editando.areaVideo.fit === 'ajustar' ? 'contain' : 'cover' }}
+                  />
+                ) : (
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/80 pointer-events-none">
+                    VIDEO
+                  </span>
+                )
+              }
             />
 
             {/* Logo */}
@@ -317,6 +504,100 @@ export default function Templates() {
                 <span className="text-xs font-mono font-semibold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
                   {editando.corFundo}
                 </span>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200/80 pt-4 space-y-3">
+              <label className="text-xs font-bold text-slate-600 block">Zona del vídeo (X · Y · tamaño)</label>
+              <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                Arrastra la caja azul en el canvas o edita los números. Vale igual para todos los vídeos procesados con este template.
+              </p>
+
+              {/* Modo de encaje */}
+              <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1">
+                <button
+                  onClick={() => setEditando({ ...editando, areaVideo: { ...editando.areaVideo, fit: 'cobrir' } })}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex-1 ${
+                    editando.areaVideo.fit !== 'ajustar'
+                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Cubrir
+                </button>
+                <button
+                  onClick={() => setEditando({ ...editando, areaVideo: { ...editando.areaVideo, fit: 'ajustar' } })}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all flex-1 ${
+                    editando.areaVideo.fit === 'ajustar'
+                      ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                      : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  Ajustar
+                </button>
+              </div>
+
+              {/* Coordenadas / tamaño */}
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  ['x', 'X'],
+                  ['y', 'Y'],
+                  ['largura', 'Anchura'],
+                  ['altura', 'Altura'],
+                ].map(([campo, rotulo]) => (
+                  <div key={campo}>
+                    <label className="text-[10px] font-bold text-slate-500 block mb-1">{rotulo}</label>
+                    <input
+                      type="number"
+                      value={editando.areaVideo[campo]}
+                      onChange={(e) => {
+                        const valor = parseInt(e.target.value, 10);
+                        if (Number.isNaN(valor)) return;
+                        setEditando({ ...editando, areaVideo: { ...editando.areaVideo, [campo]: valor } });
+                      }}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-900 outline-none focus:border-indigo-600 font-mono font-medium"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Detección automática de la región útil */}
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editando.areaVideo.detectarContenido === true}
+                  onChange={(e) =>
+                    setEditando({ ...editando, areaVideo: { ...editando.areaVideo, detectarContenido: e.target.checked } })
+                  }
+                  className="mt-0.5 accent-indigo-600"
+                />
+                <span className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                  <b>Detectar área útil del vídeo automáticamente.</b> Analiza cada vídeo de entrada y recorta
+                  barras, logos, marcas e interfaces de redes antes de encajarlo. Si no detecta nada con confianza,
+                  usa el vídeo completo.
+                </span>
+              </label>
+
+              {/* Preview local */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 block mb-1.5">Probar con una imagen</label>
+                <label className="inline-flex items-center gap-2 text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-4 py-2.5 rounded-xl cursor-pointer transition-all shadow-xs">
+                  <Image className="w-4 h-4 text-indigo-600" />
+                  <span>{previewVideoUrl ? 'Cambiar imagen' : 'Elegir imagen'}</span>
+                  <input type="file" accept="image/*" hidden onChange={aoElegirPreviewVideo} />
+                </label>
+                {previewVideoUrl && (
+                  <button
+                    onClick={() => setPreviewVideoUrl(null)}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-700 hover:underline px-2 py-1 rounded-lg ml-2"
+                  >
+                    Quitar preview
+                  </button>
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed font-medium">
+                  Preview solo visual (navegador): muestra cómo encajará el vídeo. Cubrir recorta para llenar;
+                  Ajustar centra con el color de fondo del template.
+                </p>
               </div>
             </div>
 

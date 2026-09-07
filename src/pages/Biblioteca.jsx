@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { buscarBiblioteca, enviarVideos, processarLote, urlArquivo } from '../lib/api';
+import { buscarBiblioteca, enviarVideos, processarLote, listarTemplates, urlArquivo } from '../lib/api';
 import StatusDot from '../components/StatusDot';
 import RedeIcon from '../components/RedeIcon';
 import { Zap, Plus, Upload, Check } from 'lucide-react';
@@ -10,7 +10,19 @@ export default function Biblioteca() {
   const [enviando, setEnviando] = useState(false);
   const [processandoLote, setProcessandoLote] = useState(false);
   const [erroLote, setErroLote] = useState('');
+  const [vista, setVista] = useState('prontos'); // 'prontos' | 'todos'
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState('');
   const inputRef = useRef(null);
+
+  // Carga os templates uma só vez (serve pra procesar vídeos brutos na
+  // Biblioteca com um template escolhido — nunca hardcoded).
+  useEffect(() => {
+    listarTemplates().then((ts) => {
+      setTemplates(ts);
+      if (ts.length > 0) setTemplateId(ts[0].id);
+    });
+  }, []);
 
   async function carregar() {
     setVideos(await buscarBiblioteca());
@@ -41,15 +53,29 @@ export default function Biblioteca() {
   }
 
   async function processarSelecionados() {
-    const lista = videos
-      .filter((v) => selecionados.has(v.id))
-      .map((v) => ({ bibliotecaId: v.id, tituloIA: v.nomeOriginal.replace(/\.[^.]+$/, '') }));
+    const candidatos = videos.filter((v) => selecionados.has(v.id));
+    // Regla: los concluídos ya están listos pra publicar — NUNCA se re-aplica
+    // el template sobre ellos.
+    const disponibles = candidatos.filter((v) => v.status !== 'concluido');
+    const omitidos = candidatos.length - disponibles.length;
 
-    if (lista.length === 0) return;
-    setErroLote('');
+    if (!templateId) {
+      setErroLote('Selecciona un template pra processar.');
+      return;
+    }
+    if (disponibles.length === 0) {
+      setErroLote('Os vídeos seleccionados já estão concluídos (prontos pra publicar). Não se re-aplica o template.');
+      return;
+    }
+
+    const lista = disponibles.map((v) => ({ bibliotecaId: v.id, tituloIA: v.nomeOriginal.replace(/\.[^.]+$/, '') }));
+
+    setErroLote(omitidos > 0
+      ? `${omitidos} vídeo(s) concluído(s) ignorado(s): já estão prontos pra publicar.`
+      : '');
     setProcessandoLote(true);
     try {
-      await processarLote('fd01b39a-551d-4043-bf62-794f3f05403d', lista);
+      await processarLote(templateId, lista);
       setSelecionados(new Set());
     } catch (e) {
       setErroLote(e.message || 'Erro desconhecido ao processar lote.');
@@ -58,6 +84,9 @@ export default function Biblioteca() {
       carregar();
     }
   }
+
+  const videosVisibles = vista === 'todos' ? videos : videos.filter((v) => v.status === 'concluido');
+  const pendentesSelecionados = videos.some((v) => selecionados.has(v.id) && v.status !== 'concluido');
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -69,7 +98,7 @@ export default function Biblioteca() {
         </div>
 
         <div className="flex items-center gap-3">
-          {selecionados.size > 0 && (
+          {selecionados.size > 0 && pendentesSelecionados && (
             <button
               onClick={processarSelecionados}
               disabled={processandoLote}
@@ -98,6 +127,44 @@ export default function Biblioteca() {
         </div>
       </div>
 
+      {/* Tabs Prontos/Todos + seletor de template */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 shrink-0">
+          <button
+            onClick={() => setVista('prontos')}
+            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+              vista === 'prontos'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            Prontos ({videos.filter((v) => v.status === 'concluido').length})
+          </button>
+          <button
+            onClick={() => setVista('todos')}
+            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+              vista === 'todos'
+                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            Todos ({videos.length})
+          </button>
+        </div>
+
+        <label className="text-[11px] font-bold text-slate-500 shrink-0">Template pra processar:</label>
+        <select
+          value={templateId}
+          onChange={(e) => setTemplateId(e.target.value)}
+          className="w-full sm:w-56 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none focus:border-indigo-600 font-medium"
+        >
+          {templates.length === 0 && <option value="">Nenhún template criado</option>}
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>{t.nome}</option>
+          ))}
+        </select>
+      </div>
+
       {/* Erro de lote */}
       {erroLote && (
         <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold px-4 py-3 rounded-xl flex items-start gap-2">
@@ -120,9 +187,19 @@ export default function Biblioteca() {
             Clique aqui ou no botão acima para importar seus arquivos de vídeo e começar o processamento.
           </p>
         </div>
+      ) : videosVisibles.length === 0 ? (
+        <div className="glass-panel rounded-2xl border-2 border-dashed border-slate-300 p-14 text-center shadow-xs">
+          <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+            <Check className="w-7 h-7" />
+          </div>
+          <h3 className="font-display text-base font-bold text-slate-900 mb-1">Nenhún vídeo concluído</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+            Os vídeos que terminen de processarse com un template aparecerán aquí, prontos pra Programar.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {videos.map((video) => {
+          {videosVisibles.map((video) => {
             const selecionado = selecionados.has(video.id);
             const redesVideo = video.redes || ['instagram', 'youtube'];
             return (
@@ -179,7 +256,15 @@ export default function Biblioteca() {
                   <span className="text-[11px] font-semibold truncate text-slate-700 group-hover:text-indigo-600 transition-colors">
                     {video.nomeOriginal}
                   </span>
-                  <StatusDot status={video.status} comRotulo={false} />
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    {video.status === 'processando' && (
+                      <span className="text-[10px] font-mono font-bold text-indigo-600">{video.percentual || 0}%</span>
+                    )}
+                    {video.status === 'concluido' && (
+                      <span className="text-[10px] font-extrabold text-emerald-600" title="Pronto pra publicar">✓</span>
+                    )}
+                    <StatusDot status={video.status} comRotulo={false} />
+                  </span>
                 </div>
               </div>
             );

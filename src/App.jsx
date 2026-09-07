@@ -15,7 +15,7 @@ export default function App() {
       <main className="flex-1 overflow-y-auto px-6 sm:px-10 py-10 transition-all">
         {pagina === 'dashboard' && <Dashboard />}
         {pagina === 'biblioteca' && <Biblioteca />}
-        {pagina === 'templates' && <Templates />}
+        {pagina === 'templates' && <Templates aoMudarPagina={setPagina} />}
         {pagina === 'agendamento' && <Agendamento />}
         {pagina === 'contas' && <Contas />}
       </main>
