@@ -2,11 +2,13 @@ const BASE_URL = 'https://autopostjoao.duckdns.org';
 
 export async function buscarBiblioteca() {
   const r = await fetch(`${BASE_URL}/api/biblioteca`);
+  if (!r.ok) throw new Error(`Erro ao buscar biblioteca: ${r.status}`);
   return r.json();
 }
 
 export async function buscarFila() {
   const r = await fetch(`${BASE_URL}/api/fila`);
+  if (!r.ok) throw new Error(`Erro ao buscar fila: ${r.status}`);
   return r.json();
 }
 
@@ -14,6 +16,10 @@ export async function enviarVideos(arquivos) {
   const formData = new FormData();
   for (const arquivo of arquivos) formData.append('videos', arquivo);
   const r = await fetch(`${BASE_URL}/api/upload`, { method: 'POST', body: formData });
+  if (!r.ok) {
+    const corpo = await r.json().catch(() => ({}));
+    throw new Error(corpo.erro || `Erro no upload: ${r.status}`);
+  }
   return r.json();
 }
 
@@ -23,7 +29,9 @@ export async function processarLote(templateId, videos) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ templateId, videos }),
   });
-  return r.json();
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao processar lote: ${r.status}`);
+  return corpo;
 }
 
 export function urlArquivo(caminhoRelativo) {

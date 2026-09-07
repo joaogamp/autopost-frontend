@@ -9,6 +9,7 @@ export default function Biblioteca() {
   const [selecionados, setSelecionados] = useState(new Set());
   const [enviando, setEnviando] = useState(false);
   const [processandoLote, setProcessandoLote] = useState(false);
+  const [erroLote, setErroLote] = useState('');
   const inputRef = useRef(null);
 
   async function carregar() {
@@ -45,11 +46,17 @@ export default function Biblioteca() {
       .map((v) => ({ bibliotecaId: v.id, tituloIA: v.nomeOriginal.replace(/\.[^.]+$/, '') }));
 
     if (lista.length === 0) return;
+    setErroLote('');
     setProcessandoLote(true);
-    await processarLote('fd01b39a-551d-4043-bf62-794f3f05403d', lista);
-    setSelecionados(new Set());
-    setProcessandoLote(false);
-    carregar();
+    try {
+      await processarLote('fd01b39a-551d-4043-bf62-794f3f05403d', lista);
+      setSelecionados(new Set());
+    } catch (e) {
+      setErroLote(e.message || 'Erro desconhecido ao processar lote.');
+    } finally {
+      setProcessandoLote(false);
+      carregar();
+    }
   }
 
   return (
@@ -90,6 +97,14 @@ export default function Biblioteca() {
           />
         </div>
       </div>
+
+      {/* Erro de lote */}
+      {erroLote && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold px-4 py-3 rounded-xl flex items-start gap-2">
+          <span className="shrink-0">⚠️</span>
+          <span>{erroLote}</span>
+        </div>
+      )}
 
       {/* Grid Content */}
       {videos.length === 0 ? (
