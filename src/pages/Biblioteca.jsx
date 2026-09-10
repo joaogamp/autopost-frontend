@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { buscarBiblioteca, enviarVideos, processarLote, listarTemplates, urlArquivo } from '../lib/api';
+import { buscarBiblioteca, enviarVideos, processarLote, listarTemplates, urlArquivo, listarFinais } from '../lib/api';
 import StatusDot from '../components/StatusDot';
 import RedeIcon from '../components/RedeIcon';
 import { Zap, Plus, Upload, Check } from 'lucide-react';
 
 export default function Biblioteca() {
   const [videos, setVideos] = useState([]);
+  const [finais, setFinais] = useState({});
   const [selecionados, setSelecionados] = useState(new Set());
   const [enviando, setEnviando] = useState(false);
   const [processandoLote, setProcessandoLote] = useState(false);
@@ -25,7 +26,14 @@ export default function Biblioteca() {
   }, []);
 
   async function carregar() {
-    setVideos(await buscarBiblioteca());
+    const [bib, fins] = await Promise.all([buscarBiblioteca(), listarFinais()]);
+    setVideos(bib);
+    const mapaFinais = {};
+    for (const f of fins) {
+      if (!mapaFinais[f.originalId]) mapaFinais[f.originalId] = [];
+      mapaFinais[f.originalId].push(f);
+    }
+    setFinais(mapaFinais);
   }
 
   useEffect(() => {
@@ -54,24 +62,23 @@ export default function Biblioteca() {
 
   async function processarSelecionados() {
     const candidatos = videos.filter((v) => selecionados.has(v.id));
-    // Regla: los concluídos ya están listos pra publicar — NUNCA se re-aplica
-    // el template sobre ellos.
-    const disponibles = candidatos.filter((v) => v.status !== 'concluido');
-    const omitidos = candidatos.length - disponibles.length;
+    const disponibles = candidatos;
+    const jaConcluidos = candidatos.filter((v) => v.status === 'concluido');
+    const omitidos = jaConcluidos.length;
 
     if (!templateId) {
       setErroLote('Selecciona un template pra processar.');
       return;
     }
     if (disponibles.length === 0) {
-      setErroLote('Os vídeos seleccionados já estão concluídos (prontos pra publicar). Não se re-aplica o template.');
+      setErroLote('Selecione pelo menos um vídeo.');
       return;
     }
 
     const lista = disponibles.map((v) => ({ bibliotecaId: v.id, tituloIA: v.nomeOriginal.replace(/\.[^.]+$/, '') }));
 
     setErroLote(omitidos > 0
-      ? `${omitidos} vídeo(s) concluído(s) ignorado(s): já estão prontos pra publicar.`
+      ? `${omitidos} vídeo(s) já concluído(s) será(ão) reprocessado(s) com o template selecionado.`
       : '');
     setProcessandoLote(true);
     try {
@@ -227,6 +234,58 @@ export default function Biblioteca() {
                       <span className="text-[10px]">Sem preview</span>
                     </div>
                   )}
+
+                  {/* Finais do original: um mini-card por final (1 original → N
+                      finais, um por template). Mostra thumbnail, template usado,
+                      status e link pro vídeo final de CADA final. */}
+                  {(() => {
+                    const finalsDoOriginal = finais[video.id] || [];
+                    if (finalsDoOriginal.length === 0) return null;
+                    return (
+                      <div
+                        className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-end gap-1 p-1.5 bg-gradient-to-t from-slate-900/90 via-slate-900/45 to-transparent"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {finalsDoOriginal.map((f) => {
+                          const pronto = f.status === 'concluido';
+                          return (
+                            <div
+                              key={f.id}
+                              title={`${f.templateNome || 'Final'} — ${pronto ? 'pronto pra agendar' : f.status}`}
+                              className="flex items-center gap-1 rounded-lg bg-white/95 border border-white/70 shadow-sm px-1 py-0.5"
+                            >
+                              {f.thumbnailFinal ? (
+                                <img
+                                  src={urlArquivo(f.thumbnailFinal)}
+                                  alt={f.templateNome || 'Final'}
+                                  className="w-4 h-6 rounded object-cover"
+                                />
+                              ) : (
+                                <span className="w-4 h-6 rounded bg-slate-200 flex items-center justify-center text-[7px] text-slate-500 font-black">
+                                  FD
+                                </span>
+                              )}
+                              {pronto && f.urlFinal ? (
+                                <a
+                                  href={urlArquivo(f.urlFinal)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[9px] font-extrabold text-indigo-700 hover:underline leading-none max-w-[72px] truncate"
+                                >
+                                  {f.templateNome || 'Final'}
+                                </a>
+                              ) : (
+                                <span className="text-[9px] font-bold text-slate-600 leading-none max-w-[72px] truncate">
+                                  {f.templateNome || 'Final'}
+                                </span>
+                              )}
+                              <StatusDot status={f.status} comRotulo={false} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* Platforms Icon Tag at Top-Left */}
                   <div className="absolute top-2 left-2 flex items-center gap-1 bg-slate-900/80 backdrop-blur-md px-1.5 py-1 rounded-lg border border-white/20">

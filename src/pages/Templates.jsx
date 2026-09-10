@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import CaixaArrastavel from '../components/CaixaArrastavel';
 import ListaProgreso from '../components/ListaProgreso';
-import { listarTemplates, salvarTemplate, urlPreviewTemplate, excluirTemplate, enviarVideos, processarLote } from '../lib/api';
+import { listarTemplates, salvarTemplate, urlPreviewTemplate, excluirTemplate, enviarVideos, processarLote, urlArquivo } from '../lib/api';
 import ModalImportarCanva from '../components/ModalImportarCanva';
 import { Plus, Download, Trash2, Edit3, Save, Image, Type, Lightbulb, Layers, Zap, Upload } from 'lucide-react';
 
@@ -11,11 +11,95 @@ const LARGURA_DISPLAY = 260; // px na tela
 const ESCALA = LARGURA_DISPLAY / CANVAS_LARGURA;
 const ALTURA_DISPLAY = CANVAS_ALTURA * ESCALA;
 
+// Aspecto da miniatura do card na lista (`aspect-[9/16]`). Usado só para
+// replicar o recorte do `object-cover`; não depende da resolução da tela.
+const THUMB_ASPECTO_LARGURA = 9;
+const THUMB_ASPECTO_ALTURA = 16;
+
+/**
+ * Mapea a areaVideo do template (coordenadas reais do canvas, ex: 1080×1920)
+ * sobre a miniatura do card, que exibe o design com `object-cover`. Para
+ * canvas que não coincidem com o aspecto 9:16 da miniatura, o cover recorta
+ * a imagem centrada — aqui calculamos EXACTAMENTE essa região visível pra
+ * que a marcação caiga sobre o ponto certo, sem valores fixos.
+ * Retorna um style em % pronto pra um div absoluto (ou null se não há área).
+ */
+function estiloAreaSobreThumbnail(template, propLargura, propAltura) {
+  const area = template.areaVideo;
+  const canvasLargura = template.canvasLargura || CANVAS_LARGURA;
+  const canvasAltura = template.canvasAltura || CANVAS_ALTURA;
+  if (
+    !area ||
+    typeof area.x !== 'number' ||
+    typeof area.y !== 'number' ||
+    !(area.largura > 0) ||
+    !(area.altura > 0)
+  ) {
+    return null;
+  }
+
+  // Geometría do object-cover em unidades relativas ao contenedor.
+  const escala = Math.max(propLargura / canvasLargura, propAltura / canvasAltura);
+  const imgLargura = canvasLargura * escala;
+  const imgAltura = canvasAltura * escala;
+  const offsetX = (propLargura - imgLargura) / 2;
+  const offsetY = (propAltura - imgAltura) / 2;
+
+  const left = offsetX + (area.x / canvasLargura) * imgLargura;
+  const top = offsetY + (area.y / canvasAltura) * imgAltura;
+
+  return {
+    left: `${(left / propLargura) * 100}%`,
+    top: `${(top / propAltura) * 100}%`,
+    width: `${(area.largura / canvasLargura) * (imgLargura / propLargura) * 100}%`,
+    height: `${(area.altura / canvasAltura) * (imgAltura / propAltura) * 100}%`,
+  };
+}
+
+/** Camada visual sobre a miniatura: azul semitransparente + rótulo centrado. */
+function marcacaoAreaVideoCard(template) {
+  const estilo = estiloAreaSobreThumbnail(template, THUMB_ASPECTO_LARGURA, THUMB_ASPECTO_ALTURA);
+  if (!estilo) return null;
+  return (
+    <div
+      className="absolute pointer-events-none overflow-hidden flex items-center justify-center"
+      style={{
+        ...estilo,
+        backgroundColor: 'rgba(37, 99, 235, 0.35)',
+        border: '1px dashed rgba(37, 99, 235, 0.9)',
+      }}
+    >
+      <span
+        className="text-[9px] font-black tracking-wide text-white text-center px-0.5 leading-tight pointer-events-none"
+        style={{ textShadow: '0 1px 3px rgba(0,0,0,0.7)' }}
+      >
+        ÁREA DO VÍDEO
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Define se um template pode ser editado no editor visual.
+ * - Templates do editor (sem `tipo`): sempre editáveis.
+ * - Templates importados do Canva (`tipo === 'importado'`): também editáveis —
+ *   o editor renderiza o design original (overlay PNG) como fundo do canvas pra
+ *   reposicionar a área de vídeo, e o backend preserva `tipo`/`overlayPath` ao
+ *   salvar (ver POST /api/templates). Importados sem `overlayPath` (design
+ *   irrecuperável) ficam bloqueados, exibindo o rótulo "Importado".
+ */
+function podeEditarTemplate(t) {
+  if (!t) return false;
+  return t.tipo !== 'importado' || !!t.overlayPath;
+}
+
 function novoTemplateEmBranco() {
   return {
     id: null,
     nome: '',
     corFundo: '#15131A',
+canvasLargura: CANVAS_LARGURA,
+    canvasAltura: CANVAS_ALTURA,
     areaVideo: { x: 90, y: 300, largura: 900, altura: 1200, fit: 'cobrir', detectarContenido: false },
     logo: null, // { x, y, largura, altura }
     texto: null, // { x, y, largura, altura, tamanhoFonte, cor }
@@ -63,7 +147,7 @@ export default function Templates({ aoMudarPagina = null }) {
     };
     setEditando({ ...template, areaVideo });
     setArquivoLogo(null);
-    setPreviewLogoUrl(template.logo?.url ? `http://localhost:3333${template.logo.url}` : null);
+    setPreviewLogoUrl(template.logo?.url ? urlArquivo(template.logo.url) : null);
     setPreviewVideoUrl(null);
   }
 
@@ -103,8 +187,8 @@ export default function Templates({ aoMudarPagina = null }) {
         id: editando.id,
         nome: editando.nome,
         corFundo: editando.corFundo,
-        canvasLargura: CANVAS_LARGURA,
-        canvasAltura: CANVAS_ALTURA,
+        canvasLargura: editando.canvasLargura || CANVAS_LARGURA,
+        canvasAltura: editando.canvasAltura || CANVAS_ALTURA,
         areaVideo: editando.areaVideo,
         logoPosicao: editando.logo,
         texto: editando.texto,
@@ -228,11 +312,15 @@ export default function Templates({ aoMudarPagina = null }) {
                 className="glass-card rounded-xl overflow-hidden border border-slate-200 hover:border-slate-300 transition-all duration-200 transform hover:-translate-y-1 shadow-xs group"
               >
                 <div className="aspect-[9/16] bg-slate-900 relative overflow-hidden">
-                  <img
-                    src={urlPreviewTemplate(t.id)}
-                    alt={t.nome}
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
+                  <div className="absolute inset-0 transition-transform duration-300 group-hover:scale-105">
+                    <img
+                      src={urlPreviewTemplate(t.id)}
+                      alt={t.nome}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    {/* Overlay de visualização: marcação da areaVideo salva (X/Y/largura/altura reais do canvas) */}
+                    {marcacaoAreaVideoCard(t)}
+                  </div>
                   {t.tipo === 'importado' && (
                     <span className="absolute top-2 right-2 text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 backdrop-blur-md font-semibold">
                       Canva
@@ -252,7 +340,7 @@ export default function Templates({ aoMudarPagina = null }) {
                     <span>Aplicar este template</span>
                   </button>
                   <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 mt-1">
-                    {t.tipo !== 'importado' ? (
+                    {podeEditarTemplate(t) ? (
                       <button
                         onClick={() => abrirExistente(t)}
                         className="text-indigo-600 hover:text-indigo-700 hover:underline text-[11px] font-semibold flex items-center gap-1"
@@ -376,6 +464,12 @@ export default function Templates({ aoMudarPagina = null }) {
     );
   }
 
+// Dimensões reais do canvas: templates importados do Canva podem ter
+  // resolução diferente de 1080x1920 — usa a do template quando existir.
+  const canvasLargura = editando.canvasLargura || CANVAS_LARGURA;
+  const canvasAltura = editando.canvasAltura || CANVAS_ALTURA;
+  const escala = LARGURA_DISPLAY / canvasLargura;
+  const alturaDisplay = canvasAltura * escala;
   // ---------- TELA DO EDITOR ----------
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -409,32 +503,51 @@ export default function Templates({ aoMudarPagina = null }) {
         <div className="glass-panel p-6 rounded-2xl border border-slate-200 shadow-sm bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:16px_16px] flex flex-col items-center justify-center relative bg-white">
           <div className="text-[10px] font-mono font-semibold text-slate-500 mb-3 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-indigo-600" />
-            <span>Canvas: 1080 × 1920 (Visualização 9:16)</span>
+            <span>Canvas: {canvasLargura} × {canvasAltura}</span>
           </div>
 
           <div
             className="relative shrink-0 rounded-xl overflow-hidden border-2 border-slate-300 shadow-xl ring-1 ring-black/5"
-            style={{ width: LARGURA_DISPLAY, height: ALTURA_DISPLAY, backgroundColor: editando.corFundo }}
+            style={{ width: LARGURA_DISPLAY, height: alturaDisplay, backgroundColor: editando.corFundo }}
           >
+{/* Fundo do template importado do Canva: mostra o design real pra posicionar a área de vídeo por cima */}
+            {editando.tipo === 'importado' && editando.id && (
+              <img
+                src={urlPreviewTemplate(editando.id)}
+                alt=""
+                className="absolute inset-0 w-full h-full pointer-events-none"
+                style={{ objectFit: 'fill' }}
+              />
+            )}
             {/* Área de vídeo */}
             <CaixaArrastavel
               area={editando.areaVideo}
-              escala={ESCALA}
+              escala={escala}
               cor="#2563eb"
               rotulo="Vídeo"
               onChange={(nova) => setEditando({ ...editando, areaVideo: nova })}
               filho={
-                previewVideoUrl ? (
-                  <img
-                    src={previewVideoUrl}
-                    className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{ objectFit: editando.areaVideo.fit === 'ajustar' ? 'contain' : 'cover' }}
-                  />
-                ) : (
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/80 pointer-events-none">
-                    VIDEO
-                  </span>
-                )
+                <div className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden">
+                  {previewVideoUrl && (
+                    <img
+                      src={previewVideoUrl}
+                      alt=""
+                      className="absolute inset-0 w-full h-full pointer-events-none"
+                      style={{ objectFit: editando.areaVideo.fit === 'ajustar' ? 'contain' : 'cover' }}
+                    />
+                  )}
+                  <div
+                    className="absolute inset-0 w-full h-full flex items-center justify-center pointer-events-none"
+                    style={{ backgroundColor: 'rgba(37, 99, 235, 0.35)' }}
+                  >
+                    <span
+                      className="text-[11px] font-black tracking-wide text-white text-center px-1 leading-tight pointer-events-none"
+                      style={{ textShadow: '0 1px 3px rgba(0,0,0,0.7)' }}
+                    >
+                      ÁREA DO VÍDEO
+                    </span>
+                  </div>
+                </div>
               }
             />
 
@@ -442,7 +555,7 @@ export default function Templates({ aoMudarPagina = null }) {
             {editando.logo && (
               <CaixaArrastavel
                 area={editando.logo}
-                escala={ESCALA}
+                escala={escala}
                 cor="#d97706"
                 rotulo="Logo"
                 onChange={(nova) => setEditando({ ...editando, logo: nova })}
@@ -458,7 +571,7 @@ export default function Templates({ aoMudarPagina = null }) {
             {editando.texto && (
               <CaixaArrastavel
                 area={editando.texto}
-                escala={ESCALA}
+                escala={escala}
                 cor="#059669"
                 rotulo="Texto"
                 onChange={(nova) => setEditando({ ...editando, texto: { ...editando.texto, ...nova } })}
@@ -601,6 +714,7 @@ export default function Templates({ aoMudarPagina = null }) {
               </div>
             </div>
 
+{editando.tipo !== 'importado' && (
             <div className="border-t border-slate-200/80 pt-4">
               <label className="text-xs font-bold text-slate-600 block mb-1.5">Imagem da Logo</label>
               <label className="inline-flex items-center gap-2 text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-4 py-2.5 rounded-xl cursor-pointer transition-all shadow-xs">
@@ -612,6 +726,7 @@ export default function Templates({ aoMudarPagina = null }) {
                 Arraste a caixa amarela no canvas para posicionar; puxe o canto inferior direito para redimensionar.
               </p>
             </div>
+            )}
 
             <div className="border-t border-slate-200/80 pt-4">
               <label className="text-xs font-bold text-slate-600 block mb-1.5">Texto dinâmico (título da IA)</label>

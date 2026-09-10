@@ -6,6 +6,21 @@ export async function buscarBiblioteca() {
   return r.json();
 }
 
+export async function buscarFinal(id) {
+  const r = await fetch(`${BASE_URL}/api/finais/${encodeURIComponent(id)}`);
+  if (!r.ok) throw new Error(`Erro ao buscar final: ${r.status}`);
+  return r.json();
+}
+
+export async function listarFinais(originalId) {
+  const url = originalId
+    ? `${BASE_URL}/api/finais?originalId=${encodeURIComponent(originalId)}`
+    : `${BASE_URL}/api/finais`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Erro ao buscar finais: ${r.status}`);
+  return r.json();
+}
+
 export async function buscarFila() {
   const r = await fetch(`${BASE_URL}/api/fila`);
   if (!r.ok) throw new Error(`Erro ao buscar fila: ${r.status}`);
@@ -84,7 +99,9 @@ export async function criarAgendamento(dados) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(dados),
   });
-  return r.json();
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao criar agendamento: ${r.status}`);
+  return corpo;
 }
 
 export async function cancelarAgendamento(id) {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { buscarFila, buscarBiblioteca } from '../lib/api';
+import { buscarFila, buscarBiblioteca, listarFinais } from '../lib/api';
 
 /**
  * Progresso REAL por vídeo (sem barra de progresso). Lê GET /api/fila cada 1s
@@ -22,16 +22,26 @@ export default function ListaProgreso({ ids, onTerminado }) {
 
     async function tick() {
       try {
-        const [fila, bib] = await Promise.all([buscarFila(), buscarBiblioteca()]);
+        const [fila, bib, fins] = await Promise.all([buscarFila(), buscarBiblioteca(), listarFinais()]);
         if (!activo) return;
-        const mapaNombres = {};
-        (bib || []).forEach((v) => { mapaNombres[v.id] = v.nomeOriginal; });
+        const mapaNomes = {};
+        (bib || []).forEach((v) => { mapaNomes[v.id] = v.nomeOriginal; });
+        const mapaFinais = {};
+        (fins || []).forEach((f) => {
+          if (f.status === 'concluido' || f.status === 'processando') {
+            mapaFinais[f.id] = f.templateNome;
+          }
+        });
         const delLote = (fila || [])
           .filter((it) => clave.split(',').includes(it.id))
-          .map((it) => ({
-            ...it,
-            nome: mapaNombres[it.bibliotecaId] || it.tituloIA || 'Vídeo',
-          }));
+          .map((it) => {
+            const templateNome = mapaFinais[it.id];
+            const nomeBase = mapaNomes[it.bibliotecaId] || it.tituloIA || 'Vídeo';
+            return {
+              ...it,
+              nome: templateNome ? `${nomeBase} · ${templateNome}` : nomeBase,
+            };
+          });
         setItems(delLote);
         setCargando(false);
 

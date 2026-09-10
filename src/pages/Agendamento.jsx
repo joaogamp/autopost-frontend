@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { buscarBiblioteca, listarAgendamentos, criarAgendamento, cancelarAgendamento, urlArquivo } from '../lib/api';
+import { listarAgendamentos, criarAgendamento, cancelarAgendamento, urlArquivo, listarFinais } from '../lib/api';
 import StatusDot from '../components/StatusDot';
 import CalendarioAgendamentos from '../components/CalendarioAgendamentos';
 import RegraPublicacao from '../components/RegraPublicacao';
@@ -76,10 +76,10 @@ function ItensDoDia({ itens, onCancelar }) {
 }
 
 export default function Agendamento() {
-  const [videosProntos, setVideosProntos] = useState([]);
+  const [finaisProntos, setFinaisProntos] = useState([]);
   const [agendamentos, setAgendamentos] = useState([]);
 
-  const [bibliotecaId, setBibliotecaId] = useState('');
+  const [finalId, setFinalId] = useState('');
   const [redesSelecionadas, setRedesSelecionadas] = useState(new Set(['instagram']));
   const [data, setData] = useState('');
   const [horario, setHorario] = useState('');
@@ -90,8 +90,8 @@ export default function Agendamento() {
   const [diaSelecionado, setDiaSelecionado] = useState(null);
 
   async function carregar() {
-    const [bib, ag] = await Promise.all([buscarBiblioteca(), listarAgendamentos()]);
-    setVideosProntos(bib.filter((v) => v.status === 'concluido'));
+    const [ag, fins] = await Promise.all([listarAgendamentos(), listarFinais()]);
+    setFinaisProntos(fins.filter((f) => f.status === 'concluido'));
     setAgendamentos(ag);
   }
 
@@ -111,13 +111,13 @@ export default function Agendamento() {
 
   async function agendar() {
     setErro('');
-    if (!bibliotecaId) return setErro('Escolha um vídeo pra agendar.');
+    if (!finalId) return setErro('Escolha um vídeo final pra agendar.');
     if (redesSelecionadas.size === 0) return setErro('Escolha pelo menos uma rede social.');
     if (!data || !horario) return setErro('Escolha data e horário.');
 
     setEnviando(true);
     const resultado = await criarAgendamento({
-      bibliotecaId,
+      finalId,
       redes: Array.from(redesSelecionadas),
       data,
       horario,
@@ -126,7 +126,7 @@ export default function Agendamento() {
 
     if (resultado.erro) return setErro(resultado.erro);
 
-    setBibliotecaId('');
+    setFinalId('');
     setData('');
     setHorario('');
     carregar();
@@ -157,23 +157,23 @@ export default function Agendamento() {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1.5">Vídeo pronto</label>
+            <label className="text-xs font-bold text-slate-600 block mb-1.5">Vídeo final (template aplicado)</label>
             <select
-              value={bibliotecaId}
-              onChange={(e) => setBibliotecaId(e.target.value)}
+              value={finalId}
+              onChange={(e) => setFinalId(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-indigo-600 transition-colors font-medium"
             >
-              <option value="">Selecione um vídeo...</option>
-              {videosProntos.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.nomeOriginal}
+              <option value="">Selecione um final...</option>
+              {finaisProntos.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {(f.nomeFinal || 'Vídeo') + (f.templateNome ? ` (${f.templateNome})` : '')}
                 </option>
               ))}
             </select>
-            {videosProntos.length === 0 && (
+            {finaisProntos.length === 0 && (
               <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl mt-2 font-medium flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                <span>Nenhum vídeo concluído ainda. Processe vídeos na Biblioteca primeiro.</span>
+                <span>Nenhum final concluído ainda. Processe vídeos na Biblioteca primeiro.</span>
               </p>
             )}
           </div>
