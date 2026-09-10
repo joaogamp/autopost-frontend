@@ -1,4 +1,4 @@
-export const BASE_URL = 'https://postautojoao.duckdns.org';
+export const BASE_URL = 'https://autopostjoao.duckdns.org';
 
 export async function buscarBiblioteca() {
   const r = await fetch(`${BASE_URL}/api/biblioteca`);
