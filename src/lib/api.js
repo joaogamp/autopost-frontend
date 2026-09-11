@@ -6,6 +6,13 @@ export async function buscarBiblioteca() {
   return r.json();
 }
 
+export async function excluirVideo(id) {
+  const r = await fetch(`${BASE_URL}/api/biblioteca/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao excluir vídeo: ${r.status}`);
+  return corpo;
+}
+
 export async function buscarFinal(id) {
   const r = await fetch(`${BASE_URL}/api/finais/${encodeURIComponent(id)}`);
   if (!r.ok) throw new Error(`Erro ao buscar final: ${r.status}`);
