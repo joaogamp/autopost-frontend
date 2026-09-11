@@ -85,6 +85,7 @@ export default function Agendamento() {
   const [horario, setHorario] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
+  const [sucesso, setSucesso] = useState('');
   const [visualizacao, setVisualizacao] = useState('calendario'); // 'calendario' | 'lista'
   const [mesAtual, setMesAtual] = useState(new Date());
   const [diaSelecionado, setDiaSelecionado] = useState(null);
@@ -110,26 +111,37 @@ export default function Agendamento() {
   }
 
   async function agendar() {
+    if (enviando) return; // trava duplo clique / submit concorrente
     setErro('');
+    setSucesso('');
     if (!finalId) return setErro('Escolha um vídeo final pra agendar.');
     if (redesSelecionadas.size === 0) return setErro('Escolha pelo menos uma rede social.');
     if (!data || !horario) return setErro('Escolha data e horário.');
 
     setEnviando(true);
-    const resultado = await criarAgendamento({
-      finalId,
-      redes: Array.from(redesSelecionadas),
-      data,
-      horario,
-    });
-    setEnviando(false);
+    try {
+      const resultado = await criarAgendamento({
+        finalId,
+        redes: Array.from(redesSelecionadas),
+        data,
+        horario,
+      });
 
-    if (resultado.erro) return setErro(resultado.erro);
+      if (resultado.erro) {
+        setErro(resultado.erro);
+        return;
+      }
 
-    setFinalId('');
-    setData('');
-    setHorario('');
-    carregar();
+      setFinalId('');
+      setData('');
+      setHorario('');
+      setSucesso('Agendamento criado com sucesso!');
+      await carregar();
+    } catch (e) {
+      setErro(e?.message || 'Falha ao criar o agendamento. Tente novamente.');
+    } finally {
+      setEnviando(false);
+    }
   }
 
   // Agrupa agendamentos por data pra exibir como um mini-calendário em lista
@@ -223,6 +235,7 @@ export default function Agendamento() {
           </div>
 
           {erro && <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 p-3 rounded-xl">{erro}</p>}
+          {sucesso && <p className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-3 rounded-xl">{sucesso}</p>}
 
           <button
             onClick={agendar}
