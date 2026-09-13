@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderEditor from '../components/editorlote/HeaderEditor';
 import PainelDownloads from '../components/editorlote/PainelDownloads';
+import ListaVideos from '../components/editorlote/ListaVideos';
 import GradeVideos from '../components/editorlote/GradeVideos';
 import EditorCanvas from '../components/editorlote/EditorCanvas';
 import PainelEditor from '../components/editorlote/PainelEditor';
@@ -644,29 +645,39 @@ export default function EditorLote() {
       />
 
       <div className="flex-1 min-h-0 flex">
-        {/* ESQUERDA — importação de vídeos locais + LISTA ÚNICA dos vídeos
-            importados (grade 1X/2X/3X: vídeos DIFERENTES por linha; clicar
-            num vídeo abre o vídeo no preview central) */}
-        <aside className="w-[320px] shrink-0 h-full min-h-0 flex flex-col">
+        {/* ESQUERDA — importação + LISTA dos vídeos importados (forma PRINCIPAL
+            de selecionar o vídeo que aparece no Canvas/editor) */}
+        <aside className="w-[280px] shrink-0 h-full min-h-0 flex flex-col border-r border-[color:var(--edl-borda)]">
           <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
-          <GradeVideos
+          <ListaVideos
             itens={itens}
             idSelecionado={idSelecionado}
-            ativosNoPool={pool.ativos}
             aoSelecionar={aoSelecionar}
             aoFocar={aoFocar}
           />
         </aside>
 
-        {/* CENTRO — preview 9:16 MÉDIO/PEQUENO, centralizado, com espaço livre
-            ao redor (vídeo real: play/pausa/áudio/volume/progresso) */}
-        <section className="flex-1 min-w-0 h-full min-h-0 flex">
-          <EditorCanvas
-            config={config}
-            aoAtualizarConfig={setConfig}
-            itemSelecionado={itemSelecionado}
-            urlVideoAtiva={urlVideoAtiva}
-          />
+        {/* CENTRO — em cima o Canvas/preview de edição (SEPARADO da grade,
+            tamanho médio) e embaixo a GRADE dos vídeos (1X/2X/3X = nº de
+            colunas com vídeos DIFERENTES por linha, scroll vertical) */}
+        <section className="flex-1 min-w-0 h-full min-h-0 flex flex-col">
+          <div className="shrink-0 h-[52%] min-h-[380px] max-h-[560px] flex border-b border-[color:var(--edl-borda)]">
+            <EditorCanvas
+              config={config}
+              aoAtualizarConfig={setConfig}
+              itemSelecionado={itemSelecionado}
+              urlVideoAtiva={urlVideoAtiva}
+            />
+          </div>
+          <div className="flex-1 min-h-0 flex flex-col">
+            <GradeVideos
+              itens={itens}
+              idSelecionado={idSelecionado}
+              ativosNoPool={pool.ativos}
+              aoSelecionar={aoSelecionar}
+              aoFocar={aoFocar}
+            />
+          </div>
         </section>
 
         {/* DIREITA — SOMENTE ferramentas do editor: Logo (popup de identidade:

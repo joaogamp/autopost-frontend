@@ -38,7 +38,7 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
  *   dos dois atualiza o outro na hora).
  *
  * TODAS as leituras vêm da CONFIG COMPARTILHADA: mover um elemento aqui
- * atualiza automaticamente todos os previews do lote (senza config por vídeo).
+ * atualiza automaticamente todos os previews (sem config por vídeo).
  */
 
 /** Altura MÁXIMA do preview 9:16 na TELA (px). O canvas fica MÉDIO/PEQUENO —
@@ -173,24 +173,31 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
               <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
             </div>
 
-            {/* Faixas de cor indicando o que será cortado (prévia em tempo real) */}
+            {/* Faixas de cobertura do corte: área cortada COBERTA pelo fundo do
+                template (prévia em tempo real, igual ao FFmpeg). Opacas, na cor
+                exata de `corFundo` (branco fica branco, outra cor usa essa cor —
+                sem cor fixa). Acima da base (vídeo + overlay), abaixo das linhas
+                (z-20) e dos textos/logo/identidade — mesma ordem do FFmpeg
+                (drawbox antes dos textos/identidade). Sup/inf independentes. */}
             {corteSup > 0 && (
               <div
-                className="absolute left-0 right-0 z-10 pointer-events-none"
+                className="absolute left-0 right-0 pointer-events-none"
                 style={{
                   top: 0,
                   height: `${corteSup}%`,
-                  background: 'rgba(236, 72, 153, 0.18)',
+                  background: corFundo,
+                  zIndex: 16,
                 }}
               />
             )}
             {corteInf > 0 && (
               <div
-                className="absolute left-0 right-0 z-10 pointer-events-none"
+                className="absolute left-0 right-0 pointer-events-none"
                 style={{
                   bottom: 0,
                   height: `${corteInf}%`,
-                  background: 'rgba(236, 72, 153, 0.18)',
+                  background: corFundo,
+                  zIndex: 16,
                 }}
               />
             )}
@@ -295,6 +302,9 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
               width: `${logo.largura}%`,
               transform: 'translate(-50%, 0)',
               opacity: (logo.opacidade ?? 100) / 100,
+              // Acima das faixas de cobertura do corte (z-16) — mesma ordem do
+              // FFmpeg (cobertura no ramo do vídeo, antes do overlay + textos).
+              zIndex: 17,
             }}
           >
             <img
@@ -356,6 +366,9 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
                 fontWeight: pesoDeTexto(t.peso),
                 color: t.cor,
                 opacity: (t.opacidade ?? 100) / 100,
+                // Acima das faixas de cobertura do corte (z-16) — mesma ordem
+                // do FFmpeg (drawbox antes dos textos).
+                zIndex: 17,
               }}
             >
               {t.conteudo}
@@ -383,7 +396,7 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
 
       {/* Rodapé do canvas */}
       <p className="text-[9px] font-semibold mt-3" style={{ color: 'var(--edl-texto-mut)' }}>
-        {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na grade'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • encaixe: {area.fit}
+        {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • encaixe: {area.fit}
       </p>
     </div>
   );

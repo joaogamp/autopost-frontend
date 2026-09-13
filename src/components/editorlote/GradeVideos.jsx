@@ -1,15 +1,25 @@
-import { memo, useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect, useMemo } from 'react';
 import { Film } from 'lucide-react';
 import PreviaLoteCard from './PreviaLoteCard';
 
 /**
- * EDITOR EM LOTE — GRADE dos vídeos importados (coluna ESQUERDA, sob os
- * downloads — esta é a ÚNICA lista de vídeos do editor).
+ * EDITOR EM LOTE — GRADE dos vídeos (parte INFERIOR da coluna CENTRAL,
+ * abaixo do Canvas — é a GRADE, não a lista principal de seleção).
  *
- * Modos 1X / 2X / 3X:
- *   1X = 1 vídeo em destaque por linha; 2X = 2 vídeos diferentes por linha;
- *   3X = 3 vídeos diferentes por linha. Scroll VERTICAL mostra os demais —
- *   NUNCA é o mesmo vídeo repetido: cada célula é um vídeo importado.
+ * Layout das 3 colunas:
+ *   ESQUERDA = lista dos vídeos importados (ListaVideos — forma PRINCIPAL de
+ *              selecionar o vídeo que aparece no Canvas/editor);
+ *   CENTRO   = Canvas/preview de edição em cima (SEPARADO, tamanho médio) +
+ *              ESTA grade embaixo;
+ *   DIREITA  = editor/ferramentas (PainelEditor, config compartilhada).
+ *
+ * Modos 1X / 2X / 3X = SOMENTE a quantidade de COLUNAS da grade central:
+ *   1X = 1 vídeo DIFERENTE por linha (maior, centralizado, largura limitada);
+ *   2X = 2 vídeos DIFERENTES lado a lado por linha ([V1][V2]/[V3][V4]...);
+ *   3X = 3 vídeos DIFERENTES lado a lado por linha ([V1][V2][V3]/...).
+ * NUNCA repete o mesmo vídeo e NÃO é comparação do mesmo vídeo: cada célula
+ * é um vídeo importado distinto, na ordem da lista da esquerda. Scroll
+ * VERTICAL mostra os demais.
  *
  * Desempenho com qualquer quantidade de vídeos (sem limite fixo):
  * - cada card é leve (thumbnail REAL + `loading="lazy"` + `decoding="async"`);
@@ -37,11 +47,28 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
   const containerRef = useRef(null);
   const sentinelaRef = useRef(null);
   const [limite, setLimite] = useState(JANELA);
-  // GRADE 1X/2X/3X — nº de vídeos DIFERENTES por linha (1 = destaque grande).
+  // GRADE 1X/2X/3X — SOMENTE nº de COLUNAS com vídeos DIFERENTES por linha
+  // (1 = 1 vídeo maior por linha; 2 = [V1][V2]/[V3][V4]...; 3 = [V1][V2][V3]/...).
   const [colunas, setColunas] = useState(1);
+
+  // Janela progressiva: só os primeiros `limite` vídeos são montados
+  // (cada item na ordem da lista da esquerda — NUNCA repete o mesmo vídeo).
+  const visiveis = useMemo(() => itens.slice(0, limite), [itens, limite]);
+  const temMais = itens.length > visiveis.length;
+
+  // Volta pra janela inicial quando o CONJUNTO de vídeos muda (novo
+  // download/remoção). Mudanças só de status (polling da fila) mantêm a
+  // janela — a assinatura usa só os ids.
+  const assinaturaIds = useMemo(() => itens.map((v) => v.id).join(','), [itens]);
+  useEffect(() => {
+    setLimite(JANELA);
+    containerRef.current?.scrollTo?.({ top: 0 });
+  }, [assinaturaIds]);
 
   // Recarrega progressivamente quando a sentinela aparece (lazy loading).
   useEffect(() => {
+    const sentinela = sentinelaRef.current;
+    if (!sentinela) return undefined;
     const obs = new IntersectionObserver(
       (entradas) => {
         for (const e of entradas) {
@@ -50,24 +77,16 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
       },
       { root: containerRef.current, rootMargin: '400px' }
     );
-    if (sentinelaRef.current) obs.observe(sentinelaRef.current);
+    obs.observe(sentinela);
     return () => obs.disconnect();
-  }, []);
-
-  // Volta pra janela inicial quando o lote muda (novo download etc.).
-  useEffect(() => {
-    setLimite(JANELA);
-  }, [itens.length]);
-
-  const visiveis = itens.slice(0, limite);
-  const temMais = itens.length > visiveis.length;
+  }, [temMais]);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-[color:var(--edl-painel)]">
-      {/* Barra da grade — modos 1X / 2X / 3X */}
+      {/* Barra da grade — modos 1X / 2X / 3X = SOMENTE nº de colunas */}
       <div className="shrink-0 px-3 py-1.5 border-t border-b border-[color:var(--edl-borda)] flex items-center gap-2">
         <Film className="w-3.5 h-3.5 edl-icone-b shrink-0" />
-        <h2 className="font-display text-xs font-extrabold text-white">Vídeos importados</h2>
+        <h2 className="font-display text-xs font-extrabold text-white">Grade de vídeos</h2>
         <span
           className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
           style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--edl-roxo)' }}
@@ -75,7 +94,7 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
           {itens.length}
         </span>
         <div className="flex-1" />
-        <div className="flex items-center gap-0.5 edl-superficie rounded-lg p-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 edl-superficie rounded-lg p-0.5 shrink-0" role="group" aria-label="Colunas da grade">
           {MODOS_GRADE.map(({ colunas: n, rotulo, titulo }) => (
             <button
               key={n}
@@ -108,14 +127,14 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
           </div>
         ) : (
           <div
-            className="grid gap-2.5"
+            className={`grid gap-2.5 ${colunas === 1 ? 'w-full max-w-[420px] mx-auto' : 'w-full'}`}
             style={{ gridTemplateColumns: `repeat(${colunas}, minmax(0, 1fr))` }}
           >
-            {visiveis.map((item, indice) => (
+            {visiveis.map((item) => (
               <PreviaLoteCard
                 key={item.id}
                 item={item}
-                indice={indice}
+                indice={itens.findIndex((v) => v.id === item.id)}
                 urlPreviewAtiva={item.id === idSelecionado ? null : ativosNoPool?.[item.id] || null}
                 selecionado={item.id === idSelecionado}
                 aoSelecionar={aoSelecionar}

@@ -51,6 +51,8 @@ export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfi
         fontWeight: pesoDeTexto(t.peso),
         color: t.cor,
         opacity: (t.opacidade ?? 100) / 100,
+        // Acima das faixas de cobertura do corte (z-16) — mesma ordem do FFmpeg.
+        zIndex: 17,
       }}
     >
       {t.conteudo}
@@ -96,6 +98,8 @@ export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig }) {
         width: `${Math.max(0.5, selo.largura || 3.4)}%`,
         transform: 'translate(-50%, -50%)',
         opacity: (selo.opacidade ?? 100) / 100,
+        // Acima das faixas de cobertura do corte (z-16) — mesma ordem do FFmpeg.
+        zIndex: 17,
       }}
     >
       <BadgeCheck

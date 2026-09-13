@@ -17,12 +17,11 @@ export function configParaTemplatePayload(config) {
     ? config.textos
     : { superior: config.texto || {}, inferior: {} };
 
-  // Corte de bordas: superior e inferior son INDEPENDENTES (0..90 cada uno).
-  // Sólo por seguridad del render (un crop no puede superar el 100% total) el
-  // template limita inferior a (90 − superior) — los valores del editor se
-  // mantienen siempre tal cual el usuario los dejó.
+  // Corte de bordas: superior e inferior são INDEPENDENTES (0..90 cada um).
+  // O render COBRE a área cortada com a cor de fundo (drawbox no FFmpeg) —
+  // as faixas podem se sobrepor no extremo (união cobre tudo), igual à prévia.
   const sup = Math.min(90, Math.max(0, Number(corteBordas?.superior) || 0));
-  const inf = Math.min(90 - sup, Math.max(0, Number(corteBordas?.inferior) || 0));
+  const inf = Math.min(90, Math.max(0, Number(corteBordas?.inferior) || 0));
 
   let logoPosicao = null;
   if (logo.visivel && logo.url) {
