@@ -143,7 +143,7 @@ export default function Templates({ aoMudarPagina = null }) {
     const areaVideo = {
       fit: 'cobrir',
       detectarContenido: false,
-      ...(template.areaVideo || {}),
+      ...template.areaVideo,
     };
     setEditando({ ...template, areaVideo });
     setArquivoLogo(null);

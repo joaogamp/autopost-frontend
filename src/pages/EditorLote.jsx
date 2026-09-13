@@ -17,8 +17,8 @@ import {
 /**
  * EDITOR EM LOTE — página (header + 3 colunas), conectada ao FLUXO REAL:
  *
- *   ESQUERDA  PainelDownloads  — importa vídeos por URL (download REAL no
- *                               servidor: POST /api/importar-url + ffprobe +
+ *   ESQUERDA  PainelDownloads  — importa vídeos LOCAIS (upload REAL no
+ *                               servidor: POST /api/upload + ffprobe +
  *                               thumbnail + biblioteca)
  *   CENTRO    GradeVideos      — todos os vídeos do lote (quantidade
  *                               arbitrária; thumbnails reais + lazy loading +
@@ -44,13 +44,17 @@ const CHAVE_LOTE = 'autopost:editorlote:v1';
 function mesclarConfig(salva) {
   const base = criarConfigPadrao();
   if (!salva || typeof salva !== 'object') return base;
+  // Configs salvas ANTES da renomeação usavam a chave `corte` — migra para o
+  // nome unificado `corteBordas` (front + back).
+  const { corte, ...salvaSemLegado } = salva;
   return {
     ...base,
-    ...salva,
+    ...salvaSemLegado,
     canvas: { ...base.canvas, ...salva.canvas },
     areaVideo: { ...base.areaVideo, ...salva.areaVideo },
     logo: { ...base.logo, ...salva.logo },
     texto: { ...base.texto, ...salva.texto },
+    corteBordas: { ...base.corteBordas, ...(salva.corteBordas || corte) },
   };
 }
 

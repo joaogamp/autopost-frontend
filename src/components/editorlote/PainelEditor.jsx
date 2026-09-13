@@ -10,7 +10,7 @@ import {
   Upload,
   RotateCcw,
 } from 'lucide-react';
-import { CORES_FUNDO, criarConfigPadrao } from '../../lib/configEditorLote';
+import { CORES_FUNDO, criarConfigPadrao, CORTE_MAXIMO } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — coluna DIREITA: painel do editor (PainelEditor).
@@ -100,6 +100,21 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
     aoAtualizarConfig((cfg) => ({ ...cfg, canvas: { ...cfg.canvas, [campo]: valor } }));
   const aoMudarArea = (campo, valor) =>
     aoAtualizarConfig((cfg) => ({ ...cfg, areaVideo: { ...cfg.areaVideo, [campo]: valor } }));
+  // Corte de bordas (config compartilhada `corteBordas`). Mantém a MESMA trava
+  // do servidor: superior + inferior ≤ CORTE_MAXIMO.
+  const aoMudarCorte = (campo, valor) =>
+    aoAtualizarConfig((cfg) => {
+      const corteAtual = cfg.corteBordas || {};
+      const proximo = { ...corteAtual, [campo]: valor };
+      if (campo === 'superior') {
+        const inf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corteAtual.inferior) || 0));
+        proximo.superior = Math.min(CORTE_MAXIMO - inf, Math.max(0, valor));
+      } else if (campo === 'inferior') {
+        const sup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corteAtual.superior) || 0));
+        proximo.inferior = Math.min(CORTE_MAXIMO - sup, Math.max(0, valor));
+      }
+      return { ...cfg, corteBordas: proximo };
+    });
 
   function aoEscolherLogo(e) {
     const arquivo = e.target.files?.[0];
@@ -377,6 +392,37 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
                 ativo={!!config.areaVideo.mostrarMarcacao}
                 aoMudar={(v) => aoMudarArea('mostrarMarcacao', v)}
               />
+            </div>
+          </div>
+
+          <div className="pt-1">
+            <Rotulo>Corte de bordas (% da altura)</Rotulo>
+            <div className="edl-superficie rounded-lg p-3 space-y-3">
+              <Alternar
+                rotulo="Ativar corte de bordas"
+                ativo={!!config.corteBordas?.ativo}
+                aoMudar={(v) => aoMudarCorte('ativo', v)}
+              />
+              <Deslizador
+                rotulo="Corte superior"
+                sufixo="%"
+                valor={Math.round(config.corteBordas?.superior || 0)}
+                min={0}
+                max={CORTE_MAXIMO}
+                aoMudar={(v) => aoMudarCorte('superior', v)}
+              />
+              <Deslizador
+                rotulo="Corte inferior"
+                sufixo="%"
+                valor={Math.round(config.corteBordas?.inferior || 0)}
+                min={0}
+                max={CORTE_MAXIMO}
+                aoMudar={(v) => aoMudarCorte('inferior', v)}
+              />
+              <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+                Corta as bordas superior/inferior do vídeo ORIGINAL no mesmo
+                encode final (single-pass, sem MP4 intermediário).
+              </p>
             </div>
           </div>
 

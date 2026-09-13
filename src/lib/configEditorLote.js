@@ -21,6 +21,45 @@ export const LIMITE_VIDEOS_COMPLETOS = 3;
 
 export const CORES_FUNDO = ['#ffffff', '#f8fafc', '#fdf2f8', '#f5f3ff', '#fff1f2', '#fafafa'];
 
+/** Fontes do texto do lote (famílias web-safe — a prévia usa 1:1). */
+export const FONTES_TEXTO = [
+  { id: 'Arial', rotulo: 'Arial', familia: 'Arial, Helvetica, sans-serif' },
+  { id: 'Verdana', rotulo: 'Verdana', familia: 'Verdana, sans-serif' },
+  { id: 'Georgia', rotulo: 'Georgia', familia: 'Georgia, serif' },
+  { id: 'Times New Roman', rotulo: 'Times New Roman', familia: '"Times New Roman", Times, serif' },
+  { id: 'Courier New', rotulo: 'Courier New', familia: '"Courier New", monospace' },
+  { id: 'Trebuchet MS', rotulo: 'Trebuchet MS', familia: '"Trebuchet MS", sans-serif' },
+  { id: 'Tahoma', rotulo: 'Tahoma', familia: 'Tahoma, sans-serif' },
+  { id: 'Impact', rotulo: 'Impact', familia: 'Impact, "Arial Black", sans-serif' },
+];
+
+export function familiaDeFonte(id) {
+  const encontrada = FONTES_TEXTO.find((f) => f.id === id);
+  return encontrada ? encontrada.familia : FONTES_TEXTO[0].familia;
+}
+
+/** Pesos do texto do lote. */
+export const PESOS_TEXTO = [
+  { id: 'normal', rotulo: 'Normal', peso: 400 },
+  { id: 'negrita', rotulo: 'Negrita', peso: 700 },
+  { id: 'extranegrita', rotulo: 'Extra negrita', peso: 900 },
+];
+
+export function pesoDeTexto(id) {
+  const encontrado = PESOS_TEXTO.find((p) => p.id === id);
+  return encontrado ? encontrado.peso : PESOS_TEXTO[1].peso;
+}
+
+/** Alineaciones horizontais do texto do lote. */
+export const ALINEACIONES_TEXTO = [
+  { id: 'esquerda', rotulo: 'Izquierda' },
+  { id: 'centro', rotulo: 'Centrado' },
+  { id: 'direita', rotulo: 'Derecha' },
+];
+
+/** Límites suaves do corte de bordas (%). */
+export const CORTE_MAXIMO = 90;
+
 export function criarConfigPadrao() {
   return {
     canvas: {
@@ -31,12 +70,21 @@ export function criarConfigPadrao() {
     // Área do vídeo: onde o vídeo encaixa (px do canvas — formato do template
     // do servidor). fit: 'cobrir' | 'ajustar' (o mesmo do pipeline FFmpeg).
     areaVideo: {
-      x: 50,
-      y: 620,
-      largura: 980,
+      x: 90,
+      y: 860,
+      largura: 900,
       altura: 1000,
       fit: 'cobrir',
       mostrarMarcacao: true, // guia visual da prévia (não afeta o render)
+    },
+    // CORTE DE BORDAS: corte ESPACIAL superior/inferior do vídeo ORIGINAL
+    // (percentuais da altura). Compartilhado por todo o lote; entra no mesmo
+    // filtergraph do FFmpeg (single-pass — nada de MP4 intermediário).
+    // Padrão: desactivado, 0% + 0%. Nome UNIFICADO `corteBordas` (front/back).
+    corteBordas: {
+      ativo: false,
+      superior: 0,
+      inferior: 0,
     },
     // Logo: pertence à config compartilhada; nunca extraída automaticamente.
     // x em % marca o CENTRO da logo (a prévia usa translate(-50%, 0)); a
@@ -53,16 +101,21 @@ export function criarConfigPadrao() {
       opacidade: 100,
       visivel: true,
     },
-    // Texto: FIXO para todo o lote (vai para a fila como `tituloIA`). O
-    // processamento quebra em linhas, centraliza horizontalmente e usa a
-    // fonte bold do sistema — a prévia também é centralizada e bold.
+    // Texto: FIXO para todo o lote (config compartilhada; viaja DENTRO do
+    // template como `texto.contenido` — NÃO se usa tituloIA neste fluxo). O
+    // processamento quebra em linhas, alinea horizontalmente e usa a fonte/
+    // peso escolhidos — a prévia espelha tudo em tempo real.
     texto: {
       conteudo: '',
+      fonte: 'Arial',
+      peso: 'negrita',
+      alinhamento: 'centro',
       tamanho: 72, // px do canvas (tamanhoFonte no template)
       cor: '#0f172a',
       x: 50, // % do canvas (centro do bloco)
       y: 88, // % do canvas (topo do bloco)
       largura: 80, // % da largura do canvas
+      altura: 240, // px do canvas (área de texto do template)
       opacidade: 100,
       visivel: true,
     },

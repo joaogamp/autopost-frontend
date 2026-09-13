@@ -1,7 +1,7 @@
-import { useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ImageOff } from 'lucide-react';
-import { CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/configEditorLote';
-import { gerarArraste } from './arraste';
+import { CORTE_MAXIMO, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/configEditorLote';
+import { gerarArraste, gerarArrastarCorteSuperior, gerarArrastarCorteInferior } from './arraste';
 
 /**
  * EDITOR EM LOTE — canvas de edição (EditorCanvas).
@@ -24,18 +24,51 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
   const canvasRef = useRef(null);
   const arrastarLogo = gerarArraste('logo', aoAtualizarConfig);
   const arrastarTexto = gerarArraste('texto', aoAtualizarConfig);
+  const corredorSuperior = gerarArrastarCorteSuperior(aoAtualizarConfig);
+  const corredorInferior = gerarArrastarCorteInferior(aoAtualizarConfig);
 
-  const { largura, altura, corFundo } = config.canvas;
+  const corFundo = config.canvas.corFundo;
   const area = config.areaVideo;
   const logo = config.logo;
   const texto = config.texto;
+  const corte = config.corteBordas;
+  const corteAtivo = !!corte?.ativo;
+  const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte?.superior) || 0));
+  const corteInf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte?.inferior) || 0));
   const item = itemSelecionado;
-
-  // Escala do canvas na tela (largura fixa de exibição).
-  const LARGURA_TELA = 240;
-  const escala = LARGURA_TELA / largura;
   // Mesmo encaixe do pipeline: 'cobrir' (cover) | 'ajustar' (contain).
   const encaixe = area.fit === 'ajustar' ? 'contain' : 'cover';
+
+  // Escalada do canvas: a div (canvasRef) é renderizada em px de tela com
+  // largura = CANVAS_LARGURA*escala e altura = alturaTela. As linhas/faixas
+  // de corte usam top/height em % — posicionamento independente da escala.
+  const [escala, setEscala] = useState(1);
+  const [alturaTela, setAlturaTela] = useState(CANVAS_ALTURA);
+
+  // Atualiza o dataset do canvas com os valores em px de canvas e escala atual,
+  // para que os handlers de arraste/corte leiam o valor correto (evita stale
+  // closure). Só atualiza quando a escala ou tamanho do canvas mudar.
+  const aoAtualizarDataset = useCallback(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const novaEscala = rect.width > 0 ? rect.width / CANVAS_LARGURA : 1;
+    const novaAltura = rect.height > 0 ? rect.height : CANVAS_ALTURA * novaEscala;
+    setEscala(novaEscala);
+    setAlturaTela(novaAltura);
+    el.dataset.canvasLargura = String(CANVAS_LARGURA);
+    el.dataset.canvasAltura = String(CANVAS_ALTURA);
+    el.dataset.escala = String(novaEscala);
+  }, [canvasRef]);
+
+  useEffect(() => {
+    aoAtualizarDataset();
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(aoAtualizarDataset);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [aoAtualizarDataset]);
 
   return (
     <div className="flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden py-4">
@@ -67,12 +100,79 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
         ref={canvasRef}
         className="edl-canvas-branco relative overflow-hidden"
         style={{
-          width: LARGURA_TELA,
-          height: altura * escala,
+          width: CANVAS_LARGURA * escala,
+          height: alturaTela,
           borderRadius: 14,
           background: corFundo,
         }}
       >
+        {/* Cortes de bordas — linhas pontilhadas arrastáveis (superior/inferior) */}
+        {corteAtivo && (
+          <>
+            {/* Linha superior de corte (arrastável) */}
+            <div
+              role="slider"
+              aria-label="Corte superior"
+              aria-valuemin={0}
+              aria-valuemax={CORTE_MAXIMO}
+              aria-valuenow={Math.round(corteSup)}
+              aria-valuetext={`${Math.round(corteSup)}% da altura`}
+              data-y={String(corteSup)}
+              onPointerDown={corredorSuperior}
+              className="edl-corredor-corte absolute left-0 right-0 z-20 cursor-row-resize touch-none"
+              style={{
+                top: `${corteSup}%`,
+                borderTop: '2px dashed var(--edl-roxo)',
+              }}
+            >
+              {/* Alça visual central */}
+              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
+            </div>
+
+            {/* Linha inferior de corte (arrastável) */}
+            <div
+              role="slider"
+              aria-label="Corte inferior"
+              aria-valuemin={0}
+              aria-valuemax={CORTE_MAXIMO}
+              aria-valuenow={Math.round(corteInf)}
+              aria-valuetext={`${Math.round(corteInf)}% da altura`}
+              data-y={String(corteInf)}
+              onPointerDown={corredorInferior}
+              className="edl-corredor-corte absolute left-0 right-0 z-20 cursor-row-resize touch-none"
+              style={{
+                top: `${corteInf}%`,
+                borderTop: '2px dashed var(--edl-roxo)',
+              }}
+            >
+              {/* Alça visual central */}
+              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
+            </div>
+
+            {/* Faixas de cor indicando o que será cortado (prévia em tempo real) */}
+            {corteSup > 0 && (
+              <div
+                className="absolute left-0 right-0 z-10 pointer-events-none"
+                style={{
+                  top: 0,
+                  height: `${corteSup}%`,
+                  background: 'rgba(236, 72, 153, 0.18)',
+                }}
+              />
+            )}
+            {corteInf > 0 && (
+              <div
+                className="absolute left-0 right-0 z-10 pointer-events-none"
+                style={{
+                  bottom: 0,
+                  height: `${corteInf}%`,
+                  background: 'rgba(236, 72, 153, 0.18)',
+                }}
+              />
+            )}
+          </>
+        )}
+
         {/* ÁREA DO VÍDEO — claramente marcada ("é aqui que meu vídeo vai ficar") */}
         <div
           className="edl-area-video absolute overflow-hidden flex items-center justify-center"

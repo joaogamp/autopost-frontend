@@ -148,30 +148,10 @@ export async function desconectarConta(plataforma) {
 }
 
 // ---------------------------------------------------------------------------
-// EDITOR EM LOTE — importação por URL (download REAL no servidor) + template
-// da config compartilhada. Endpoints: POST/GET /api/importar-url e
-// POST /api/templates (multipart).
+// EDITOR EM LOTE — template da config compartilhada (POST /api/templates,
+// multipart). A importação de vídeos usa SOMENTE arquivos locais via
+// POST /api/upload (enviarVideos).
 // ---------------------------------------------------------------------------
-
-/** Inicia a importação de um vídeo por URL no servidor. Retorna { importId }. */
-export async function importarUrl(url) {
-  const r = await fetch(`${BASE_URL}/api/importar-url`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url }),
-  });
-  const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(corpo.erro || `Erro ao iniciar o download: ${r.status}`);
-  return corpo;
-}
-
-/** Consulta o progresso REAL (bytes) de uma importação por URL. */
-export async function statusImportacao(importId) {
-  const r = await fetch(`${BASE_URL}/api/importar-url/${encodeURIComponent(importId)}`);
-  const corpo = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(corpo.erro || `Erro ao consultar a importação: ${r.status}`);
-  return corpo; // { status, percentual, erro, video }
-}
 
 /**
  * Salva a config COMPARTILHADA do Editor em Lote como TEMPLATE no servidor
@@ -189,6 +169,7 @@ export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, temp
   formData.append('areaVideo', JSON.stringify(payload.areaVideo));
   if (payload.logoPosicao) formData.append('logoPosicao', payload.logoPosicao);
   if (payload.texto) formData.append('texto', JSON.stringify(payload.texto));
+  if (payload.corteBordas) formData.append('corteBordas', JSON.stringify(payload.corteBordas));
   if (arquivoLogo) formData.append('logo', arquivoLogo);
 
   const r = await fetch(`${BASE_URL}/api/templates`, { method: 'POST', body: formData });

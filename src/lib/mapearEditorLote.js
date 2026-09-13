@@ -10,7 +10,10 @@ import { BASE_URL } from './api';
 export const NOME_TEMPLATE_LOTE = 'Editor em Lote · config compartilhada';
 
 export function configParaTemplatePayload(config) {
-  const { canvas, areaVideo, logo, texto } = config;
+  const { canvas, areaVideo, logo, texto, corteBordas } = config;
+
+  const sup = Math.min(90, Math.max(0, Number(corteBordas?.superior) || 0));
+  const inf = Math.min(90 - sup, Math.max(0, Number(corteBordas?.inferior) || 0));
 
   let logoPosicao = null;
   if (logo.visivel && logo.url) {
@@ -35,13 +38,19 @@ export function configParaTemplatePayload(config) {
   if (texto.visivel && texto.conteudo.trim() !== '') {
     const larguraPx = Math.max(1, Math.round((texto.largura / 100) * canvas.largura));
     textoArea = {
+      // Novo fluxo: o CONTENIDO viaja dentro do template (`texto.contenido`),
+      // junto com fonte/peso/alinheamento. Não se usa tituloIA aqui.
+      contenido: texto.conteudo,
+      fonte: texto.fonte,
+      peso: texto.peso,
+      alinhamento: texto.alinhamento,
       // Área centrada no x% e com o TOPO em y% (alinhamentoVertical 'topo' —
       // igual à prévia). A altura comporta ~2 linhas antes do pipeline reduzir
       // a fonte automaticamente (comportamento real do renderizador).
       x: Math.round((texto.x / 100) * canvas.largura - larguraPx / 2),
       y: Math.round((texto.y / 100) * canvas.altura),
       largura: larguraPx,
-      altura: Math.max(40, Math.round(texto.tamanho * 2.2)),
+      altura: Math.max(40, Math.round(texto.altura || 240)),
       tamanhoFonte: Math.round(texto.tamanho),
       cor: texto.cor,
       alinhamentoVertical: 'topo',
@@ -64,6 +73,14 @@ export function configParaTemplatePayload(config) {
       fit: areaVideo.fit === 'ajustar' ? 'ajustar' : 'cobrir',
       detectarContenido: false,
     },
+    // Corte de bordas compartilhado (single-pass no FFmpeg). Padrão guardado
+    // também quando inactivo pra que o template no servidor nunca fique
+    // obsoleto. Nome unificado `corteBordas` (front + back).
+    corteBordas: {
+      ativo: !!corteBordas?.ativo,
+      superior: sup,
+      inferior: inf,
+    },
     // null → o campo NÃO é enviado e o servidor limpa a logo do template.
     logoPosicao: logoPosicao ? JSON.stringify(logoPosicao) : null,
     texto: textoArea,
@@ -73,6 +90,27 @@ export function configParaTemplatePayload(config) {
 /** Assinatura estável da config (evita re-salvar o template sem mudança). */
 export function assinarConfig(config) {
   return JSON.stringify(configParaTemplatePayload(config)) + (config.logo.arquivo ? '|logo-arquivo' : '');
+}
+
+/**
+ * Firma de la COMPOSICIÓN visible (área + corte + logo + texto + fondo).
+ * Serve às tarjetas de preview do centro: quando a firma não muda, os cards
+ * memoizados NÃO re-renderizan (performance com muitos vídeos).
+ */
+export function firmaComposicion(config) {
+  const { canvas, areaVideo, logo, texto, corteBordas } = config;
+  return [
+    'c1',
+    canvas.corFundo,
+    areaVideo.x, areaVideo.y, areaVideo.largura, areaVideo.altura, areaVideo.fit, areaVideo.mostrarMarcacao,
+    corteBordas?.ativo ? 1 : 0, Math.round(corteBordas?.superior || 0), Math.round(corteBordas?.inferior || 0),
+    logo.visivel ? 1 : 0, Math.round(logo.x), Math.round(logo.y), Math.round(logo.largura),
+    Math.round(logo.opacidade || 100), logo.url ? 't' : 'f',
+    Math.round(Number(logo.alturaProporcao || 0) * 1000),
+    texto.visivel ? 1 : 0, texto.conteudo, texto.fonte, texto.peso, texto.alinhamento,
+    Math.round(texto.tamanho), Math.round(texto.x), Math.round(texto.y),
+    Math.round(texto.largura), Math.round(texto.altura), Math.round(texto.opacidade || 100), texto.cor,
+  ].join('|');
 }
 
 /** URL pública estável da logo salva no servidor (a mesma que o worker baixa). */
