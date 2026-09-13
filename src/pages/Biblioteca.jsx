@@ -1,694 +1,173 @@
-import { useEffect, useRef, useState } from 'react';
-import { buscarBiblioteca, enviarVideos, processarLote, listarTemplates, urlArquivo, listarFinais, excluirVideo } from '../lib/api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { listarAgendamentos, cancelarAgendamento, criarAgendamento, buscarContas, urlArquivo } from '../lib/api';
 import StatusDot from '../components/StatusDot';
-import RedeIcon from '../components/RedeIcon';
-import { Zap, Plus, Upload, Check, Play, Trash2, X, Loader2, AlertTriangle } from 'lucide-react';
+import { CalendarClock, Loader2, Play, RefreshCw, X } from 'lucide-react';
+
+const INTERVALO_MS = 30 * 1000;
+const VISIVEIS = new Set(['agendado', 'publicando', 'erro']);
+const FUSO = 'America/Sao_Paulo';
+
+function hojeAmanhaIso() {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const m = {};
+  for (const x of p) m[x.type] = x.value;
+  const hoje = `${m.year}-${m.month}-${m.day}`;
+  const d = new Date(Date.UTC(Number(m.year), Number(m.month) - 1, Number(m.day) + 1));
+  const am = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  return { hoje, am };
+}
+
+function dataCurta(iso) {
+  const v = String(iso || '').split('-');
+  return v.length === 3 ? `${v[2]}/${v[1]}` : String(iso || '');
+}
 
 export default function Biblioteca() {
-  const [videos, setVideos] = useState([]);
-  const [finais, setFinais] = useState({});
-  const [selecionados, setSelecionados] = useState(new Set());
-  const [enviando, setEnviando] = useState(false);
-  const [processandoLote, setProcessandoLote] = useState(false);
-  const [processandoAuto, setProcessandoAuto] = useState(false);
-  const [erroLote, setErroLote] = useState('');
-  const [vista, setVista] = useState('prontos'); // 'prontos' | 'todos'
-  const [templates, setTemplates] = useState([]);
-  const [templateId, setTemplateId] = useState('');
-  const inputRef = useRef(null);
+  const [ags, setAgs] = useState([]);
+  const [igUser, setIgUser] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [preview, setPreview] = useState(null);
+  const [cancelId, setCancelId] = useState(null);
+  const [remarcar, setRemarcar] = useState(null);
+  const [nd, setNd] = useState('');
+  const [nh, setNh] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [erroRem, setErroRem] = useState('');
+  const [menuAberto, setMenuAberto] = useState(null);
+  const timer = useRef(null);
 
-  // Preview: modal de vídeo (original e/ou finais), aberto via botão "Preview"
-  // ou pelo mini-card de cada final.
-  const [preview, setPreview] = useState(null); // { video, opcoes: [{tipo, chave, label, url}], chave }
-
-  // Exclusão: modal de confirmação + estado de carregamento + erros da API.
-  const [excluirAlvo, setExcluirAlvo] = useState(null); // vídeo a excluir
-  const [excluindoId, setExcluindoId] = useState(null); // id em exclusão (impede duplo clique)
-  const [erroExclusao, setErroExclusao] = useState('');
-
-  // Carga os templates uma só vez (serve pra procesar vídeos brutos na
-  // Biblioteca com um template escolhido — nunca hardcoded).
-  useEffect(() => {
-    listarTemplates().then((ts) => {
-      setTemplates(ts);
-      if (ts.length > 0) setTemplateId(ts[0].id);
-    });
+  const carregar = useCallback(async () => {
+    try {
+      const [lista, contas] = await Promise.all([listarAgendamentos(), buscarContas()]);
+      setAgs(Array.isArray(lista) ? lista : []);
+      setIgUser(contas?.instagram?.username || '');
+      setErro('');
+    } catch (e) {
+      setErro(e?.message || 'Não foi possível carregar os agendamentos.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
-
-  async function carregar() {
-    // Robustez: a Biblioteca sempre atualiza a lista de vídeos, mesmo que o
-    // /api/finais falhe. Uma falha em listarFinais() NÃO pode esconder a tela.
-    const [bibResultado, finsResultado] = await Promise.allSettled([buscarBiblioteca(), listarFinais()]);
-
-    if (bibResultado.status === 'fulfilled') {
-      setVideos(bibResultado.value);
-    } else {
-      // Mantém os vídeos já carregados e apenas registra o erro (não trava nada).
-      console.error('[Biblioteca] Falha ao buscar biblioteca:', bibResultado.reason?.message || bibResultado.reason);
-    }
-
-    if (finsResultado.status === 'fulfilled') {
-      const mapaFinais = {};
-      for (const f of finsResultado.value) {
-        if (!mapaFinais[f.originalId]) mapaFinais[f.originalId] = [];
-        mapaFinais[f.originalId].push(f);
-      }
-      setFinais(mapaFinais);
-    } else {
-      console.error('[Biblioteca] Falha ao buscar finais:', finsResultado.reason?.message || finsResultado.reason);
-    }
-  }
 
   useEffect(() => {
     carregar();
-    const intervalo = setInterval(carregar, 3000);
-    return () => clearInterval(intervalo);
-  }, []);
+    timer.current = setInterval(() => carregar(), INTERVALO_MS);
+    return () => { if (timer.current) clearInterval(timer.current); };
+  }, [carregar]);
 
-  // ---------------------------------------------------------------
-  // PREVIEW — abre o modal de vídeo dentro da própria aplicação (sem abrir
-  // nova aba). Monta as opções com as URL reais retornadas pela API:
-  //   - original: `video.urlOriginal` (serve output/uploads)
-  //   - finais:   `f.urlFinal` + `f.thumbnailFinal` (serve output/publicados)
-  // Quando existem finais concluídos, o FINAL é priorizado no preview.
-  // ---------------------------------------------------------------
-  function abrirPreview(video, finalInicialId) {
-    const finalsProntos = (finais[video.id] || [])
-      .filter((f) => f.status === 'concluido' && f.urlFinal)
-      .map((f) => ({
-        tipo: 'final',
-        chave: f.id,
-        label: f.templateNome || 'Final',
-        url: urlArquivo(f.urlFinal),
-        thumb: f.thumbnailFinal ? urlArquivo(f.thumbnailFinal) : null,
-      }));
-
-    const opcoes = [];
-    if (video.urlOriginal) {
-      opcoes.push({
-        tipo: 'original',
-        chave: 'original',
-        label: 'Original',
-        url: urlArquivo(video.urlOriginal),
-        thumb: video.thumbnailUrl ? urlArquivo(video.thumbnailUrl) : null,
-      });
-    }
-    opcoes.push(...finalsProntos);
-
-    const chaveInicial =
-      finalInicialId ||
-      (finalsProntos.length > 0 ? finalsProntos[0].chave : 'original');
-    setPreview({
-      video,
-      opcoes,
-      chave: opcoes.some((o) => o.chave === chaveInicial) ? chaveInicial : opcoes[0]?.chave || null,
-    });
-  }
-
-  function fecharPreview() {
-    setPreview(null);
-  }
-
-  // ---------------------------------------------------------------
-  // EXCLUSÃO — modal de confirmação + chamada ao backend.
-  // ---------------------------------------------------------------
-  function iniciarExclusao(video) {
-    setExcluirAlvo(video);
-    setErroExclusao('');
-  }
-
-  function cancelarExclusao() {
-    if (excluindoId) return; // não cancela no meio da exclusão
-    setExcluirAlvo(null);
-    setErroExclusao('');
-  }
-
-  async function confirmarExclusao() {
-    const video = excluirAlvo;
-    if (!video || excluindoId) return; // impede duplo clique
-    setExcluindoId(video.id);
-    setErroExclusao('');
-    try {
-      await excluirVideo(video.id);
-      setExcluirAlvo(null);
-      setSelecionados((atual) => {
-        const novo = new Set(atual);
-        novo.delete(video.id);
-        return novo;
-      });
-      await carregar(); // atualiza a lista sem recarregar a página
-    } catch (erro) {
-      setErroExclusao(erro.message || 'Erro ao excluir o vídeo.');
-    } finally {
-      setExcluindoId(null);
-    }
-  }
-
-  // Fecha modais com a tecla ESC (mas nunca durante uma exclusão em andamento).
   useEffect(() => {
-    function aoTeclar(e) {
-      if (e.key !== 'Escape' || excluindoId) return;
-      setPreview(null);
-      setExcluirAlvo(null);
-      setErroExclusao('');
+    if (!menuAberto) return;
+    const fechar = () => setMenuAberto(null);
+    document.addEventListener('click', fechar);
+    return () => document.removeEventListener('click', fechar);
+  }, [menuAberto]);
+
+  const visiveis = useMemo(() => ags
+    .filter((a) => VISIVEIS.has(a.status))
+    .sort((a, b) => `${a.data}${a.horario}`.localeCompare(`${b.data}${b.horario}`)), [ags]);
+
+  const grupos = useMemo(() => {
+    const { hoje, am } = hojeAmanhaIso();
+    const g = { HOJE: [], AMANHÃ: [], PRÓXIMOS: [] };
+    for (const a of visiveis) {
+      if (a.data === hoje) g.HOJE.push(a);
+      else if (a.data === am) g.AMANHÃ.push(a);
+      else g.PRÓXIMOS.push(a);
     }
-    window.addEventListener('keydown', aoTeclar);
-    return () => window.removeEventListener('keydown', aoTeclar);
-  }, [excluindoId]);
+    return g;
+  }, [visiveis]);
 
-  // Trava o scroll do fundo enquanto um modal está aberto.
-  useEffect(() => {
-    const aberto = Boolean(preview || excluirAlvo);
-    document.body.style.overflow = aberto ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [preview, excluirAlvo]);
+  const resumoGrupo = (lista) => {
+    const erros = lista.filter((a) => a.status === 'erro').length;
+    const pub = lista.filter((a) => a.status === 'publicando').length;
+    const base = `${lista.length} ${lista.length === 1 ? 'vídeo programado' : 'vídeos programados'}`;
+    const extra = [pub > 0 ? 'publicando' : null, erros > 0 ? `${erros} com erro` : null].filter(Boolean).join(' · ');
+    return extra ? `${base} · ${extra}` : base;
+  };
 
-  async function aoSelecionarArquivos(e) {
-    const arquivos = Array.from(e.target.files || []);
-    e.target.value = '';
-    if (arquivos.length === 0) return;
-
-    setEnviando(true);
-    setErroLote('');
-    setProcessandoAuto(false);
+  async function aoCancelar(id) {
+    if (!id || cancelId) return;
+    setCancelId(id);
     try {
-      // 1. Upload — o servidor responde com { videos } (cada um com seu id).
-      const resp = await enviarVideos(arquivos);
-      const videosEnviados = resp && Array.isArray(resp.videos) ? resp.videos : [];
-
-      // 2. Atualiza a Biblioteca imediatamente com os vídeos recém-enviados.
-      await carregar();
-
-      if (videosEnviados.length === 0) {
-        setErroLote('Upload concluído, mas o servidor não retornou os vídeos. Nada foi processado — tente adicionar novamente.');
-        return;
-      }
-      if (!templateId) {
-        setErroLote(`${videosEnviados.length} vídeo(s) enviado(s), mas nenhum template está selecionado. Selecione um template e processe manualmente.`);
-        return;
-      }
-
-      // 3. Monta o payload a partir dos vídeos criados no /api/upload.
-      const lista = videosEnviados.map((videoEnviado) => ({
-        bibliotecaId: videoEnviado.id,
-        tituloIA: String(videoEnviado.nomeOriginal || '').replace(/\.[^.]+$/, ''),
-      }));
-
-      // 4. Processa automaticamente com o template selecionado na Biblioteca.
-      setProcessandoAuto(true);
-      setProcessandoLote(true);
-      try {
-        await processarLote(templateId, lista);
-      } catch (erroProcessamento) {
-        // Upload ocorreu, mas o processamento falhou — deixe isso bem claro.
-        setErroLote(
-          `Upload concluído com ${videosEnviados.length} vídeo(s), mas o processamento falhou: ${erroProcessamento.message || 'erro desconhecido'}`
-        );
-        console.error('[aoSelecionarArquivos] Falha no processamento após o upload:', erroProcessamento);
-      } finally {
-        // NUNCA deixa o estado preso em "processando".
-        setProcessandoLote(false);
-        setProcessandoAuto(false);
-        // 5. Atualiza a Biblioteca com o status/fila do processamento recém-iniciado.
-        await carregar();
-      }
-    } catch (erroUpload) {
-      // Falha no upload em si.
-      setErroLote(`Falha no upload: ${erroUpload.message || 'erro desconhecido'}`);
-      console.error('[aoSelecionarArquivos] Falha no upload:', erroUpload);
-    } finally {
-      // Garantia absoluta: nunca fica preso em "Enviando..." nem rejection silenciosa.
-      setEnviando(false);
-    }
-  }
-
-  function alternarSelecao(id) {
-    setSelecionados((atual) => {
-      const novo = new Set(atual);
-      novo.has(id) ? novo.delete(id) : novo.add(id);
-      return novo;
-    });
-  }
-
-  async function processarSelecionados() {
-    const candidatos = videos.filter((v) => selecionados.has(v.id));
-    const disponibles = candidatos;
-    const jaConcluidos = candidatos.filter((v) => v.status === 'concluido');
-    const omitidos = jaConcluidos.length;
-
-    if (!templateId) {
-      setErroLote('Selecciona un template pra processar.');
-      return;
-    }
-    if (disponibles.length === 0) {
-      setErroLote('Selecione pelo menos um vídeo.');
-      return;
-    }
-
-    const lista = disponibles.map((v) => ({ bibliotecaId: v.id, tituloIA: v.nomeOriginal.replace(/\.[^.]+$/, '') }));
-
-    setErroLote(omitidos > 0
-      ? `${omitidos} vídeo(s) já concluído(s) será(ão) reprocessado(s) com o template selecionado.`
-      : '');
-    setProcessandoLote(true);
-    try {
-      await processarLote(templateId, lista);
-      setSelecionados(new Set());
+      await cancelarAgendamento(id);
+      await carregar(true);
     } catch (e) {
-      setErroLote(e.message || 'Erro desconhecido ao processar lote.');
+      setErro(e?.message || 'Não foi possível cancelar o agendamento.');
     } finally {
-      setProcessandoLote(false);
-      carregar();
+      setCancelId(null);
     }
   }
 
-  // Aba "Prontos": mostra o original se ele está concluído OU se existe ao
-  // menos um FINAL concluído para aquele originalId (mesmo que o status do
-  // original na biblioteca não tenha sido atualizado).
-  const videosProntos = videos.filter(
-    (v) => v.status === 'concluido' || (finais[v.id] || []).some((f) => f.status === 'concluido')
-  );
-  const videosVisibles = vista === 'todos' ? videos : videosProntos;
-  const pendentesSelecionados = videos.some((v) => selecionados.has(v.id) && v.status !== 'concluido');
+  function abrirRemarcar(ag) {
+    setRemarcar(ag);
+    setNd(ag.data || '');
+    setNh(ag.horario || '');
+    setErroRem('');
+  }
 
-  return (
-    <div className="space-y-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="font-display text-3xl font-extrabold tracking-tight text-text">Biblioteca</h2>
-          <p className="text-xs text-text-muted mt-1 font-medium">Gerencie seu repositório de vídeos brutos e processe em lote</p>
+  async function confirmarRemarcar() {
+    if (!remarcar || saving) return;
+    setErroRem('');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nd)) return setErroRem('Escolha uma data válida.');
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(nh)) return setErroRem('Escolha um horário válido (HH:MM).');
+    setSaving(true);
+    try {
+      await criarAgendamento({ data: nd, horario: nh, redes: remarcar.redes, bibliotecaId: remarcar.bibliotecaId, finalId: remarcar.finalId });
+      await cancelarAgendamento(remarcar.id);
+      setRemarcar(null);
+      await carregar(true);
+    } catch (e) {
+      setErroRem(e?.message || 'Não foi possível remarcar.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  function Linha({ ag }) {
+    const thumb = ag.thumbnailUrl ? urlArquivo(ag.thumbnailUrl) : null;
+    const video = ag.videoUrl ? urlArquivo(ag.videoUrl) : null;
+    const cancelando = cancelId === ag.id;
+    return (
+      <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-hover/60 transition-colors">
+        <button
+          onClick={() => video && setPreview(ag)}
+          disabled={!video}
+          title={video ? 'Visualizar' : 'Vídeo indisponível'}
+          className="w-11 h-16 rounded-lg overflow-hidden shrink-0 border border-line bg-slate-900 relative group/thumb"
+        >
+          {thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" /> : (
+            <span className="w-full h-full flex items-center justify-center text-[9px] text-text-muted font-medium">sem thumb</span>
+          )}
+          {video && (
+            <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover/thumb:bg-black/40 transition-colors">
+              <Play className="w-4 h-4 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity" fill="currentColor" />
+            </span>
+          )}
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-text truncate">{ag.nomeVideo || 'Vídeo'}</p>
+          <p className="text-xs text-text-muted mt-0.5 font-medium">
+            {dataCurta(ag.data)} • {ag.horario || '--:--'}{igUser ? <span> • @{igUser}</span> : null}
+          </p>
+          <div className="mt-1"><StatusDot status={ag.status === 'publicando' ? 'publicando' : ag.status === 'erro' ? 'erro' : 'agendado'} comRotulo /></div>
+          {ag.status === 'erro' && ag.erroMensagem ? (
+            <p className="text-[11px] text-rose-300/90 mt-1 truncate" title={ag.erroMensagem}>{ag.erroMensagem}</p>
+          ) : null}
         </div>
-
-        <div className="flex items-center gap-3">
-          {selecionados.size > 0 && pendentesSelecionados && (
-            <button
-              onClick={processarSelecionados}
-              disabled={processandoLote}
-              className="text-xs bg-rosa hover:bg-rosa-hover text-white px-4 py-2.5 rounded-xl font-bold shadow-md shadow-rosa/20 transition-all transform active:scale-95 disabled:opacity-50 flex items-center gap-2"
-            >
-              <Zap className="w-4 h-4 fill-white" />
-              <span>{processandoLote ? 'Enviando lote...' : `Processar ${selecionados.size} vídeo(s)`}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {video && (
+            <button onClick={() => setPreview(ag)} title="Visualizar" className="p-1.5 rounded-lg text-text-muted hover:text-rosa hover:bg-rosa-dim transition-colors">
+              <Play className="w-4 h-4" />
             </button>
           )}
-          <button
-            onClick={() => inputRef.current?.click()}
-            disabled={enviando}
-            className="text-xs bg-surface hover:bg-surface-hover text-text border border-line px-4 py-2.5 rounded-xl font-bold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4 text-rosa" />
-            <span>{enviando ? 'Enviando...' : 'Adicionar vídeos'}</span>
+          <button onClick={() => abrirRemarcar(ag)} title="Remarcar" className="p-1.5 rounded-lg text-text-muted hover:text-rosa hover:bg-rosa-dim transition-colors">
+            <CalendarClock className="w-4 h-4" />
           </button>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="video/*"
-            multiple
-            hidden
-            onChange={aoSelecionarArquivos}
-          />
+          <button onClick={() => aoCancelar(ag.id)} disabled={cancelando} title="Cancelar agendamento" className="p-1.5 rounded-lg text-text-muted hover:text-rose-300 hover:bg-rose-500/10 transition-colors disabled:opacity-50">
+            {cancelando ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+          </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Tabs Prontos/Todos + seletor de template */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex gap-1 bg-surface-hover border border-line rounded-xl p-1 shrink-0">
-          <button
-            onClick={() => setVista('prontos')}
-            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
-              vista === 'prontos'
-                ? 'bg-surface text-text shadow-xs border border-line'
-                : 'text-text-muted hover:text-text'
-            }`}
-          >
-            Prontos ({videosProntos.length})
-          </button>
-          <button
-            onClick={() => setVista('todos')}
-            className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
-              vista === 'todos'
-                ? 'bg-surface text-text shadow-xs border border-line'
-                : 'text-text-muted hover:text-text'
-            }`}
-          >
-            Todos ({videos.length})
-          </button>
-        </div>
-
-        <label className="text-[11px] font-bold text-text-muted shrink-0">Template pra processar:</label>
-        <select
-          value={templateId}
-          onChange={(e) => setTemplateId(e.target.value)}
-          className="w-full sm:w-56 bg-surface border border-line rounded-xl px-3 py-2 text-xs text-text outline-none focus:border-rosa font-medium"
-        >
-          {templates.length === 0 && <option value="">Nenhún template criado</option>}
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.nome}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Erro de lote */}
-      {erroLote && (
-        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold px-4 py-3 rounded-xl flex items-start gap-2">
-          <span className="shrink-0">⚠️</span>
-          <span>{erroLote}</span>
-        </div>
-      )}
-
-      {/* Grid Content */}
-      {videos.length === 0 ? (
-        <div
-          onClick={() => inputRef.current?.click()}
-          className="glass-panel border-2 border-dashed border-line-light hover:border-rosa/60 rounded-2xl p-16 text-center cursor-pointer transition-all duration-300 group shadow-xs"
-        >
-          <div className="w-16 h-16 rounded-full bg-rosa-dim border border-rosa-borda text-rosa flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-            <Upload className="w-8 h-8" />
-          </div>
-          <h3 className="font-display text-base font-bold text-text mb-1">Nenhum vídeo na biblioteca</h3>
-          <p className="text-xs text-text-muted max-w-sm mx-auto font-medium">
-            Clique aqui ou no botão acima para importar seus arquivos de vídeo e começar o processamento.
-          </p>
-        </div>
-      ) : videosVisibles.length === 0 ? (
-        <div className="glass-panel rounded-2xl border-2 border-dashed border-line-light p-14 text-center shadow-xs">
-          <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4">
-            <Check className="w-7 h-7" />
-          </div>
-          <h3 className="font-display text-base font-bold text-text mb-1">Nenhún vídeo concluído</h3>
-          <p className="text-xs text-text-muted max-w-sm mx-auto font-medium">
-            Os vídeos que terminen de processarse com un template aparecerán aquí, prontos pra Programar.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {videosVisibles.map((video) => {
-            const selecionado = selecionados.has(video.id);
-            const redesVideo = video.redes || ['instagram', 'youtube'];
-            return (
-              <div
-                key={video.id}
-                onClick={() => alternarSelecao(video.id)}
-                className={`group text-left rounded-xl overflow-hidden border transition-all duration-200 cursor-pointer relative shadow-xs ${
-                  selecionado
-                    ? 'border-rosa ring-2 ring-rosa/30 bg-rosa-dim/20'
-                    : 'border-line hover:border-line-light glass-card hover:-translate-y-1'
-                }`}
-              >
-                <div className="aspect-[9/16] bg-slate-900 relative overflow-hidden">
-                  {video.thumbnailUrl ? (
-                    <img
-                      src={urlArquivo(video.thumbnailUrl)}
-                      alt={video.nomeOriginal}
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-text-muted text-xs gap-1">
-                      <svg className="w-6 h-6 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-[10px]">Sem preview</span>
-                    </div>
-                  )}
-
-                  {/* Finais do original: um mini-card por final (1 original → N
-                      finais, um por template). Mostra thumbnail, template usado,
-                      status e link pro vídeo final de CADA final. */}
-                  {(() => {
-                    const finalsDoOriginal = finais[video.id] || [];
-                    if (finalsDoOriginal.length === 0) return null;
-                    return (
-                      <div
-                        className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-end gap-1 p-1.5 bg-gradient-to-t from-slate-900/90 via-slate-900/45 to-transparent"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {finalsDoOriginal.map((f) => {
-                          const pronto = f.status === 'concluido';
-                          return (
-                            <div
-                              key={f.id}
-                              title={`${f.templateNome || 'Final'} — ${pronto ? 'pronto pra agendar' : f.status}`}
-                              className="flex items-center gap-1 rounded-lg bg-surface/95 border border-white/70 shadow-sm px-1 py-0.5"
-                            >
-                              {f.thumbnailFinal ? (
-                                <img
-                                  src={urlArquivo(f.thumbnailFinal)}
-                                  alt={f.templateNome || 'Final'}
-                                  className="w-4 h-6 rounded object-cover"
-                                />
-                              ) : (
-                                <span className="w-4 h-6 rounded bg-surface-hover border border-line flex items-center justify-center text-[7px] text-text-muted font-black">
-                                  FD
-                                </span>
-                              )}
-                              {pronto && f.urlFinal ? (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    abrirPreview(video, f.id);
-                                  }}
-                                  title={`Preview do final • ${f.templateNome || 'Final'}`}
-                                  className="text-[9px] font-extrabold text-rosa hover:text-rosa-hover hover:underline leading-none max-w-[72px] truncate cursor-pointer"
-                                >
-                                  {f.templateNome || 'Final'}
-                                </button>
-                              ) : (
-                                <span className="text-[9px] font-bold text-text-dim leading-none max-w-[72px] truncate">
-                                  {f.templateNome || 'Final'}
-                                </span>
-                              )}
-                              <StatusDot status={f.status} comRotulo={false} />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Platforms Icon Tag at Top-Left */}
-                  <div className="absolute top-2 left-2 flex items-center gap-1 bg-slate-900/80 backdrop-blur-md px-1.5 py-1 rounded-lg border border-white/20">
-                    {redesVideo.map((r) => (
-                      <RedeIcon key={r} rede={r} className="w-3.5 h-3.5" colored={true} />
-                    ))}
-                  </div>
-
-                  {/* Selection Overlay */}
-                  {selecionado && (
-                    <div className="absolute inset-0 bg-rosa/30 backdrop-blur-[2px] flex items-center justify-center">
-                      <div className="w-7 h-7 rounded-full bg-rosa text-white flex items-center justify-center text-xs font-black shadow-lg">
-                        <Check className="w-4 h-4 stroke-[3]" />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Duration Tag */}
-                  {video.duracaoSegundos != null && (
-                    <span className="absolute bottom-2 right-2 text-[10px] font-mono font-bold bg-slate-900/80 text-white backdrop-blur-md px-1.5 py-0.5 rounded border border-white/20">
-                      {video.duracaoSegundos}s
-                    </span>
-                  )}
-                </div>
-
-                <div className="p-2.5 flex items-center justify-between gap-2 border-t border-line bg-surface">
-                  <span className="text-[11px] font-semibold truncate text-text-dim group-hover:text-rosa transition-colors">
-                    {video.nomeOriginal}
-                  </span>
-                  <span className="flex items-center gap-1.5 shrink-0">
-                    {video.status === 'processando' && (
-                      <span className="text-[10px] font-mono font-bold text-rosa">{video.percentual || 0}%</span>
-                    )}
-                    {video.status === 'concluido' && (
-                      <span className="text-[10px] font-extrabold text-emerald-400" title="Pronto pra publicar">✓</span>
-                    )}
-                    <StatusDot status={video.status} comRotulo={false} />
-                  </span>
-                </div>
-
-                {/* Ações do card: Preview (modal interno) e Excluir */}
-                <div
-                  className="px-2 pb-2 flex items-center gap-1.5 bg-surface border-t border-line"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <button
-                    onClick={() => abrirPreview(video)}
-                    disabled={excluindoId === video.id}
-                    className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-rosa-dim text-rosa border border-rosa-borda hover:bg-rosa-borda hover:text-rosa-hover transition-colors disabled:opacity-50"
-                  >
-                    <Play className="w-3 h-3 fill-current shrink-0" />
-                    <span>Preview</span>
-                  </button>
-                  <button
-                    onClick={() => iniciarExclusao(video)}
-                    disabled={excluindoId === video.id}
-                    title="Excluir vídeo (removerá também os finais)"
-                    className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/15 hover:text-rose-300 transition-colors disabled:opacity-50"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                    <span>Excluir</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Modal de Preview — player de vídeo interno (sem abrir nova aba) */}
-      {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
-          onClick={fecharPreview}
-        >
-          <div
-            className="w-full max-w-md bg-slate-950 rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-white truncate">{preview.video.nomeOriginal}</p>
-                <p className="text-[11px] text-text-muted font-medium truncate">
-                  {preview.opcoes.find((o) => o.chave === preview.chave)?.label || 'Preview'}
-                </p>
-              </div>
-              <button
-                onClick={fecharPreview}
-                className="shrink-0 w-8 h-8 rounded-lg bg-surface/10 hover:bg-surface/20 text-slate-200 flex items-center justify-center transition-colors"
-                title="Fechar (Esc)"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {preview.opcoes.length > 1 && (
-              <div className="flex items-center gap-1.5 px-4 py-2 overflow-x-auto border-b border-white/10 bg-slate-900">
-                {preview.opcoes.map((opcao) => {
-                  const ativa = preview.chave === opcao.chave;
-                  return (
-                    <button
-                      key={opcao.chave}
-                      onClick={() => setPreview({ ...preview, chave: opcao.chave })}
-                      className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
-                        ativa
-                          ? 'bg-rosa text-white'
-                          : 'bg-surface/10 text-slate-300 hover:bg-surface/20'
-                      }`}
-                    >
-                      {opcao.tipo === 'original' ? (
-                        <Play className="w-3 h-3" />
-                      ) : (
-                        <Zap className="w-3 h-3 fill-current" />
-                      )}
-                      <span>{opcao.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="aspect-[9/16] bg-black flex items-center justify-center">
-              {preview.chave ? (
-                <video
-                  key={preview.chave}
-                  src={preview.opcoes.find((o) => o.chave === preview.chave)?.url}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <p className="text-xs text-text-muted font-medium px-4 text-center">
-                  Nenhuma versão disponível para preview.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Modal de confirmação de exclusão */}
-      {excluirAlvo &&
-        (() => {
-          const numeroFinais = (finais[excluirAlvo.id] || []).length;
-          const processandoAinda =
-            excluirAlvo.status === 'processando' || excluirAlvo.status === 'aguardando';
-          return (
-            <div
-              className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
-              onClick={cancelarExclusao}
-            >
-              <div
-                className="w-full max-w-sm bg-surface rounded-2xl border border-line shadow-2xl overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="px-5 pt-5 pb-4 border-b border-line flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-                    <Trash2 className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-display text-base font-bold text-text">Excluir vídeo</h3>
-                    <p className="text-xs text-text-muted font-medium mt-0.5 break-words">
-                      {excluirAlvo.nomeOriginal}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="px-5 py-4 space-y-3">
-                  <p className="text-sm font-semibold text-text">
-                    Tem certeza que deseja excluir este vídeo?
-                  </p>
-                  <p className="text-xs text-text-muted font-medium">
-                    {numeroFinais > 0
-                      ? `O registro da Biblioteca, ${numeroFinais} final(is) e todos os arquivos relacionados (vídeo, finais e thumbnails) serão removidos. Esta ação é irreversível.`
-                      : 'O registro da Biblioteca e os arquivos relacionados (vídeo e thumbnail) serão removidos. Esta ação é irreversível.'}
-                  </p>
-
-                  {processandoAinda && (
-                    <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold px-3 py-2.5 rounded-xl">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
-                      <span>
-                        Este vídeo ainda está em processamento. A exclusão será bloqueada até que o
-                        processamento termine (ou seja cancelado).
-                      </span>
-                    </div>
-                  )}
-
-                  {erroExclusao && (
-                    <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold px-3 py-2.5 rounded-xl">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-                      <span>{erroExclusao}</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="px-5 py-4 border-t border-line flex items-center justify-end gap-2 bg-surface-hover/60">
-                  <button
-                    onClick={cancelarExclusao}
-                    disabled={excluindoId !== null}
-                    className="text-xs font-bold text-text-dim hover:text-text px-4 py-2.5 rounded-xl hover:bg-surface-hover transition-colors disabled:opacity-50"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={confirmarExclusao}
-                    disabled={excluindoId !== null}
-                    className="flex items-center gap-2 text-xs bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl font-bold shadow-md shadow-rose-600/20 transition-all transform active:scale-95 disabled:opacity-50"
-                  >
-                    {excluindoId === excluirAlvo.id ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Excluindo...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Excluir
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-    </div>
-  );
-}
