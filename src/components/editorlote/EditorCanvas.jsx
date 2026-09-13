@@ -6,7 +6,7 @@ import { gerarArraste, gerarArrastarCorteSuperior, gerarArrastarCorteInferior } 
 /**
  * EDITOR EM LOTE — canvas de edição (EditorCanvas).
  *
- * CANVAS 9:16 (coluna direita) com:
+ * CANVAS 9:16 GRANDE, elemento PRINCIPAL do CENTRO da página, com:
  * - fundo da config compartilhada (vai para o template do servidor);
  * - ÁREA DO VÍDEO marcada, com o <video> REAL encaixado no fit escolhido
  *   (cobrir/ajustar — o mesmo do pipeline FFmpeg; apenas vídeos do pool, máx. 3);
@@ -39,39 +39,41 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
   // Mesmo encaixe do pipeline: 'cobrir' (cover) | 'ajustar' (contain).
   const encaixe = area.fit === 'ajustar' ? 'contain' : 'cover';
 
-  // Escalada do canvas: a div (canvasRef) é renderizada em px de tela com
-  // largura = CANVAS_LARGURA*escala e altura = alturaTela. As linhas/faixas
-  // de corte usam top/height em % — posicionamento independente da escala.
+  // Escalada do canvas 9:16: observa o CONTENEDOR da área central (contenedorRef)
+  // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
+  // (ancho e alto). As linhas/faixas de corte usam top/height em % — posicionamento
+  // independente da escala.
   const [escala, setEscala] = useState(1);
-  const [alturaTela, setAlturaTela] = useState(CANVAS_ALTURA);
+  const contenedorRef = useRef(null);
 
-  // Atualiza o dataset do canvas com os valores em px de canvas e escala atual,
+  // Mantém o dataset do canvas com os valores em px reais e a escala atual,
   // para que os handlers de arraste/corte leiam o valor correto (evita stale
-  // closure). Só atualiza quando a escala ou tamanho do canvas mudar.
+  // closure). Observa o CONTENEDOR (não o canvas) para que a escala sempre
+  // preserve a proporção 9:16 dentro do espaço central disponível.
   const aoAtualizarDataset = useCallback(() => {
     const el = canvasRef.current;
+    const cont = contenedorRef.current;
     if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const novaEscala = rect.width > 0 ? rect.width / CANVAS_LARGURA : 1;
-    const novaAltura = rect.height > 0 ? rect.height : CANVAS_ALTURA * novaEscala;
+    const cw = cont ? cont.clientWidth : 0;
+    const ch = cont ? cont.clientHeight : 0;
+    const novaEscala = cw > 0 && ch > 0 ? Math.min(cw / CANVAS_LARGURA, ch / CANVAS_ALTURA) : 1;
     setEscala(novaEscala);
-    setAlturaTela(novaAltura);
     el.dataset.canvasLargura = String(CANVAS_LARGURA);
     el.dataset.canvasAltura = String(CANVAS_ALTURA);
     el.dataset.escala = String(novaEscala);
-  }, [canvasRef]);
+  }, [canvasRef, contenedorRef]);
 
   useEffect(() => {
     aoAtualizarDataset();
-    const el = canvasRef.current;
-    if (!el) return;
+    const cont = contenedorRef.current;
+    if (!cont) return;
     const ro = new ResizeObserver(aoAtualizarDataset);
-    ro.observe(el);
+    ro.observe(cont);
     return () => ro.disconnect();
   }, [aoAtualizarDataset]);
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden py-4">
+    <div ref={contenedorRef} className="flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden px-2 pt-2 pb-1">
       {/* Ajuste rápido da área de vídeo (posicionamento configurável) */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 edl-superficie rounded-full px-3 py-1.5">
         <span className="text-[9px] font-bold" style={{ color: 'var(--edl-texto-dim)' }}>
@@ -100,8 +102,8 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
         ref={canvasRef}
         className="edl-canvas-branco relative overflow-hidden"
         style={{
-          width: CANVAS_LARGURA * escala,
-          height: alturaTela,
+          width: Math.round(CANVAS_LARGURA * escala),
+          height: Math.round(CANVAS_ALTURA * escala),
           borderRadius: 14,
           background: corFundo,
         }}

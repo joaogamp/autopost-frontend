@@ -19,13 +19,17 @@ import {
  *
  *   ESQUERDA  PainelDownloads  — importa vídeos LOCAIS (upload REAL no
  *                               servidor: POST /api/upload + ffprobe +
- *                               thumbnail + biblioteca)
- *   CENTRO    GradeVideos      — todos os vídeos do lote (quantidade
- *                               arbitrária; thumbnails reais + lazy loading +
- *                               janela progressiva)
- *   DIREITA   EditorCanvas + PainelEditor — canvas 9:16 + controles da
- *                               CONFIG COMPARTILHADA (vale pro lote inteiro,
- *                               sem botão "Aplicar a todos")
+ *                               thumbnail + biblioteca) + lista os importados
+ *
+ *   CENTRO    EditorCanvas (elemento PRINCIPAL) — canvas 9:16 GRANDE com
+ *                               vídeo + logo + texto + área do vídeo punteada
+ *                               + corte de bordas (prévia em tempo real) e,
+ *                               DEBAJO, a faixa/grade dos vídeos do lote
+ *                               (GradeVideos)
+ *
+ *   DIREITA   PainelEditor     — controles da CONFIG COMPARTILHADA (vale pro
+ *                               lote inteiro, sem botão "Aplicar a todos"):
+ *                               Logo · Texto · Área do vídeo · Corte de bordas
  *
  * "Processar vídeos" (REAL): salva a config compartilhada como TEMPLATE no
  * servidor (POST /api/templates, multipart com a logo) → enfileira os vídeos
@@ -356,13 +360,19 @@ export default function EditorLote() {
       />
 
       <div className="flex-1 min-h-0 flex">
-        {/* ESQUERDA — central de downloads */}
+        {/* ESQUERDA — vídeos importados */}
         <aside className="w-[280px] shrink-0 h-full min-h-0">
           <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
         </aside>
 
-        {/* CENTRO — todos os vídeos do lote */}
-        <section className="flex-1 min-w-0 h-full min-h-0">
+        {/* CENTRO — canvas 9:16 GRANDE (elemento principal) + faixa dos vídeos */}
+        <section className="flex-1 min-w-0 h-full min-h-0 flex flex-col">
+          <EditorCanvas
+            config={config}
+            aoAtualizarConfig={setConfig}
+            itemSelecionado={itemSelecionado}
+            urlVideoAtiva={urlVideoAtiva}
+          />
           <GradeVideos
             itens={itens}
             idSelecionado={idSelecionado}
@@ -372,19 +382,8 @@ export default function EditorLote() {
           />
         </section>
 
-        {/* DIREITA — editor: canvas fixo no topo + controles da config compartilhada */}
+        {/* DIREITA — painel de EDITOR/FERRAMENTAS */}
         <aside className="w-[340px] shrink-0 h-full min-h-0 overflow-y-auto border-l border-[color:var(--edl-borda)]">
-          <div
-            className="sticky top-0 z-10 border-b border-[color:var(--edl-borda)]"
-            style={{ background: 'var(--edl-fundo)' }}
-          >
-            <EditorCanvas
-              config={config}
-              aoAtualizarConfig={setConfig}
-              itemSelecionado={itemSelecionado}
-              urlVideoAtiva={urlVideoAtiva}
-            />
-          </div>
           <PainelEditor config={config} aoAtualizarConfig={setConfig} itemSelecionado={itemSelecionado} />
         </aside>
       </div>

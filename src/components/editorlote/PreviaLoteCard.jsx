@@ -38,7 +38,7 @@ function PreviaLoteCard({ item, indice, urlPreviewAtiva, selecionado, aoSelecion
     <button
       onClick={() => aoSelecionar(item)}
       onMouseEnter={() => aoFocar?.(item)}
-      className={`group relative rounded-xl overflow-hidden text-left edl-card-hover transition-all duration-150 border ${
+      className={`group w-full relative rounded-xl overflow-hidden text-left edl-card-hover transition-all duration-150 border ${
         selecionado ? 'border-transparent ring-2 ring-offset-2 ring-offset-[color:var(--edl-fundo)]' : 'border-[color:var(--edl-borda)]'
       }`}
       style={selecionado ? { '--tw-ring-color': 'var(--edl-rosa)' } : null}
