@@ -3,30 +3,41 @@ import { Film } from 'lucide-react';
 import PreviaLoteCard from './PreviaLoteCard';
 
 /**
- * EDITOR EM LOTE — faixa CENTRAL (sob o canvas): vídeos do lote em grade/strip
- * horizontal. O canvas 9:16 fica como elemento principal por cima.
+ * EDITOR EM LOTE — GRADE dos vídeos do lote (coluna ESQUERDA, sob os downloads).
+ *
+ * Modos 1X / 2X / 3X:
+ *   1X = 1 vídeo em destaque por linha; 2X = 2 vídeos diferentes por linha;
+ *   3X = 3 vídeos diferentes por linha. Scroll VERTICAL mostra os demais —
+ *   NUNCA é o mesmo vídeo repetido: cada célula é um vídeo do lote.
  *
  * Desempenho com qualquer quantidade de vídeos (sem limite fixo):
- * - cada card é leve (thumbnail + lazy loading via `loading="lazy"` /
- *   `decoding="async"` no <img>);
+ * - cada card é leve (thumbnail REAL + `loading="lazy"` + `decoding="async"`);
  * - IntersectionObserver com rootMargin carrega os cards de forma
- *   PROGRESSIVA (janela inicial de 60, +30 ao aproximar do fim), mantendo
- *   a tela rápida;
- * - NÃO monta 100 <video> — o <video> de preview no hover só existe se o
- *   item estiver ativo no pool (máx. 3 vídeos completos, usePoolDeVideos);
+ *   PROGRESSIVA (janela inicial de 60, +30 ao aproximar do fim da lista);
+ * - NÃO monta um <video> por card — o <video> de preview no hover só existe
+ *   nos slots do pool (máx. 3 vídeos completos, usePoolDeVideos);
  * - componente MEMOIZADO + cards memoizados: durante drags/sliders da config
- *   compartilhada a faixa NÃO re-renderiza (props estáveis) — mudar logo/
- *   texto não custa re-pintar os ~100 cards (o canvas central é quem mostra
- *   a prévia em tempo real).
+ *   compartilhada a grade NÃO re-renderiza (props estáveis).
+ *
+ * Ao clicar num vídeo da grade ele abre no Canvas principal (e a config segue
+ * compartilhada — mudar logo/texto/corte vale pro lote inteiro).
  */
 
 const JANELA = 60; // vídeos montados na janela inicial
-const PASSO = 30; // incrementa ao aproximar do fim
+const PASSO = 30; // incrementa ao aproximar do fim (lazy loading)
+
+const MODOS_GRADE = [
+  { colunas: 1, rotulo: '1X', titulo: '1 vídeo por linha' },
+  { colunas: 2, rotulo: '2X', titulo: '2 vídeos por linha' },
+  { colunas: 3, rotulo: '3X', titulo: '3 vídeos por linha' },
+];
 
 function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar }) {
   const containerRef = useRef(null);
   const sentinelaRef = useRef(null);
   const [limite, setLimite] = useState(JANELA);
+  // GRADE 1X/2X/3X — nº de vídeos DIFERENTES por linha (1 = destaque grande).
+  const [colunas, setColunas] = useState(1);
 
   // Recarrega progressivamente quando a sentinela aparece (lazy loading).
   useEffect(() => {
@@ -51,39 +62,57 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
   const temMais = itens.length > visiveis.length;
 
   return (
-    <div className="shrink-0 h-[228px] flex flex-col min-w-0 border-t border-[color:var(--edl-borda)] bg-[color:var(--edl-painel)]">
-      {/* Barra superior da faixa */}
-      <div className="shrink-0 px-4 py-1.5 border-b border-[color:var(--edl-borda)] flex items-center gap-2.5">
-        <Film className="w-3.5 h-3.5 edl-icone-b" />
+    <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-[color:var(--edl-painel)]">
+      {/* Barra da grade — modos 1X / 2X / 3X */}
+      <div className="shrink-0 px-3 py-1.5 border-t border-b border-[color:var(--edl-borda)] flex items-center gap-2">
+        <Film className="w-3.5 h-3.5 edl-icone-b shrink-0" />
         <h2 className="font-display text-xs font-extrabold text-white">Vídeos do lote</h2>
         <span
-          className="text-[9px] font-bold px-2 py-0.5 rounded-full"
+          className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
           style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--edl-roxo)' }}
         >
-          {itens.length} vídeo{itens.length === 1 ? '' : 's'}
+          {itens.length}
         </span>
         <div className="flex-1" />
-        <span className="text-[9px] font-semibold hidden md:block shrink-0 truncate max-w-[300px]" style={{ color: 'var(--edl-texto-mut)' }}>
-          Clique num vídeo pra editar • a configuração vale pro lote inteiro
-        </span>
+        <div className="flex items-center gap-0.5 edl-superficie rounded-lg p-0.5 shrink-0">
+          {MODOS_GRADE.map(({ colunas: n, rotulo, titulo }) => (
+            <button
+              key={n}
+              type="button"
+              title={titulo}
+              aria-pressed={colunas === n}
+              onClick={() => setColunas(n)}
+              className={`edl-ring-foco w-8 h-6 rounded-md text-[10px] font-black transition-colors ${
+                colunas === n ? 'text-white' : ''
+              }`}
+              style={colunas === n ? { background: 'var(--edl-grad)' } : { color: 'var(--edl-texto-mut)' }}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Faixa horizontal com scroll próprio */}
-      <div ref={containerRef} className="flex-1 overflow-x-auto overflow-y-hidden px-4 pt-0.5 pb-1 flex items-center gap-2.5">
+      {/* Grade VERTICAL com scroll — 1/2/3 vídeos DIFERENTES por linha */}
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-2">
         {itens.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="edl-superficie rounded-lg px-5 py-4 text-center max-w-sm">
-              <Film className="w-6 h-6 mx-auto edl-icone-a opacity-70" />
-              <h3 className="font-display text-xs font-extrabold text-white mt-2">Nenhum vídeo no lote</h3>
+          <div className="h-full flex items-center justify-center">
+            <div className="edl-superficie rounded-lg px-4 py-3 text-center max-w-[240px]">
+              <Film className="w-5 h-5 mx-auto edl-icone-a opacity-70" />
+              <h3 className="font-display text-xs font-extrabold text-white mt-1.5">Nenhum vídeo no lote</h3>
               <p className="text-[10px] font-medium mt-1" style={{ color: 'var(--edl-texto-dim)' }}>
-                Use a central de downloads à esquerda pra adicionar vídeos.
+                Adicione vídeos acima pra preencher a grade.
               </p>
             </div>
           </div>
         ) : (
-          visiveis.map((item, indice) => (
-            <div key={item.id} className="w-[84px] shrink-0">
+          <div
+            className="grid gap-2.5"
+            style={{ gridTemplateColumns: `repeat(${colunas}, minmax(0, 1fr))` }}
+          >
+            {visiveis.map((item, indice) => (
               <PreviaLoteCard
+                key={item.id}
                 item={item}
                 indice={indice}
                 urlPreviewAtiva={item.id === idSelecionado ? null : ativosNoPool?.[item.id] || null}
@@ -91,13 +120,13 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
                 aoSelecionar={aoSelecionar}
                 aoFocar={aoFocar}
               />
-            </div>
-          ))
+            ))}
+          </div>
         )}
 
         {/* Sentinela do carregamento progressivo (só com lote grande) */}
         {temMais && (
-          <div ref={sentinelaRef} className="shrink-0 h-8 flex items-center justify-center px-2">
+          <div ref={sentinelaRef} className="h-8 flex items-center justify-center px-2">
             <span className="text-[9px] font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
               carregando mais vídeos... ({visiveis.length}/{itens.length})
             </span>
@@ -109,5 +138,5 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
 }
 
 /* memo: a grade depende só de itens/seleção/pool — mudanças na config
-   compartilhada (drags, sliders) não re-renderizam os ~100 cards. */
+   compartilhada (drags, sliders) não re-renderizam os cards. */
 export default memo(GradeVideos);

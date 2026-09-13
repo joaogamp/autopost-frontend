@@ -168,7 +168,10 @@ export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, temp
   formData.append('canvasAltura', String(payload.canvasAltura));
   formData.append('areaVideo', JSON.stringify(payload.areaVideo));
   if (payload.logoPosicao) formData.append('logoPosicao', payload.logoPosicao);
-  if (payload.texto) formData.append('texto', JSON.stringify(payload.texto));
+  // Sempre envia AMBOS textos (superior + inferior) — incluso null — para que
+  // o servidor limpie valores obsoletos quando o usuário esvazia um bloco.
+  formData.append('texto', JSON.stringify(payload.texto || null));
+  formData.append('textoInferior', JSON.stringify(payload.textoInferior || null));
   if (payload.corteBordas) formData.append('corteBordas', JSON.stringify(payload.corteBordas));
   if (arquivoLogo) formData.append('logo', arquivoLogo);
 

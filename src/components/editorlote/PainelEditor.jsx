@@ -9,8 +9,18 @@ import {
   Trash2,
   Upload,
   RotateCcw,
+  Maximize2,
 } from 'lucide-react';
-import { CORES_FUNDO, criarConfigPadrao, CORTE_MAXIMO } from '../../lib/configEditorLote';
+import {
+  CORES_FUNDO,
+  criarConfigPadrao,
+  textoPadrao,
+  CORTE_MAXIMO,
+  FONTES_TEXTO,
+  PESOS_TEXTO,
+  ALINEACIONES_TEXTO,
+} from '../../lib/configEditorLote';
+import PopupLogo from './PopupLogo';
 
 /**
  * EDITOR EM LOTE — coluna DIREITA: painel do editor (PainelEditor).
@@ -89,31 +99,158 @@ function Alternar({ rotulo, ativo, aoMudar }) {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Controles de UM bloco de texto (superior OU inferior) — cada campo escreve  */
+/* SOMENTE na ruta `textos.<chave>` do bloco dado; o outro texto não é tocado. */
+/* -------------------------------------------------------------------------- */
+function TextoBloco({ chave, t, aoMudar }) {
+  const rotulo = chave === 'superior' ? 'Texto superior' : 'Texto inferior';
+  const pesoAtivo = t.peso || 'negrita';
+  const alinhamentoAtivo = t.alinhamento || 'centro';
+  return (
+    <>
+      <div>
+        <Rotulo>{rotulo} — conteúdo</Rotulo>
+        <textarea
+          value={t.conteudo || ''}
+          onChange={(e) => aoMudar('conteudo', e.target.value)}
+          rows={3}
+          placeholder={chave === 'superior' ? 'Ex.: o título que aparece em cima...' : 'Ex.: a legenda que aparece embaixo...'}
+          className="edl-input w-full text-[12px] font-medium px-2.5 py-2 resize-none leading-relaxed"
+        />
+      </div>
+
+      <div>
+        <Rotulo>Fonte</Rotulo>
+        <select
+          value={t.fonte || 'Arial'}
+          onChange={(e) => aoMudar('fonte', e.target.value)}
+          className="edl-input w-full text-[11px] font-bold px-2.5 py-2"
+        >
+          {FONTES_TEXTO.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.rotulo}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <Rotulo>Peso</Rotulo>
+        <div className="grid grid-cols-3 gap-1.5">
+          {PESOS_TEXTO.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => aoMudar('peso', p.id)}
+              className={`edl-ring-foco h-7 rounded-lg text-[10px] font-extrabold transition-colors ${
+                pesoAtivo === p.id ? 'edl-botao-grad' : 'edl-superficie'
+              }`}
+              style={pesoAtivo === p.id ? undefined : { color: 'var(--edl-texto-dim)' }}
+            >
+              {p.rotulo}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <Rotulo>Alinhamento</Rotulo>
+        <div className="grid grid-cols-3 gap-1.5">
+          {ALINEACIONES_TEXTO.map((a) => {
+            const rotuloAl = a.id === 'esquerda' ? 'Esquerda' : a.id === 'direita' ? 'Direita' : 'Centro';
+            return (
+              <button
+                key={a.id}
+                type="button"
+                title={a.rotulo}
+                onClick={() => aoMudar('alinhamento', a.id)}
+                className={`edl-ring-foco h-7 rounded-lg text-[10px] font-extrabold transition-colors ${
+                  alinhamentoAtivo === a.id ? 'edl-botao-grad' : 'edl-superficie'
+                }`}
+                style={alinhamentoAtivo === a.id ? undefined : { color: 'var(--edl-texto-dim)' }}
+              >
+                {rotuloAl}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Deslizador rotulo="Tamanho da fonte" sufixo="px" valor={t.tamanho ?? 72} min={16} max={160} aoMudar={(v) => aoMudar('tamanho', v)} />
+
+      <div>
+        <Rotulo>Cor</Rotulo>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={t.cor || '#0f172a'}
+            onChange={(e) => aoMudar('cor', e.target.value)}
+            className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border border-[color:var(--edl-borda)] p-0.5"
+          />
+          <input
+            type="text"
+            value={t.cor || '#0f172a'}
+            spellCheck={false}
+            onChange={(e) => {
+              if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) aoMudar('cor', e.target.value);
+            }}
+            className="edl-input flex-1 text-[11px] font-mono px-2.5 py-2 uppercase"
+          />
+        </div>
+      </div>
+
+      <Deslizador rotulo="Posição X" sufixo="%" valor={Math.round(t.x ?? 50)} min={0} max={100} aoMudar={(v) => aoMudar('x', v)} />
+      <Deslizador rotulo="Posição Y" sufixo="%" valor={Math.round(t.y ?? 12)} min={0} max={100} aoMudar={(v) => aoMudar('y', v)} />
+      <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 80)} min={20} max={100} aoMudar={(v) => aoMudar('largura', v)} />
+      <Deslizador rotulo="Altura do bloco" sufixo="px" valor={Math.round(t.altura ?? 240)} min={60} max={1200} aoMudar={(v) => aoMudar('altura', v)} />
+      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+      <Alternar rotulo={`${rotulo} visível no lote`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+
+      <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+        Este {rotulo.toLowerCase()} é INDEPENDENTE do outro: posição, tamanho e estilo próprios — mexer num não muda o outro.
+      </p>
+    </>
+  );
+}
+
 export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado }) {
   const [aba, setAba] = useState('logo');
+  // Qual dos DOIS textos está aberto no painel (superior | inferior).
+  const [textoAtivo, setTextoAtivo] = useState('superior');
+  // Popup GRANDE da logo (preview grande, fundo branco, drag/resize).
+  const [popupLogoAberta, setPopupLogoAberta] = useState(false);
 
   const aoMudarLogo = (campo, valor) =>
     aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, [campo]: valor } }));
-  const aoMudarTexto = (campo, valor) =>
-    aoAtualizarConfig((cfg) => ({ ...cfg, texto: { ...cfg.texto, [campo]: valor } }));
+  // DOIS textos independentes: `chave` é 'superior' ou 'inferior' — cada um
+  // tem conteúdo/posição/tamanho/estilo PRÓPRIOS (mexer num não muda o outro).
+  const aoMudarTexto = (chave, campo, valor) =>
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      textos: {
+        ...(cfg.textos || { superior: textoPadrao(), inferior: textoPadrao() }),
+        [chave]: { ...(cfg.textos?.[chave] || textoPadrao()), [campo]: valor },
+      },
+    }));
   const aoMudarCanvas = (campo, valor) =>
     aoAtualizarConfig((cfg) => ({ ...cfg, canvas: { ...cfg.canvas, [campo]: valor } }));
   const aoMudarArea = (campo, valor) =>
     aoAtualizarConfig((cfg) => ({ ...cfg, areaVideo: { ...cfg.areaVideo, [campo]: valor } }));
-  // Corte de bordas (config compartilhada `corteBordas`). Mantém a MESMA trava
-  // do servidor: superior + inferior ≤ CORTE_MAXIMO.
+  // Corte de bordas (config compartilhada `corteBordas`). SUPERIOR e INFERIOR
+  // são TOTALMENTE independentes: mudar um NUNCA altera o outro — cada um
+  // varia de 0 a CORTE_MAXIMO por si só (só o encode final do servidor resolve
+  // uma sobreposição extrema, sem nunca reescrever o valor do outro campo).
   const aoMudarCorte = (campo, valor) =>
     aoAtualizarConfig((cfg) => {
-      const corteAtual = cfg.corteBordas || {};
-      const proximo = { ...corteAtual, [campo]: valor };
-      if (campo === 'superior') {
-        const inf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corteAtual.inferior) || 0));
-        proximo.superior = Math.min(CORTE_MAXIMO - inf, Math.max(0, valor));
-      } else if (campo === 'inferior') {
-        const sup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corteAtual.superior) || 0));
-        proximo.inferior = Math.min(CORTE_MAXIMO - sup, Math.max(0, valor));
-      }
-      return { ...cfg, corteBordas: proximo };
+      const ePercentual = campo === 'superior' || campo === 'inferior';
+      return {
+        ...cfg,
+        corteBordas: {
+          ...cfg.corteBordas,
+          [campo]: ePercentual ? Math.min(CORTE_MAXIMO, Math.max(0, Number(valor) || 0)) : valor,
+        },
+      };
     });
 
   function aoEscolherLogo(e) {
@@ -258,6 +395,17 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
             </label>
           )}
           <input id="edl-input-logo" type="file" accept="image/*" className="hidden" onChange={aoEscolherLogo} />
+
+          {/* Popup GRANDE da logo (preview grande, fundo branco, drag+resize) */}
+          <button
+            type="button"
+            onClick={() => setPopupLogoAberta(true)}
+            className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold py-2.5 rounded-lg"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            Abrir editor grande da logo
+          </button>
+
           {config.logo.url && (
             <label
               htmlFor="edl-input-logo"
@@ -275,52 +423,36 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           <Alternar rotulo="Logo visível no lote" ativo={!!config.logo.visivel} aoMudar={(v) => aoMudarLogo('visivel', v)} />
         </div>
       )}
-      {/* ABA TEXTO */}
+      {/* ABA TEXTO — DOIS textos independentes (superior e inferior) */}
       {aba === 'texto' && (
         <div className="px-4 py-3.5 space-y-3.5">
-          <div>
-            <Rotulo>Texto do lote</Rotulo>
-            <textarea
-              value={config.texto.conteudo}
-              onChange={(e) => aoMudarTexto('conteudo', e.target.value)}
-              rows={3}
-              placeholder="Escreve o texto que vai em todos os vídeos..."
-              className="edl-input w-full text-[12px] font-medium px-2.5 py-2 resize-none leading-relaxed"
-            />
+          {/* Sub-abas: escolhe qual dos dois textos editar (independentes) */}
+          <div className="grid grid-cols-2 gap-1.5">
+            {['superior', 'inferior'].map((chave) => {
+              const t = config.textos?.[chave] || textoPadrao();
+              const subAtiva = textoAtivo === chave;
+              return (
+                <button
+                  key={chave}
+                  type="button"
+                  onClick={() => setTextoAtivo(chave)}
+                  className={`edl-ring-foco h-8 rounded-lg flex items-center justify-center gap-1.5 text-[10px] font-extrabold transition-colors ${
+                    subAtiva ? 'edl-botao-grad' : 'edl-superficie'
+                  }`}
+                  style={subAtiva ? undefined : { color: 'var(--edl-texto-dim)' }}
+                >
+                  {t.visivel ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3 opacity-60" />}
+                  {chave === 'superior' ? 'Superior' : 'Inferior'}
+                </button>
+              );
+            })}
           </div>
 
-          <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-            No vídeo final as linhas ficam centralizadas (fonte bold do sistema), igual à prévia.
-          </p>
-
-          <Deslizador rotulo="Tamanho" sufixo="px" valor={config.texto.tamanho} min={16} max={160} aoMudar={(v) => aoMudarTexto('tamanho', v)} />
-
-          <div>
-            <Rotulo>Cor</Rotulo>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={config.texto.cor}
-                onChange={(e) => aoMudarTexto('cor', e.target.value)}
-                className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border border-[color:var(--edl-borda)] p-0.5"
-              />
-              <input
-                type="text"
-                value={config.texto.cor}
-                spellCheck={false}
-                onChange={(e) => {
-                  if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) aoMudarTexto('cor', e.target.value);
-                }}
-                className="edl-input flex-1 text-[11px] font-mono px-2.5 py-2 uppercase"
-              />
-            </div>
-          </div>
-
-          <Deslizador rotulo="Posição X" sufixo="%" valor={Math.round(config.texto.x)} min={0} max={100} aoMudar={(v) => aoMudarTexto('x', v)} />
-          <Deslizador rotulo="Posição Y" sufixo="%" valor={Math.round(config.texto.y)} min={0} max={100} aoMudar={(v) => aoMudarTexto('y', v)} />
-          <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(config.texto.largura)} min={20} max={100} aoMudar={(v) => aoMudarTexto('largura', v)} />
-          <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(config.texto.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarTexto('opacidade', v)} />
-          <Alternar rotulo="Texto visível no lote" ativo={!!config.texto.visivel} aoMudar={(v) => aoMudarTexto('visivel', v)} />
+          <TextoBloco
+            chave={textoAtivo}
+            t={config.textos?.[textoAtivo] || textoPadrao()}
+            aoMudar={(campo, valor) => aoMudarTexto(textoAtivo, campo, valor)}
+          />
         </div>
       )}
 
@@ -435,6 +567,16 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
             Restaurar padrão (mantém a logo)
           </button>
         </div>
+      )}
+
+      {/* Popup GRANDE da logo — abre por cima de tudo; toda mudança é na config
+          COMPARTILHADA (canvas de trás e todo o lote atualizam em tempo real). */}
+      {popupLogoAberta && (
+        <PopupLogo
+          config={config}
+          aoAtualizarConfig={aoAtualizarConfig}
+          aoCerrar={() => setPopupLogoAberta(false)}
+        />
       )}
     </div>
   );

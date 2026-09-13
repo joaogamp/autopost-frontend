@@ -10,8 +10,17 @@ import { BASE_URL } from './api';
 export const NOME_TEMPLATE_LOTE = 'Editor em Lote · config compartilhada';
 
 export function configParaTemplatePayload(config) {
-  const { canvas, areaVideo, logo, texto, corteBordas } = config;
+  const { canvas, areaVideo, logo, corteBordas } = config;
+  // Compatibilidade: `textos` (novo, dois blocos) com fallback a `texto`
+  // (legado de configs salvas antes da división superior/inferior).
+  const textos = config.textos && (config.textos.superior || config.textos.inferior)
+    ? config.textos
+    : { superior: config.texto || {}, inferior: {} };
 
+  // Corte de bordas: superior e inferior son INDEPENDENTES (0..90 cada uno).
+  // Sólo por seguridad del render (un crop no puede superar el 100% total) el
+  // template limita inferior a (90 − superior) — los valores del editor se
+  // mantienen siempre tal cual el usuario los dejó.
   const sup = Math.min(90, Math.max(0, Number(corteBordas?.superior) || 0));
   const inf = Math.min(90 - sup, Math.max(0, Number(corteBordas?.inferior) || 0));
 
@@ -34,31 +43,35 @@ export function configParaTemplatePayload(config) {
     };
   }
 
-  let textoArea = null;
-  if (texto.visivel && texto.conteudo.trim() !== '') {
-    const larguraPx = Math.max(1, Math.round((texto.largura / 100) * canvas.largura));
-    textoArea = {
-      // Novo fluxo: o CONTENIDO viaja dentro do template (`texto.contenido`),
-      // junto com fonte/peso/alinheamento. Não se usa tituloIA aqui.
-      contenido: texto.conteudo,
-      fonte: texto.fonte,
-      peso: texto.peso,
-      alinhamento: texto.alinhamento,
+  // Mapea UN bloque de texto (superior o inferior) al shape `texto` do
+  // template: contenido, tipo, posición/tamaño, fuente, peso, alineación,
+  // cor y opacidad — todo en px del canvas (idéntico a la prévia).
+  const mapearTexto = (t) => {
+    if (!t || !t.visivel || String(t.conteudo || '').trim() === '') return null;
+    const larguraPx = Math.max(1, Math.round((t.largura / 100) * canvas.largura));
+    return {
+      contenido: t.conteudo,
+      fonte: t.fonte,
+      peso: t.peso,
+      alinhamento: t.alinhamento,
       // Área centrada no x% e com o TOPO em y% (alinhamentoVertical 'topo' —
-      // igual à prévia). A altura comporta ~2 linhas antes do pipeline reduzir
-      // a fonte automaticamente (comportamento real do renderizador).
-      x: Math.round((texto.x / 100) * canvas.largura - larguraPx / 2),
-      y: Math.round((texto.y / 100) * canvas.altura),
+      // igual à prévia). A altura comporta varias linhas antes de que el
+      // pipeline reduzca la fonte automáticamente.
+      x: Math.round((t.x / 100) * canvas.largura - larguraPx / 2),
+      y: Math.round((t.y / 100) * canvas.altura),
       largura: larguraPx,
-      altura: Math.max(40, Math.round(texto.altura || 240)),
-      tamanhoFonte: Math.round(texto.tamanho),
-      cor: texto.cor,
+      altura: Math.max(40, Math.round(t.altura || 240)),
+      tamanhoFonte: Math.round(t.tamanho),
+      cor: t.cor,
       alinhamentoVertical: 'topo',
-      ...(Number(texto.opacidade) > 0 && Number(texto.opacidade) < 100
-        ? { opacidade: Math.round(texto.opacidade) }
+      ...(Number(t.opacidade) > 0 && Number(t.opacidade) < 100
+        ? { opacidade: Math.round(t.opacidade) }
         : {}),
     };
-  }
+  };
+
+  const texto = mapearTexto(textos.superior);
+  const textoInferior = mapearTexto(textos.inferior);
 
   return {
     nome: NOME_TEMPLATE_LOTE,
@@ -83,7 +96,10 @@ export function configParaTemplatePayload(config) {
     },
     // null → o campo NÃO é enviado e o servidor limpa a logo do template.
     logoPosicao: logoPosicao ? JSON.stringify(logoPosicao) : null,
-    texto: textoArea,
+    // Texto superior (`texto`) + texto inferior (`textoInferior`) — el
+    // servidor (POST /api/templates) já aceita ambos; null limpiá el campo.
+    texto,
+    textoInferior,
   };
 }
 
@@ -98,18 +114,29 @@ export function assinarConfig(config) {
  * memoizados NÃO re-renderizan (performance com muitos vídeos).
  */
 export function firmaComposicion(config) {
-  const { canvas, areaVideo, logo, texto, corteBordas } = config;
+  const { canvas, areaVideo, logo, corteBordas } = config;
+  // Compatibilidade com configs legadas (antes de `textos` superior/inferior).
+  const textos = config.textos && (config.textos.superior || config.textos.inferior)
+    ? config.textos
+    : { superior: config.texto || {}, inferior: {} };
+  const assinarTexto = (t) =>
+    t
+      ? [
+          t.visivel ? 1 : 0, t.conteudo, t.fonte, t.peso, t.alinhamento,
+          Math.round(t.tamanho), Math.round(t.x), Math.round(t.y),
+          Math.round(t.largura), Math.round(t.altura), Math.round(t.opacidade || 100), t.cor,
+        ].join('|')
+      : 'n';
   return [
-    'c1',
+    'c2',
     canvas.corFundo,
     areaVideo.x, areaVideo.y, areaVideo.largura, areaVideo.altura, areaVideo.fit, areaVideo.mostrarMarcacao,
     corteBordas?.ativo ? 1 : 0, Math.round(corteBordas?.superior || 0), Math.round(corteBordas?.inferior || 0),
     logo.visivel ? 1 : 0, Math.round(logo.x), Math.round(logo.y), Math.round(logo.largura),
     Math.round(logo.opacidade || 100), logo.url ? 't' : 'f',
     Math.round(Number(logo.alturaProporcao || 0) * 1000),
-    texto.visivel ? 1 : 0, texto.conteudo, texto.fonte, texto.peso, texto.alinhamento,
-    Math.round(texto.tamanho), Math.round(texto.x), Math.round(texto.y),
-    Math.round(texto.largura), Math.round(texto.altura), Math.round(texto.opacidade || 100), texto.cor,
+    'sup:' + assinarTexto(textos.superior),
+    'inf:' + assinarTexto(textos.inferior),
   ].join('|');
 }
 

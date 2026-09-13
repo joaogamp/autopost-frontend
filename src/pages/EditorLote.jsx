@@ -19,17 +19,22 @@ import {
  *
  *   ESQUERDA  PainelDownloads  — importa vídeos LOCAIS (upload REAL no
  *                               servidor: POST /api/upload + ffprobe +
- *                               thumbnail + biblioteca) + lista os importados
+ *                               thumbnail + biblioteca) + GRADE dos vídeos do
+ *                               lote (GradeVideos, modos 1X/2X/3X, scroll
+ *                               vertical; clicar num vídeo abre no Canvas)
  *
  *   CENTRO    EditorCanvas (elemento PRINCIPAL) — canvas 9:16 GRANDE com
- *                               vídeo + logo + texto + área do vídeo punteada
- *                               + corte de bordas (prévia em tempo real) e,
- *                               DEBAJO, a faixa/grade dos vídeos do lote
- *                               (GradeVideos)
+ *                               vídeo REAL (play/pausa/áudio/volume/progresso)
+ *                               + logo + DOIS textos (superior/inferior) +
+ *                               área do vídeo arrastável/redimensionável +
+ *                               corte de bordas (linhas pontilhadas
+ *                               superiores/inferiores INDEPENDENTES,
+ *                               arrastáveis) — prévia em tempo real
  *
  *   DIREITA   PainelEditor     — controles da CONFIG COMPARTILHADA (vale pro
  *                               lote inteiro, sem botão "Aplicar a todos"):
- *                               Logo · Texto · Área do vídeo · Corte de bordas
+ *                               Logo (popup grande) · Texto superior/inferior ·
+ *                               Área do vídeo · Corte de bordas
  *
  * "Processar vídeos" (REAL): salva a config compartilhada como TEMPLATE no
  * servidor (POST /api/templates, multipart com a logo) → enfileira os vídeos
@@ -57,7 +62,12 @@ function mesclarConfig(salva) {
     canvas: { ...base.canvas, ...salva.canvas },
     areaVideo: { ...base.areaVideo, ...salva.areaVideo },
     logo: { ...base.logo, ...salva.logo },
-    texto: { ...base.texto, ...salva.texto },
+    // DOIS textos independentes: `textos.superior` + `textos.inferior`.
+    // Configs antigas tinham um único `texto` — migra pra superior.
+    textos: {
+      superior: { ...base.textos.superior, ...(salva.textos?.superior || salva.texto || {}) },
+      inferior: { ...base.textos.inferior, ...(salva.textos?.inferior || {}) },
+    },
     corteBordas: { ...base.corteBordas, ...(salva.corteBordas || corte) },
   };
 }
@@ -317,11 +327,15 @@ export default function EditorLote() {
       const { templateId } = await garantirTemplate();
 
       // 2) Enfileira na fila REAL (Supabase) — a Oracle e o worker local
-      //    consomem com reserva atômica. O texto do lote vai como tituloIA.
+      //    consomem com reserva atômica. O texto SUPERIOR do lote vai como
+      //    tituloIA (DOIS textos: superior + inferior, independentes).
+      const textoSup = config.textos?.superior || config.texto;
       const videos = enfileiraveis.map((it) => ({
         bibliotecaId: it.bibliotecaId,
         tituloIA:
-          config.texto.visivel && config.texto.conteudo.trim() !== '' ? config.texto.conteudo.trim() : '',
+          textoSup.visivel && String(textoSup.conteudo || '').trim() !== ''
+            ? String(textoSup.conteudo).trim()
+            : '',
       }));
       const resposta = await processarLote(templateId, videos);
       const ids = resposta.ids || [];
@@ -360,25 +374,27 @@ export default function EditorLote() {
       />
 
       <div className="flex-1 min-h-0 flex">
-        {/* ESQUERDA — vídeos importados */}
-        <aside className="w-[280px] shrink-0 h-full min-h-0">
-          <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
-        </aside>
-
-        {/* CENTRO — canvas 9:16 GRANDE (elemento principal) + faixa dos vídeos */}
-        <section className="flex-1 min-w-0 h-full min-h-0 flex flex-col">
-          <EditorCanvas
-            config={config}
-            aoAtualizarConfig={setConfig}
-            itemSelecionado={itemSelecionado}
-            urlVideoAtiva={urlVideoAtiva}
-          />
+        {/* ESQUERDA — vídeos importados (downloads) + GRADE 1X/2X/3X do lote */}
+        <aside className="w-[320px] shrink-0 h-full min-h-0 flex flex-col">
+          <div className="shrink-0 h-[42%] min-h-0 flex flex-col">
+            <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
+          </div>
           <GradeVideos
             itens={itens}
             idSelecionado={idSelecionado}
             ativosNoPool={pool.ativos}
             aoSelecionar={aoSelecionar}
             aoFocar={aoFocar}
+          />
+        </aside>
+
+        {/* CENTRO — Canvas 9:16 GRANDE (elemento principal, sem faixa abaixo) */}
+        <section className="flex-1 min-w-0 h-full min-h-0 flex">
+          <EditorCanvas
+            config={config}
+            aoAtualizarConfig={setConfig}
+            itemSelecionado={itemSelecionado}
+            urlVideoAtiva={urlVideoAtiva}
           />
         </section>
 

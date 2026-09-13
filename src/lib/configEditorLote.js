@@ -4,7 +4,8 @@
  * Um ÚNICO objeto de configuração para TODO o lote. NÃO existe configuração
  * por vídeo: qualquer alteração no painel ou no canvas atualiza automaticamente
  * todos os previews (sem botão "Aplicar a todos", sem detecção automática de
- * logo). O texto do lote vai para a fila como `tituloIA` (igual pra todos).
+ * logo). Os textos superior/inferior viajan DENTRO do template (`texto` e
+ * `textoInferior`) — `tituloIA` só como fallback de templates antigos.
  *
  * Coordenadas: % do canvas para logo/texto; pixels do canvas (1080×1920) para
  * a área de vídeo. Ao processar, `mapearEditorLote.js` converte a config para
@@ -57,8 +58,28 @@ export const ALINEACIONES_TEXTO = [
   { id: 'direita', rotulo: 'Derecha' },
 ];
 
-/** Límites suaves do corte de bordas (%). */
+/** Límites suaves do corte de bordas (%). Cada borde é INDEPENDENTE. */
 export const CORTE_MAXIMO = 90;
+
+/** Bloque de texto padrão (usado para superior E inferior — independientes). */
+export function textoPadrao() {
+  return {
+    // Cada un de los DOS textos tiene contenido/posición/tipografía propias:
+    // mover o redimensionar uno NUNCA altera el otro.
+    conteudo: '',
+    fonte: 'Arial',
+    peso: 'negrita',
+    alinhamento: 'centro', // esquerda | centro | direita
+    tamanho: 72, // px do canvas (tamanhoFonte no template)
+    cor: '#0f172a',
+    x: 50, // % do canvas (centro do bloco)
+    y: 12, // % do canvas (topo do bloco)
+    largura: 80, // % da largura do canvas
+    altura: 240, // px do canvas (área de texto do template)
+    opacidade: 100,
+    visivel: true,
+  };
+}
 
 export function criarConfigPadrao() {
   return {
@@ -80,7 +101,9 @@ export function criarConfigPadrao() {
     // CORTE DE BORDAS: corte ESPACIAL superior/inferior do vídeo ORIGINAL
     // (percentuais da altura). Compartilhado por todo o lote; entra no mesmo
     // filtergraph do FFmpeg (single-pass — nada de MP4 intermediário).
-    // Padrão: desactivado, 0% + 0%. Nome UNIFICADO `corteBordas` (front/back).
+    // Superior e inferior son TOTALMENTE INDEPENDENTES (solo superior, solo
+    // inferior o ambos con valores distintos — cambiar uno no altera el otro).
+    // Padrón: desactivado, 0% + 0%. Nome UNIFICADO `corteBordas` (front/back).
     corteBordas: {
       ativo: false,
       superior: 0,
@@ -101,23 +124,16 @@ export function criarConfigPadrao() {
       opacidade: 100,
       visivel: true,
     },
-    // Texto: FIXO para todo o lote (config compartilhada; viaja DENTRO do
-    // template como `texto.contenido` — NÃO se usa tituloIA neste fluxo). O
-    // processamento quebra em linhas, alinea horizontalmente e usa a fonte/
-    // peso escolhidos — a prévia espelha tudo em tempo real.
-    texto: {
-      conteudo: '',
-      fonte: 'Arial',
-      peso: 'negrita',
-      alinhamento: 'centro',
-      tamanho: 72, // px do canvas (tamanhoFonte no template)
-      cor: '#0f172a',
-      x: 50, // % do canvas (centro do bloco)
-      y: 88, // % do canvas (topo do bloco)
-      largura: 80, // % da largura do canvas
-      altura: 240, // px do canvas (área de texto do template)
-      opacidade: 100,
-      visivel: true,
+    // Texto: DOS textos INDEPENDENTES (superior e inferior), cada uno con su
+    // contenido, posición, tamaño, largura/altura, fonte, peso, cor,
+    // alineación, opacidad y visibilidade propias. Fijos para todo el lote
+    // (config compartida; viajan DENTRO del template como `texto.contenido`
+    // e `textoInferior.contenido` — NÃO se usa tituloIA neste fluxo). El
+    // procesamiento quiebra líneas, alinea horizontalmente e usa la fonte/
+    // peso elegidos — la prévia lo refleja tudo em tempo real.
+    textos: {
+      superior: textoPadrao(),
+      inferior: textoPadrao(),
     },
   };
 }
