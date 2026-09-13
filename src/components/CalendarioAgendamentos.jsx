@@ -29,24 +29,24 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
   for (let dia = 1; dia <= totalDias; dia++) celulas.push(dia);
 
   return (
-    <div className="glass-panel rounded-2xl p-5 border border-slate-200 shadow-sm bg-white">
+    <div className="glass-panel rounded-2xl p-5 border border-line shadow-sm bg-surface">
       {/* Month Navigation */}
       <div className="flex items-center justify-between mb-5">
         <button
           onClick={() => onMudarMes(-1)}
-          className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:border-slate-300 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors shadow-xs"
+          className="w-8 h-8 rounded-lg bg-surface border border-line hover:border-line-light flex items-center justify-center text-text-dim hover:text-text transition-colors shadow-xs"
           title="Mês anterior"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
 
-        <p className="font-display text-base font-bold text-slate-900 tracking-wide">
-          {NOMES_MES[mes]} <span className="text-indigo-600 font-mono text-sm ml-1 font-extrabold">{ano}</span>
+        <p className="font-display text-base font-bold text-text tracking-wide">
+          {NOMES_MES[mes]} <span className="text-rosa font-mono text-sm ml-1 font-extrabold">{ano}</span>
         </p>
 
         <button
           onClick={() => onMudarMes(1)}
-          className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:border-slate-300 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors shadow-xs"
+          className="w-8 h-8 rounded-lg bg-surface border border-line hover:border-line-light flex items-center justify-center text-text-dim hover:text-text transition-colors shadow-xs"
           title="Próximo mês"
         >
           <ChevronRight className="w-4 h-4" />
@@ -56,7 +56,7 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
       {/* Days of Week Header */}
       <div className="grid grid-cols-7 gap-1 mb-2">
         {DIAS_SEMANA.map((d) => (
-          <div key={d} className="text-center text-[10px] uppercase font-mono font-bold text-slate-400 py-1">
+          <div key={d} className="text-center text-[10px] uppercase font-mono font-bold text-text-muted py-1">
             {d}
           </div>
         ))}
@@ -81,19 +81,19 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
               onClick={() => onSelecionarDia(ehSelecionado ? null : chave)}
               className={`aspect-square rounded-xl p-1 flex flex-col items-center justify-between border transition-all duration-200 relative group ${
                 ehSelecionado
-                  ? 'border-indigo-600 bg-indigo-50/60 shadow-xs ring-1 ring-indigo-600/30'
+                  ? 'border-rosa bg-rosa-dim/60 shadow-xs ring-1 ring-rosa/30'
                   : ehHoje
-                  ? 'border-indigo-300 bg-slate-50'
-                  : 'border-slate-100 hover:border-slate-300 hover:bg-slate-50'
+                  ? 'border-rosa-borda bg-surface-hover'
+                  : 'border-line hover:border-line-light hover:bg-surface-hover'
               }`}
             >
               <span
                 className={`text-xs font-bold ${
                   ehSelecionado
-                    ? 'text-indigo-700'
+                    ? 'text-rosa-hover'
                     : ehHoje
-                    ? 'text-indigo-600 font-extrabold'
-                    : 'text-slate-600 group-hover:text-slate-900'
+                    ? 'text-rosa font-extrabold'
+                    : 'text-text-dim group-hover:text-text'
                 }`}
               >
                 {dia}
