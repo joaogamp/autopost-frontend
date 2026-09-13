@@ -10,9 +10,9 @@ import { enviarVideos, urlArquivo } from '../../lib/api';
  * thumbnail e registra o vídeo na BIBLIOTECA (mesmo caminho da Biblioteca).
  * NÃO existe importação por URL aqui.
  *
- * Esta coluna fica com SOMENTE o formulário de importação — a lista ÚNICA
- * de vídeos importados fica na GradeVideos logo abaixo (clicar num vídeo
- * dela abre o vídeo no preview central; nada de lista duplicada).
+ * Esta coluna fica com SOMENTE o formulário de importação — a LISTA ÚNICA
+ * de vídeos importados aparece logo abaixo (ListaVideos) e os MESMOS vídeos
+ * aparecen no espaço CENTRAL; nada de lista duplicada.
  */
 
 /** Deriva a URL pública do vídeo enviado (mesma regra do servidor: /uploads/{id}{ext}). */
@@ -41,8 +41,8 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
         setErro('Upload concluído, mas o servidor não retornou nenhum vídeo.');
         return;
       }
-      // Cada vídeo entra na LISTA ÚNICA (GradeVideos, logo abaixo) — sem
-      // lista duplicada: clicar nela abre o vídeo no preview central.
+      // Cada vídeo entra na LISTA ÚNICA (ListaVideos) e no espaço CENTRAL —
+      // sem lista duplicada: clicar num vídeo abre o vídeo no editor.
       videosEnviados.forEach((v) =>
         aoAdicionarVideo({
           id: v.id,

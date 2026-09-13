@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderEditor from '../components/editorlote/HeaderEditor';
 import PainelDownloads from '../components/editorlote/PainelDownloads';
 import ListaVideos from '../components/editorlote/ListaVideos';
-import GradeVideos from '../components/editorlote/GradeVideos';
-import EditorCanvas from '../components/editorlote/EditorCanvas';
+import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
 import { criarConfigPadrao, criarIdentidadePadrao } from '../lib/configEditorLote';
@@ -18,19 +17,19 @@ import {
 /**
  * EDITOR EM LOTE — página (header + 3 colunas), conectada ao FLUXO REAL:
  *
- *   ESQUERDA  PainelDownloads  — importa vídeos LOCAIS (upload REAL no
- *                               servidor: POST /api/upload + ffprobe +
- *                               thumbnail + biblioteca) + GRADE dos vídeos do
- *                               lote (GradeVideos, modos 1X/2X/3X, scroll
- *                               vertical; clicar num vídeo abre no Canvas)
+ *   ESQUERDA  PainelDownloads + ListaVideos — importa videos LOCAIS
+ *                               (upload REAL no servidor) + lista dos videos
+ *                               importados (clicar seleciona o video principal).
  *
- *   CENTRO    EditorCanvas (elemento PRINCIPAL) — canvas 9:16 GRANDE com
- *                               vídeo REAL (play/pausa/áudio/volume/progresso)
- *                               + logo + DOIS textos (superior/inferior) +
- *                               área do vídeo arrastável/redimensionável +
- *                               corte de bordas (linhas pontilhadas
- *                               superiores/inferiores INDEPENDENTES,
- *                               arrastáveis) — prévia em tempo real
+ *   CENTRO    AreaCentral — O PROPRIO ESPACO CENTRAL mostra os MESMOS videos
+ *                               da esquerda (sem secao separada, sem faixa
+ *                               abaixo do preview). Topo com botoes 1X/2X/3X =
+ *                               SOMENTE qtd. de videos lado a lado (1/2/3
+ *                               videos DIFERENTES por linha, demais nas linhas
+ *                               seguintes). Cada celula usa o MESMO
+ *                               EditorCanvas (config COMPARTILHADA); clicar
+ *                               seleciona o video principal editavel (SOMENTE
+ *                               a celula selecionada edita).
  *
  *   DIREITA   PainelEditor     — controles da CONFIG COMPARTILHADA (vale pro
  *                               lote inteiro, sem botão "Aplicar a todos"):
@@ -657,27 +656,22 @@ export default function EditorLote() {
           />
         </aside>
 
-        {/* CENTRO — em cima o Canvas/preview de edição (SEPARADO da grade,
-            tamanho médio) e embaixo a GRADE dos vídeos (1X/2X/3X = nº de
-            colunas com vídeos DIFERENTES por linha, scroll vertical) */}
+        {/* CENTRO — O PRÓPRIO ESPAÇO CENTRAL mostra os MESMOS vídeos da
+            esquerda: topo com botões 1X/2X/3X (qtd. de vídeos lado a lado) e
+            os vídeos DIFERENTES por linha dentro desse MESMO espaço (não é
+            grade separada nem faixa abaixo do preview). Clicar numa célula
+            seleciona o vídeo principal editável (config compartilhada). */}
         <section className="flex-1 min-w-0 h-full min-h-0 flex flex-col">
-          <div className="shrink-0 h-[52%] min-h-[380px] max-h-[560px] flex border-b border-[color:var(--edl-borda)]">
-            <EditorCanvas
-              config={config}
-              aoAtualizarConfig={setConfig}
-              itemSelecionado={itemSelecionado}
-              urlVideoAtiva={urlVideoAtiva}
-            />
-          </div>
-          <div className="flex-1 min-h-0 flex flex-col">
-            <GradeVideos
-              itens={itens}
-              idSelecionado={idSelecionado}
-              ativosNoPool={pool.ativos}
-              aoSelecionar={aoSelecionar}
-              aoFocar={aoFocar}
-            />
-          </div>
+          <AreaCentral
+            itens={itens}
+            idSelecionado={idSelecionado}
+            urlVideoAtiva={urlVideoAtiva}
+            ativosNoPool={pool.ativos}
+            config={config}
+            aoAtualizarConfig={setConfig}
+            aoSelecionar={aoSelecionar}
+            aoFocar={aoFocar}
+          />
         </section>
 
         {/* DIREITA — SOMENTE ferramentas do editor: Logo (popup de identidade:

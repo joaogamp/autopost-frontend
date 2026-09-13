@@ -22,48 +22,61 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
 /**
  * EDITOR EM LOTE — canvas de edición (EditorCanvas).
  *
- * CANVAS 9:16 MÉDIO/PEQUENO, centralizado na coluna do CENTRO com bastante
- * espaço livre ao redor, com:
- * - fundo da config compartilhada (vai para o template do servidor);
- * - ÁREA DO VÍDEO marcada (arrastável com el ratón + manijas de redimensión)
- *   y con el reproductor REAL (play/pausa/áudio/volume/progresso);
- * - CORTE DE BORDAS: duas linhas pontilhadas arrastables INDEPENDENTES
- *   (superior e inferior, cada una con el suyo valor y su propia manija);
- * - logo arrastável e redimensionable (% do canvas);
- * - DOS textos independientes (superior/inferior), cada uno con contenido,
- *   posição, tamanho, largura/altura, fonte, peso, cor, alinheamento,
- *   opacidade e visibilidade propias;
- * - IDENTIDADE DO CANAL: nome, @ e selo azul — elementos independentes,
- *   compartilhados com o popup grande (arrastar/redimensionar em qualquer um
- *   dos dois atualiza o outro na hora).
- *
- * TODAS as leituras vêm da CONFIG COMPARTILHADA: mover um elemento aqui
- * atualiza automaticamente todos os previews (sem config por vídeo).
+ * Canvas 9:16 reutilizado em DOIS lugares:
+ * - CÉLULA SELECIONADA da área central (interativo=true): canvas completo,
+ *   editável — vídeo REAL com ControlesVideo + logo + textos + identidade +
+ *   área arrastável/redimensionável + cortes arrastáveis;
+ * - DEMAIS CÉLULAS (interativo=false): SOMENTE visualização do MESMO canvas
+ *   com a MESMA config compartilhada (logo/textos/identidade/área/cortes
+ *   aparecem iguais), mas sem arrastes/manijas/áudio — thumbnail ou <video>
+ *   mutado, com pointer-events desligados para o clique selecionar a célula.
  */
 
-/** Altura MÁXIMA do preview 9:16 na TELA (px). O canvas fica MÉDIO/PEQUENO —
- * consideravelmente menor que a área central, com bastante espaço ao redor. */
-const ALTURA_MAXIMA_CANVAS = 500;
+/** Altura MÁXIMA padrão do preview 9:16 na TELA (px). Pode ser sobrescrita
+ * por célula via prop `alturaMaxima` (a área central usa valores menores
+ * nos modos 2X/3X para caberem lado a lado). */
+const ALTURA_MAXIMA_PADRAO = 500;
 
 
-export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionado, urlVideoAtiva }) {
+export default function EditorCanvas({
+  config,
+  aoAtualizarConfig,
+  itemSelecionado,
+  urlVideoAtiva,
+  // Quando `false`, o canvas vira SOMENTE visualização (célula NÃO
+  // selecionada da área central): sem arrastes, sem manijas, sem ControlesVideo
+  // com áudio — mostra thumbnail/vídeo mutado + overlays da config compartilhada.
+  interativo = true,
+  alturaMaxima = ALTURA_MAXIMA_PADRAO,
+  // Rodapé "Editando: ..." (modo editor único). Nas células da área central
+  // o nome/status é renderizado pela própria área — então fica desligado.
+  mostrarRodape = true,
+  // Layout compacto de célula (área central): sem `flex-1`, largura total.
+  compacto = false,
+}) {
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
   const [escala, setEscala] = useState(1);
 
+  // Somente a célula selecionada da área central edita: as demais são
+  // SOMENTE visualização (mesmos overlays, sem arraste/manijas).
+  const podeEditar = interativo && typeof aoAtualizarConfig === 'function';
+  const atualizador = podeEditar ? aoAtualizarConfig : () => {};
+
   // Handlers — arrastre genérico por ruta: cada elemento es independente.
-  const arrastarLogo = gerarArrasteDeRuta(['logo'], aoAtualizarConfig);
-  const arrastarTextoSuperior = gerarArrasteDeRuta(['textos', 'superior'], aoAtualizarConfig);
-  const arrastarTextoInferior = gerarArrasteDeRuta(['textos', 'inferior'], aoAtualizarConfig);
-  const redimensionarLogo = gerarRedimensionarLogo(aoAtualizarConfig);
-  const redimensionarTextoSup = gerarRedimensionarTextoLargura(['textos', 'superior'], aoAtualizarConfig);
-  const redimensionarTextoInf = gerarRedimensionarTextoLargura(['textos', 'inferior'], aoAtualizarConfig);
-  const arrastarArea = gerarArrastreArea(aoAtualizarConfig);
-  const redimensionarAreaDireita = gerarRedimensionarArea('direita', aoAtualizarConfig);
-  const redimensionarAreaAbaixo = gerarRedimensionarArea('abaixo', aoAtualizarConfig);
-  const redimensionarAreaCanto = gerarRedimensionarArea('canto', aoAtualizarConfig);
-  const corredorSuperior = gerarArrastarCorteSuperior(aoAtualizarConfig);
-  const corredorInferior = gerarArrastarCorteInferior(aoAtualizarConfig);
+  // Nas células NÃO selecionadas (podeEditar=false) os handlers viram no-op.
+  const arrastarLogo = gerarArrasteDeRuta(['logo'], atualizador);
+  const arrastarTextoSuperior = gerarArrasteDeRuta(['textos', 'superior'], atualizador);
+  const arrastarTextoInferior = gerarArrasteDeRuta(['textos', 'inferior'], atualizador);
+  const redimensionarLogo = gerarRedimensionarLogo(atualizador);
+  const redimensionarTextoSup = gerarRedimensionarTextoLargura(['textos', 'superior'], atualizador);
+  const redimensionarTextoInf = gerarRedimensionarTextoLargura(['textos', 'inferior'], atualizador);
+  const arrastarArea = gerarArrastreArea(atualizador);
+  const redimensionarAreaDireita = gerarRedimensionarArea('direita', atualizador);
+  const redimensionarAreaAbaixo = gerarRedimensionarArea('abaixo', atualizador);
+  const redimensionarAreaCanto = gerarRedimensionarArea('canto', atualizador);
+  const corredorSuperior = gerarArrastarCorteSuperior(atualizador);
+  const corredorInferior = gerarArrastarCorteInferior(atualizador);
 
   // Compatibilidade com configs legadas (antes de `textos` superior/inferior).
   const textos = config.textos && (config.textos.superior || config.textos.inferior)
@@ -85,10 +98,9 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
   // sendo independentes en la config.
   const posLinhaInferior = Math.max(corteSup + 1, 100 - corteInf);
   const item = itemSelecionado;
-  // Mesmo encaixe do pipeline: 'cobrir' (cover) | 'ajustar' (contain).
   const encaixe = area.fit === 'ajustar' ? 'contain' : 'cover';
 
-  // Escalada do canvas 9:16: observa o CONTENEDOR da área central (contenedorRef)
+  // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
   // (ancho e alto). As linhas/faixas de corte usam top/height em % — posicionamento
   // independente da escala.
@@ -100,13 +112,13 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
     const ch = cont ? cont.clientHeight : 0;
     const novaEscala =
       cw > 0 && ch > 0
-        ? Math.min(cw / CANVAS_LARGURA, ch / CANVAS_ALTURA, ALTURA_MAXIMA_CANVAS / CANVAS_ALTURA)
+        ? Math.min(cw / CANVAS_LARGURA, ch / CANVAS_ALTURA, alturaMaxima / CANVAS_ALTURA)
         : 1;
     setEscala(novaEscala);
     el.dataset.canvasLargura = String(CANVAS_LARGURA);
     el.dataset.canvasAltura = String(CANVAS_ALTURA);
     el.dataset.escala = String(novaEscala);
-  }, [canvasRef, contenedorRef]);
+  }, [alturaMaxima]);
 
   useEffect(() => {
     aoAtualizarDataset();
@@ -118,7 +130,14 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
   }, [aoAtualizarDataset]);
 
   return (
-    <div ref={contenedorRef} className="flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden px-2 pt-2 pb-1">
+    <div
+      ref={contenedorRef}
+      className={
+        compacto
+          ? 'w-full flex flex-col items-center justify-start relative overflow-hidden px-1 pt-1 pb-0'
+          : 'flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden px-2 pt-2 pb-1'
+      }
+    >
       {/* Canvas 9:16 (fundo = corFundo que vai pro template) */}
       <div
         ref={canvasRef}
@@ -130,47 +149,52 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
           background: corFundo,
         }}
       >
-        {/* Cortes de bordas — linhas pontilhadas arrastáveis (superior/inferior) */}
+        {/* Cortes de bordas — linhas pontilhadas (arrastáveis SÓ na célula
+            selecionada; nas demais são SOMENTE visualização) */}
         {corteAtivo && (
           <>
-            {/* Linha superior de corte (arrastável) */}
+            {/* Linha superior de corte */}
             <div
-              role="slider"
+              role={podeEditar ? 'slider' : undefined}
               aria-label="Corte superior"
               aria-valuemin={0}
               aria-valuemax={CORTE_MAXIMO}
               aria-valuenow={Math.round(corteSup)}
               aria-valuetext={`${Math.round(corteSup)}% da altura`}
               data-posY={String(corteSup)}
-              onPointerDown={corredorSuperior}
-              className="edl-corredor-corte absolute left-0 right-0 z-20 cursor-row-resize touch-none"
+              onPointerDown={podeEditar ? corredorSuperior : undefined}
+              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none ${podeEditar ? 'cursor-row-resize' : 'pointer-events-none'}`}
               style={{
                 top: `${corteSup}%`,
                 borderTop: '2px dashed var(--edl-roxo)',
               }}
             >
-              {/* Alça visual central */}
-              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
+              {/* Alça visual central (só na célula editável) */}
+              {podeEditar && (
+                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
+              )}
             </div>
 
-            {/* Linha inferior de corte (arrastável) */}
+            {/* Linha inferior de corte */}
             <div
-              role="slider"
+              role={podeEditar ? 'slider' : undefined}
               aria-label="Corte inferior"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(posLinhaInferior)}
               aria-valuetext={`${Math.round(posLinhaInferior)}% da altura`}
               data-posY={String(posLinhaInferior)}
-              onPointerDown={corredorInferior}
-              className="edl-corredor-corte absolute left-0 right-0 z-20 cursor-row-resize touch-none"
+              onPointerDown={podeEditar ? corredorInferior : undefined}
+              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none ${podeEditar ? 'cursor-row-resize' : 'pointer-events-none'}`}
               style={{
                 top: `${posLinhaInferior}%`,
                 borderBottom: '2px dashed var(--edl-roxo)',
               }}
             >
-              {/* Alça visual central */}
-              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
+              {/* Alça visual central (só na célula editável) */}
+              {podeEditar && (
+                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
+              )}
             </div>
 
             {/* Faixas de cobertura do corte: área cortada COBERTA pelo fundo do
@@ -204,26 +228,27 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
           </>
         )}
 
-        {/* ÁREA DO VÍDEO — arrastável com o mouse + manijas de redimensionar.
-            O reprodutor REAL (play/pausa/áudio/volume/progresso) vive dentro;
-            interagir com ele NÃO arrasta a área (guard `data-edl-jugador`). */}
+        {/* ÁREA DO VÍDEO — na célula selecionada é arrastável + redimensionável
+            com o reprodutor REAL (ControlesVideo). Nas demais células é SOMENTE
+            visualização: <video> MUTADO sem controles (sem áudio), com
+            pointer-events desligados para o clique selecionar a célula. */}
         <div
-          role="button"
-          tabIndex={0}
+          role={podeEditar ? 'button' : undefined}
+          tabIndex={podeEditar ? 0 : undefined}
           aria-label="Mover a área do vídeo"
           data-x={String(area.x)}
           data-y={String(area.y)}
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
-          onPointerDown={arrastarArea}
-          className="edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none"
+          onPointerDown={podeEditar ? arrastarArea : undefined}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar ? '' : 'pointer-events-none'}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
             width: area.largura * escala,
             height: area.altura * escala,
             borderRadius: 8 * escala,
-            cursor: 'move',
+            cursor: podeEditar ? 'move' : 'default',
             // Marcação desativada = só some a GUIA (borda/menijas) — o vídeo
             // continua visível e rodando dentro da área.
             border: area.mostrarMarcacao ? undefined : '2px dashed transparent',
@@ -232,20 +257,44 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
         >
           {/* <video> REAL do servidor dentro da região (só nos slots do pool) */}
           {urlVideoAtiva ? (
-            <ControlesVideo key={urlVideoAtiva} src={urlVideoAtiva} encaixe={encaixe} />
-          ) : (
-            item && (
-              <div className="flex flex-col items-center gap-1 pointer-events-none">
-                <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
-                <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
-                  ÁREA DO VÍDEO
-                </span>
-              </div>
+            podeEditar ? (
+              <ControlesVideo key={urlVideoAtiva} src={urlVideoAtiva} encaixe={encaixe} />
+            ) : (
+              <video
+                key={urlVideoAtiva}
+                src={urlVideoAtiva}
+                muted
+                loop
+                playsInline
+                autoPlay
+                preload="metadata"
+                className="w-full h-full pointer-events-none"
+                style={{ objectFit: encaixe }}
+              />
             )
+          ) : item && item.thumbnail ? (
+            /* Célula NÃO no pool: mostra a THUMBNAIL REAL do servidor (leve,
+               lazy) dentro da área — MESMO encaixe do pipeline. */
+            <img
+              src={item.thumbnail}
+              alt={item.nome || 'Video'}
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              className="w-full h-full pointer-events-none"
+              style={{ objectFit: encaixe }}
+            />
+          ) : item && (
+            <div className="flex flex-col items-center gap-1 pointer-events-none">
+              <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
+              <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
+                ÁREA DO VÍDEO
+              </span>
+            </div>
           )}
 
-          {/* Manijas de redimensionar (borda direita, baixo e canto) */}
-          {area.mostrarMarcacao && (
+          {/* Manijas de redimensionar (SÓ na célula editável) */}
+          {podeEditar && area.mostrarMarcacao && (
             <>
               <span
                 role="slider"
@@ -284,18 +333,18 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
           )}
         </div>
 
-        {/* LOGO sobre o canvas — arrastável, % do canvas. O onLoad captura a
-            proporção da imagem (altura/largura) que o template usa pra calcular
-            a altura em px do overlay. */}
+        {/* LOGO sobre o canvas — arrastável SÓ na célula selecionada. O onLoad
+            captura a proporção da imagem (altura/largura) que o template usa pra
+            calcular a altura em px do overlay. */}
         {logo.visivel && logo.url && (
           <div
-            role="button"
-            tabIndex={0}
+            role={podeEditar ? 'button' : undefined}
+            tabIndex={podeEditar ? 0 : undefined}
             aria-label="Arrastar logo"
             data-x={logo.x}
             data-y={logo.y}
-            onPointerDown={arrastarLogo}
-            className="edl-logo absolute"
+            onPointerDown={podeEditar ? arrastarLogo : undefined}
+            className={`edl-logo absolute ${podeEditar ? '' : 'pointer-events-none'}`}
             style={{
               left: `${logo.x}%`,
               top: `${logo.y}%`,
@@ -312,32 +361,35 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
               alt="Logo"
               draggable={false}
               onLoad={(e) => {
+                if (!podeEditar) return;
                 const img = e.currentTarget;
                 if (img.naturalWidth > 0) {
                   const prop = img.naturalHeight / img.naturalWidth;
                   if (Math.abs((logo.alturaProporcao || 0) - prop) > 0.001) {
-                    aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, alturaProporcao: prop } }));
+                    atualizador((cfg) => ({ ...cfg, logo: { ...cfg.logo, alturaProporcao: prop } }));
                   }
                 }
               }}
               className="w-full h-auto pointer-events-none"
             />
-            {/* Manija de redimensionar a logo (largura em % do canvas) */}
-            <span
-              role="slider"
-              aria-label="Redimensionar logo"
-              data-largura={String(logo.largura)}
-              onPointerDown={redimensionarLogo}
-              className="absolute w-4 h-4 rounded-full border-2 border-white shadow"
-              style={{ right: -8, bottom: -8, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
-            />
+            {/* Manija de redimensionar a logo (SÓ na célula editável) */}
+            {podeEditar && (
+              <span
+                role="slider"
+                aria-label="Redimensionar logo"
+                data-largura={String(logo.largura)}
+                onPointerDown={redimensionarLogo}
+                className="absolute w-4 h-4 rounded-full border-2 border-white shadow"
+                style={{ right: -8, bottom: -8, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+              />
+            )}
           </div>
         )}
 
         {/* DOIS TEXTOS INDEPENDENTES (superior e inferior) — cada um tem
             conteúdo, posição, tamanho, largura, fonte, peso, cor, alinhamento,
-            opacidade e visibilidade PRÓPRIOS. Mover/redimensionar um NUNCA
-            altera o outro (ruta própria: textos.superior | textos.inferior). */}
+            opacidade e visibilidade PRÓPRIOS. Arrastáveis SÓ na célula
+            selecionada; nas demais são SOMENTE visualização. */}
         {[
           { chave: 'superior', rotulo: 'Texto superior', t: textoSup },
           { chave: 'inferior', rotulo: 'Texto inferior', t: textoInf },
@@ -348,13 +400,13 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
           return (
             <div
               key={chave}
-              role="button"
-              tabIndex={0}
+              role={podeEditar ? 'button' : undefined}
+              tabIndex={podeEditar ? 0 : undefined}
               aria-label={`Arrastar ${rotulo.toLowerCase()}`}
               data-x={String(t.x)}
               data-y={String(t.y)}
-              onPointerDown={arrastar}
-              className="edl-texto-canvas absolute"
+              onPointerDown={podeEditar ? arrastar : undefined}
+              className={`edl-texto-canvas absolute ${podeEditar ? '' : 'pointer-events-none'}`}
               style={{
                 left: `${t.x}%`,
                 top: `${t.y}%`,
@@ -372,32 +424,35 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
               }}
             >
               {t.conteudo}
-              {/* Manija de largura (independente por texto) */}
-              <span
-                role="slider"
-                aria-label={`Redimensionar largura do ${rotulo.toLowerCase()}`}
-                data-largura={String(t.largura)}
-                onPointerDown={redimensionar}
-                className="absolute w-2.5 h-9 rounded-sm border-2 border-white shadow"
-                style={{ right: -9, top: '50%', transform: 'translateY(-50%)', background: 'var(--edl-rosa)', cursor: 'ew-resize', touchAction: 'none' }}
-              />
+              {/* Manija de largura (SÓ na célula editável) */}
+              {podeEditar && (
+                <span
+                  role="slider"
+                  aria-label={`Redimensionar largura do ${rotulo.toLowerCase()}`}
+                  data-largura={String(t.largura)}
+                  onPointerDown={redimensionar}
+                  className="absolute w-2.5 h-9 rounded-sm border-2 border-white shadow"
+                  style={{ right: -9, top: '50%', transform: 'translateY(-50%)', background: 'var(--edl-rosa)', cursor: 'ew-resize', touchAction: 'none' }}
+                />
+              )}
             </div>
           );
         })}
 
         {/* IDENTIDADE DO CANAL — nome do canal, @ do canal e selo azul de
             verificado: elementos INDEPENDENTES (posição/tamanho próprios).
-            São os MESMOS componentes do popup grande: arrastar/redimensionar
-            aqui atualiza o popup e todo o lote na hora (config compartilhada). */}
-        <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={aoAtualizarConfig} />
-        <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={aoAtualizarConfig} />
-        <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={aoAtualizarConfig} />
+            Editáveis SÓ na célula selecionada (nas demais, somente leitura). */}
+        <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} />
+        <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} />
+        <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} />
       </div>
 
-      {/* Rodapé do canvas */}
-      <p className="text-[9px] font-semibold mt-3" style={{ color: 'var(--edl-texto-mut)' }}>
-        {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • encaixe: {area.fit}
-      </p>
+      {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}
+      {mostrarRodape && (
+        <p className="text-[9px] font-semibold mt-3" style={{ color: 'var(--edl-texto-mut)' }}>
+          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • encaixe: {area.fit}
+        </p>
+      )}
     </div>
   );
 }

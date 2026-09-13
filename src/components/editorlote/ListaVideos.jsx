@@ -5,11 +5,12 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
 /**
  * EDITOR EM LOTE — LISTA compacta dos vídeos importados (coluna ESQUERDA).
  *
- * É a forma PRINCIPAL de selecionar o vídeo que aparece no Canvas/editor:
- * clicar num item abre o vídeo no Canvas (via `aoSelecionar`). Uma linha
- * compacta por vídeo (thumbnail pequena + nome + duração), com scroll
- * vertical próprio — NÃO é grade, NÃO tem 1X/2X/3X (isso é só da grade
- * central). Componente MEMOIZADO.
+ * É uma das formas de selecionar o vídeo principal (a outra é clicar
+ * diretamente numa célula do espaço CENTRAL): clicar num item selecciona o
+ * vídeo que fica editável no espaço central (via `aoSelecionar`). Uma linha
+ * compacta por vídeo (thumbnail pequena + nome + duração), con scroll
+ * vertical próprio — NÃO é grade, NÃO tem 1X/2X/3X (isso é do espaço CENTRAL).
+ * Componente MEMOIZADO.
  */
 function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar }) {
   return (

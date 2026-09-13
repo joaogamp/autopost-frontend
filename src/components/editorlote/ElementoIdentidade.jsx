@@ -24,7 +24,7 @@ import {
 export const COR_SELO_AZUL = '#1d9bf0';
 
 /** Texto da identidade (nome do canal | @ do canal) — arrastável + alças. */
-export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfig }) {
+export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfig, somenteLeitura = false }) {
   if (!t || !t.visivel || String(t.conteudo || '').trim() === '') return null;
   const ruta = ['identidade', chave];
   // Handlers criados por render (mesmo padrão dos textos da arte).
@@ -33,13 +33,13 @@ export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfi
   const alcaTamanho = gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig);
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role={somenteLeitura ? undefined : 'button'}
+      tabIndex={somenteLeitura ? undefined : 0}
       aria-label={`Arrastar ${chave} do canal`}
       data-x={String(t.x)}
       data-y={String(t.y)}
-      onPointerDown={arrastar}
-      className="edl-texto-canvas absolute select-none"
+      onPointerDown={somenteLeitura ? undefined : arrastar}
+      className={`edl-texto-canvas absolute select-none ${somenteLeitura ? 'pointer-events-none' : ''}`}
       style={{
         left: `${t.x}%`,
         top: `${t.y}%`,
@@ -56,42 +56,46 @@ export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfi
       }}
     >
       {t.conteudo}
-      {/* Alça lateral: aumenta/diminui a LARGURA do bloco */}
-      <span
-        role="slider"
-        aria-label={`Redimensionar largura do ${chave} do canal`}
-        data-largura={String(t.largura)}
-        onPointerDown={alcaLargura}
-        className="absolute w-2 h-6 rounded-sm border-2 border-white shadow"
-        style={{ right: -7, top: '50%', transform: 'translateY(-50%)', background: 'var(--edl-roxo)', cursor: 'ew-resize', touchAction: 'none' }}
-      />
-      {/* Alça de canto: aumenta/diminui o TAMANHO DA FONTE */}
-      <span
-        role="slider"
-        aria-label={`Aumentar ou diminuir o ${chave} do canal`}
-        data-tamanho={String(t.tamanho)}
-        onPointerDown={alcaTamanho}
-        className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
-        style={{ right: -7, bottom: -7, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
-      />
+      {!somenteLeitura && (
+        <>
+          {/* Alça lateral: aumenta/diminui a LARGURA do bloco */}
+          <span
+            role="slider"
+            aria-label={`Redimensionar largura do ${chave} do canal`}
+            data-largura={String(t.largura)}
+            onPointerDown={alcaLargura}
+            className="absolute w-2 h-6 rounded-sm border-2 border-white shadow"
+            style={{ right: -7, top: '50%', transform: 'translateY(-50%)', background: 'var(--edl-roxo)', cursor: 'ew-resize', touchAction: 'none' }}
+          />
+          {/* Alça de canto: aumenta/diminui o TAMANHO DA FONTE */}
+          <span
+            role="slider"
+            aria-label={`Aumentar ou diminuir o ${chave} do canal`}
+            data-tamanho={String(t.tamanho)}
+            onPointerDown={alcaTamanho}
+            className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
+            style={{ right: -7, bottom: -7, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+          />
+        </>
+      )}
     </div>
   );
 }
 
 /** Selo azul de verificado — arrastável + redimensionável (centrado em x/y). */
-export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig }) {
+export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig, somenteLeitura = false }) {
   if (!selo || !selo.visivel) return null;
   const arrastar = gerarArrasteDeRuta(['identidade', 'selo'], aoAtualizarConfig);
   const alcaLargura = gerarRedimensionarLarguraRuta(['identidade', 'selo'], 1, 12, aoAtualizarConfig);
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role={somenteLeitura ? undefined : 'button'}
+      tabIndex={somenteLeitura ? undefined : 0}
       aria-label="Arrastar selo de verificado"
       data-x={String(selo.x)}
       data-y={String(selo.y)}
-      onPointerDown={arrastar}
-      className="edl-logo absolute select-none"
+      onPointerDown={somenteLeitura ? undefined : arrastar}
+      className={`edl-logo absolute select-none ${somenteLeitura ? 'pointer-events-none' : ''}`}
       style={{
         left: `${selo.x}%`,
         top: `${selo.y}%`,
@@ -107,15 +111,17 @@ export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig }) {
         strokeWidth={2}
         style={{ width: '100%', height: 'auto', display: 'block', color: COR_SELO_AZUL, fill: COR_SELO_AZUL }}
       />
-      {/* Alça: aumenta/diminui o selo */}
-      <span
-        role="slider"
-        aria-label="Redimensionar selo de verificado"
-        data-largura={String(selo.largura)}
-        onPointerDown={alcaLargura}
-        className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
-        style={{ right: -6, bottom: -6, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
-      />
+      {/* Alça: aumenta/diminui o selo (SÓ na célula editável) */}
+      {!somenteLeitura && (
+        <span
+          role="slider"
+          aria-label="Redimensionar selo de verificado"
+          data-largura={String(selo.largura)}
+          onPointerDown={alcaLargura}
+          className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
+          style={{ right: -6, bottom: -6, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+        />
+      )}
     </div>
   );
 }
