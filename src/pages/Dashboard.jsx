@@ -27,8 +27,8 @@ export default function Dashboard() {
   if (carregando) {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
-        <div className="flex items-center gap-3 text-slate-500 text-sm font-medium">
-          <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
+        <div className="flex items-center gap-3 text-text-muted text-sm font-medium">
+          <Loader2 className="w-5 h-5 text-rosa animate-spin" />
           <span>Carregando painel...</span>
         </div>
       </div>
@@ -40,40 +40,40 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Painel</h2>
-          <p className="text-xs text-slate-500 mt-1 font-medium">Visão geral do pipeline de produção e agendamentos</p>
+          <h2 className="font-display text-3xl font-extrabold tracking-tight text-text">Painel</h2>
+          <p className="text-xs text-text-muted mt-1 font-medium">Visão geral do pipeline de produção e agendamentos</p>
         </div>
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-xs shadow-sm">
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface border border-line text-xs shadow-sm">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-mono text-[11px] font-bold text-slate-700">Sistema Ativo</span>
+          <span className="font-mono text-[11px] font-bold text-text-dim">Sistema Ativo</span>
         </div>
       </div>
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <CartaoEstatistica rotulo="Vídeos" valor={biblioteca.length} corDestaque="#4f46e5" icon={Film} />
-        <CartaoEstatistica rotulo="Aguardando" valor={contar('aguardando')} corDestaque="#64748b" icon={Clock} />
-        <CartaoEstatistica rotulo="Processando" valor={contar('processando')} corDestaque="#2563eb" icon={Loader2} />
+        <CartaoEstatistica rotulo="Vídeos" valor={biblioteca.length} corDestaque="#8b5cf6" icon={Film} />
+        <CartaoEstatistica rotulo="Aguardando" valor={contar('aguardando')} corDestaque="#a1a1b0" icon={Clock} />
+        <CartaoEstatistica rotulo="Processando" valor={contar('processando')} corDestaque="#ec4899" icon={Loader2} />
         <CartaoEstatistica rotulo="Concluídos" valor={contar('concluido')} corDestaque="#059669" icon={CheckCircle2} />
         <CartaoEstatistica rotulo="Erros" valor={contar('erro')} corDestaque="#e11d48" icon={AlertCircle} />
       </div>
 
       {/* Recent Activity Card */}
-      <div className="glass-panel rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
-        <div className="px-6 py-4.5 border-b border-slate-200/80 flex items-center justify-between bg-slate-50/50">
+      <div className="glass-panel rounded-2xl border border-line overflow-hidden shadow-sm bg-surface">
+        <div className="px-6 py-4.5 border-b border-line flex items-center justify-between bg-surface-hover/50">
           <div className="flex items-center gap-2.5">
-            <Activity className="w-4 h-4 text-indigo-600" />
-            <h3 className="font-display text-base font-bold text-slate-900">Atividade recente</h3>
+            <Activity className="w-4 h-4 text-rosa" />
+            <h3 className="font-display text-base font-bold text-text">Atividade recente</h3>
           </div>
-          <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-600 shadow-xs">
+          <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-lg bg-surface border border-line text-text-dim shadow-xs">
             {fila.length} item(ns)
           </span>
         </div>
 
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-line">
           {fila.length === 0 ? (
             <div className="px-6 py-12 text-center">
-              <p className="text-slate-500 text-xs font-medium">
+              <p className="text-text-muted text-xs font-medium">
                 Nenhum vídeo processado ainda. Envie vídeos na Biblioteca pra começar.
               </p>
             </div>
@@ -85,13 +85,13 @@ export default function Dashboard() {
               .map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between px-6 py-4 hover:bg-slate-50/80 transition-colors duration-150 group"
+                  className="flex items-center justify-between px-6 py-4 hover:bg-surface-hover/80 transition-colors duration-150 group"
                 >
                   <div className="min-w-0 pr-4">
-                    <p className="text-sm font-semibold text-slate-900 truncate max-w-lg group-hover:text-indigo-600 transition-colors">
+                    <p className="text-sm font-semibold text-text truncate max-w-lg group-hover:text-rosa transition-colors">
                       {item.tituloIA || '(sem título)'}
                     </p>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5 flex items-center gap-1.5">
+                    <p className="text-xs text-text-muted font-mono mt-0.5 flex items-center gap-1.5">
                       <span className="w-1 h-1 rounded-full bg-slate-400" />
                       Template: {item.templateId}
                     </p>

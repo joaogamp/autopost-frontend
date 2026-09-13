@@ -21,18 +21,18 @@ function ItensDoDia({ itens, onCancelar }) {
   const mapaStatus = { agendado: 'aguardando', publicando: 'processando', publicado: 'concluido', erro: 'erro' };
 
   if (itens.length === 0) {
-    return <p className="text-xs text-slate-500 font-medium">Nenhuma publicação nesse dia.</p>;
+    return <p className="text-xs text-text-muted font-medium">Nenhuma publicação nesse dia.</p>;
   }
 
   return (
-    <div className="glass-panel rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-xs bg-white">
+    <div className="glass-panel rounded-2xl border border-line divide-y divide-line overflow-hidden shadow-xs bg-surface">
       {itens.map((ag) => (
-        <div key={ag.id} className="flex items-center gap-4 p-4 hover:bg-slate-50/80 transition-colors group">
-          <div className="w-11 h-16 bg-slate-900 rounded-lg overflow-hidden shrink-0 border border-slate-200 relative">
+        <div key={ag.id} className="flex items-center gap-4 p-4 hover:bg-surface-hover/80 transition-colors group">
+          <div className="w-11 h-16 bg-slate-900 rounded-lg overflow-hidden shrink-0 border border-line relative">
             {ag.thumbnailUrl ? (
               <img src={urlArquivo(ag.thumbnailUrl)} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 font-medium">
+              <div className="w-full h-full flex items-center justify-center text-[10px] text-text-muted font-medium">
                 sem thumb
               </div>
             )}
@@ -44,7 +44,7 @@ function ItensDoDia({ itens, onCancelar }) {
               {ag.redes.map((r) => (
                 <span
                   key={r}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200/80 text-[11px] font-bold text-slate-700 shadow-2xs"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-hover border border-line text-[11px] font-bold text-text-dim shadow-2xs"
                 >
                   <RedeIcon rede={r} className="w-3.5 h-3.5" colored={true} />
                   <span className="capitalize">{r}</span>
@@ -52,20 +52,20 @@ function ItensDoDia({ itens, onCancelar }) {
               ))}
             </div>
 
-            <p className="text-sm font-bold text-slate-900 truncate group-hover:text-indigo-600 transition-colors">
+            <p className="text-sm font-bold text-text truncate group-hover:text-rosa transition-colors">
               {ag.nomeVideo}
             </p>
 
-            <p className="text-xs text-slate-500 flex items-center gap-2 mt-1 font-mono">
-              <span className="text-indigo-600 font-bold">{ag.horario}</span>
-              {ag.contaTarget && <span className="text-slate-400 font-sans">@{ag.contaTarget}</span>}
+            <p className="text-xs text-text-muted flex items-center gap-2 mt-1 font-mono">
+              <span className="text-rosa font-bold">{ag.horario}</span>
+              {ag.contaTarget && <span className="text-text-muted font-sans">@{ag.contaTarget}</span>}
             </p>
           </div>
 
           <StatusDot status={mapaStatus[ag.status] || ag.status} comRotulo />
           <button
             onClick={() => onCancelar(ag.id)}
-            className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline px-2.5 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+            className="text-xs font-bold text-rose-400 hover:text-rose-300 hover:underline px-2.5 py-1 rounded-lg hover:bg-rose-500/10 transition-colors"
           >
             Cancelar
           </button>
@@ -154,26 +154,26 @@ export default function Agendamento() {
     <div className="space-y-8 max-w-7xl mx-auto">
       {/* Header */}
       <div>
-        <h2 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Agendamento</h2>
-        <p className="text-xs text-slate-500 mt-1 font-medium">Defina regras de postagem automática e agende publicações nas redes</p>
+        <h2 className="font-display text-3xl font-extrabold tracking-tight text-text">Agendamento</h2>
+        <p className="text-xs text-text-muted mt-1 font-medium">Defina regras de postagem automática e agende publicações nas redes</p>
       </div>
 
       <RegraPublicacao />
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-8 items-start">
         {/* Formulário de novo agendamento */}
-        <div className="glass-panel rounded-2xl p-6 border border-slate-200 shadow-sm space-y-5 bg-white">
-          <div className="flex items-center gap-2 border-b border-slate-200 pb-4">
-            <PlusCircle className="w-4 h-4 text-indigo-600" />
-            <h3 className="font-display text-base font-bold text-slate-900">Novo agendamento</h3>
+        <div className="glass-panel rounded-2xl p-6 border border-line shadow-sm space-y-5 bg-surface">
+          <div className="flex items-center gap-2 border-b border-line pb-4">
+            <PlusCircle className="w-4 h-4 text-rosa" />
+            <h3 className="font-display text-base font-bold text-text">Novo agendamento</h3>
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1.5">Vídeo final (template aplicado)</label>
+            <label className="text-xs font-bold text-text-dim block mb-1.5">Vídeo final (template aplicado)</label>
             <select
               value={finalId}
               onChange={(e) => setFinalId(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 outline-none focus:border-indigo-600 transition-colors font-medium"
+              className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs text-text outline-none focus:border-rosa transition-colors font-medium"
             >
               <option value="">Selecione um final...</option>
               {finaisProntos.map((f) => (
@@ -183,15 +183,15 @@ export default function Agendamento() {
               ))}
             </select>
             {finaisProntos.length === 0 && (
-              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl mt-2 font-medium flex items-center gap-1.5">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+              <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 p-2.5 rounded-xl mt-2 font-medium flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
                 <span>Nenhum final concluído ainda. Processe vídeos na Biblioteca primeiro.</span>
               </p>
             )}
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1.5">Redes sociais</label>
+            <label className="text-xs font-bold text-text-dim block mb-1.5">Redes sociais</label>
             <div className="flex gap-2">
               {REDES_DISPONIVEIS.map((rede) => {
                 const ativo = redesSelecionadas.has(rede.id);
@@ -202,8 +202,8 @@ export default function Agendamento() {
                     onClick={() => alternarRede(rede.id)}
                     className={`text-xs px-3.5 py-2 rounded-xl border font-bold transition-all flex items-center gap-1.5 ${
                       ativo
-                        ? 'border-indigo-200 text-indigo-700 bg-indigo-50 shadow-xs'
-                        : 'border-slate-200 text-slate-400 bg-slate-50 hover:text-slate-600'
+                        ? 'border-rosa-borda text-rosa-hover bg-rosa-dim shadow-xs'
+                        : 'border-line text-text-muted bg-surface-hover hover:text-text-dim'
                     }`}
                   >
                     <RedeLabel rede={rede.id} comIcone={true} />
@@ -215,38 +215,38 @@ export default function Agendamento() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1.5">Data</label>
+              <label className="text-xs font-bold text-text-dim block mb-1.5">Data</label>
               <input
                 type="date"
                 value={data}
                 onChange={(e) => setData(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-semibold text-slate-900 outline-none focus:border-indigo-600 transition-colors"
+                className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
               />
             </div>
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1.5">Horário</label>
+              <label className="text-xs font-bold text-text-dim block mb-1.5">Horário</label>
               <input
                 type="time"
                 value={horario}
                 onChange={(e) => setHorario(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-semibold text-slate-900 outline-none focus:border-indigo-600 transition-colors"
+                className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
               />
             </div>
           </div>
 
-          {erro && <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 p-3 rounded-xl">{erro}</p>}
-          {sucesso && <p className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 p-3 rounded-xl">{sucesso}</p>}
+          {erro && <p className="text-xs font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl">{erro}</p>}
+          {sucesso && <p className="text-xs font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-xl">{sucesso}</p>}
 
           <button
             onClick={agendar}
             disabled={enviando}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
+            className="w-full bg-rosa hover:bg-rosa-hover text-white py-2.5 rounded-xl text-xs font-bold shadow-md shadow-rosa/20 transition-all disabled:opacity-50"
           >
             {enviando ? 'Agendando...' : 'Agendar'}
           </button>
 
-          <div className="text-[11px] text-slate-500 pt-3 border-t border-slate-200/80 leading-relaxed font-medium flex items-start gap-1.5">
-            <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+          <div className="text-[11px] text-text-muted pt-3 border-t border-line leading-relaxed font-medium flex items-start gap-1.5">
+            <Info className="w-3.5 h-3.5 text-rosa shrink-0 mt-0.5" />
             <span>
               A publicação automática só roda depois que as Contas (<RedeLabel rede="instagram" /> / <RedeLabel rede="youtube" />) estiverem conectadas.
             </span>
@@ -256,14 +256,14 @@ export default function Agendamento() {
         {/* Lista/Calendário de agendamentos */}
         <div className="space-y-6">
           <div className="flex items-center justify-between">
-            <h3 className="font-display text-lg font-bold text-slate-900">Próximas publicações</h3>
-            <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1">
+            <h3 className="font-display text-lg font-bold text-text">Próximas publicações</h3>
+            <div className="flex gap-1 bg-surface-hover border border-line rounded-xl p-1">
               <button
                 onClick={() => setVisualizacao('calendario')}
                 className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                   visualizacao === 'calendario'
-                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
-                    : 'text-slate-500 hover:text-slate-900'
+                    ? 'bg-surface text-text shadow-xs border border-line'
+                    : 'text-text-muted hover:text-text'
                 }`}
               >
                 Calendário
@@ -272,8 +272,8 @@ export default function Agendamento() {
                 onClick={() => setVisualizacao('lista')}
                 className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
                   visualizacao === 'lista'
-                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
-                    : 'text-slate-500 hover:text-slate-900'
+                    ? 'bg-surface text-text shadow-xs border border-line'
+                    : 'text-text-muted hover:text-text'
                 }`}
               >
                 Lista
@@ -292,7 +292,7 @@ export default function Agendamento() {
               />
 
               <div className="space-y-3">
-                <p className="text-xs font-bold text-slate-500">
+                <p className="text-xs font-bold text-text-muted">
                   {diaSelecionado
                     ? `Publicações em ${formatarDataLabel(diaSelecionado)}`
                     : 'Clique num dia do calendário pra ver as publicações agendadas.'}
@@ -309,14 +309,14 @@ export default function Agendamento() {
 
           {visualizacao === 'lista' &&
             (Object.keys(agendamentosPorData).length === 0 ? (
-              <div className="glass-panel border-2 border-dashed border-slate-300 rounded-2xl py-16 text-center text-slate-500 text-xs font-medium bg-white">
+              <div className="glass-panel border-2 border-dashed border-line-light rounded-2xl py-16 text-center text-text-muted text-xs font-medium bg-surface">
                 Nenhuma publicação agendada ainda.
               </div>
             ) : (
               <div className="space-y-6">
                 {Object.entries(agendamentosPorData).map(([dataAg, itens]) => (
                   <div key={dataAg} className="space-y-2">
-                    <p className="text-xs font-mono font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <p className="text-xs font-mono font-bold text-rosa uppercase tracking-wider flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5" />
                       <span>{formatarDataLabel(dataAg)}</span>
                     </p>

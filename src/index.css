@@ -6,20 +6,35 @@
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
-  --color-base: #f8fafc;
-  --color-surface: #ffffff;
-  --color-surface-hover: #f1f5f9;
-  --color-surface-card: #ffffff;
-  --color-line: #e2e8f0;
-  --color-line-light: #cbd5e1;
+  /* ============================================================
+     TEMA ESCURO GLOBAL — mesma paleta do Editor em Lote (edl-).
+     Painel · Editor · Biblioteca · Agendamento · Contas usam o
+     MESMO fundo preto/quase-preto, superfícies e textos claros.
+     ============================================================ */
+  --color-base: #0a0a0f;
+  --color-surface: #111117;
+  --color-surface-hover: #16161d;
+  --color-surface-card: #16161d;
+  --color-line: #26262f;
+  --color-line-light: #3a3a46;
 
-  --color-marquee: #4f46e5;
-  --color-marquee-hover: #4338ca;
-  --color-marquee-dim: #e0e7ff;
+  --color-marquee: #ec4899;
+  --color-marquee-hover: #f472b6;
+  --color-marquee-dim: rgba(236, 72, 153, 0.12);
 
-  --color-text: #0f172a;
-  --color-text-dim: #475569;
-  --color-text-muted: #94a3b8;
+  /* Destaques (rosa) + detalhes (roxo) — identidade visual do Editor */
+  --color-rosa: #ec4899;
+  --color-rosa-hover: #f472b6;
+  --color-rosa-dim: rgba(236, 72, 153, 0.12);
+  --color-rosa-borda: rgba(236, 72, 153, 0.35);
+  --color-roxo: #8b5cf6;
+  --color-roxo-hover: #a78bfa;
+  --color-roxo-dim: rgba(139, 92, 246, 0.12);
+  --color-roxo-borda: rgba(139, 92, 246, 0.35);
+
+  --color-text: #f5f5f7;
+  --color-text-dim: #a1a1b0;
+  --color-text-muted: #6c6c7c;
 
   --color-status-aguardando: #64748b;
   --color-status-processando: #2563eb;
@@ -27,7 +42,7 @@
   --color-status-erro: #e11d48;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar — dark (mesmo tom do Editor) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -36,54 +51,66 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #2c2c38;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.7), rgba(139, 92, 246, 0.7));
 }
 
 body {
   background-color: var(--color-base);
   color: var(--color-text);
   font-family: var(--font-body);
-  background-image: 
-    radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.05) 0%, transparent 60%),
-    radial-gradient(circle at 100% 100%, rgba(59, 130, 246, 0.03) 0%, transparent 40%);
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(236, 72, 153, 0.06) 0%, transparent 55%),
+    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.05) 0%, transparent 45%);
   background-attachment: fixed;
+  color-scheme: dark;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Light SaaS Glassmorphism utilities */
+/* Seleção + dropdowns nativos no tema escuro global (mesmo tom do Editor) */
+::selection {
+  background: rgba(139, 92, 246, 0.45);
+}
+select option {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* Dark SaaS Glassmorphism utilities — superfícies do tema escuro */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(17, 17, 23, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 1px 3px 0 rgba(15, 23, 42, 0.02);
+  border: 1px solid #26262f;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.55);
 }
 
 .glass-card {
-  background: #ffffff;
+  background: #16161d;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04);
+  border: 1px solid #26262f;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
 }
 
 .glass-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.03);
+  border-color: #3a3a46;
+  box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.6), 0 4px 10px -2px rgba(0, 0, 0, 0.35);
 }
 
 
 /* ============================================================
-   EDITOR EM LOTE — identidade escopada (preto + rosa + roxo).
-   Todas as classes usam o prefixo `edl-` e NÃO afetam as outras
-   telas (Painel, Biblioteca, Templates, Agendamento, Contas),
-   que continuam com o tema claro padrão do AutoPost.
+   EDITOR EM LOTE — identidade rosa→roxo (preto + rosa + roxo).
+   A PALETA (--edl-*) agora é global (:root, compartilhada com o
+   tema escuro das outras telas). As CLASSES `edl-` continuam
+   escopadas ao editor — a navegação e as demais páginas usam os
+   tokens `--color-*` do @theme, que apontam para a MESMA paleta.
    ============================================================ */
 
+:root,
 .edl-root {
   --edl-fundo: #0a0a0f;
   --edl-painel: #111117;

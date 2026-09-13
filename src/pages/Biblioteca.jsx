@@ -276,8 +276,8 @@ export default function Biblioteca() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="font-display text-3xl font-extrabold tracking-tight text-slate-900">Biblioteca</h2>
-          <p className="text-xs text-slate-500 mt-1 font-medium">Gerencie seu repositório de vídeos brutos e processe em lote</p>
+          <h2 className="font-display text-3xl font-extrabold tracking-tight text-text">Biblioteca</h2>
+          <p className="text-xs text-text-muted mt-1 font-medium">Gerencie seu repositório de vídeos brutos e processe em lote</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -285,7 +285,7 @@ export default function Biblioteca() {
             <button
               onClick={processarSelecionados}
               disabled={processandoLote}
-              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold shadow-md shadow-indigo-600/20 transition-all transform active:scale-95 disabled:opacity-50 flex items-center gap-2"
+              className="text-xs bg-rosa hover:bg-rosa-hover text-white px-4 py-2.5 rounded-xl font-bold shadow-md shadow-rosa/20 transition-all transform active:scale-95 disabled:opacity-50 flex items-center gap-2"
             >
               <Zap className="w-4 h-4 fill-white" />
               <span>{processandoLote ? 'Enviando lote...' : `Processar ${selecionados.size} vídeo(s)`}</span>
@@ -294,9 +294,9 @@ export default function Biblioteca() {
           <button
             onClick={() => inputRef.current?.click()}
             disabled={enviando}
-            className="text-xs bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2"
+            className="text-xs bg-surface hover:bg-surface-hover text-text border border-line px-4 py-2.5 rounded-xl font-bold transition-all shadow-xs disabled:opacity-50 flex items-center gap-2"
           >
-            <Plus className="w-4 h-4 text-indigo-600" />
+            <Plus className="w-4 h-4 text-rosa" />
             <span>{enviando ? 'Enviando...' : 'Adicionar vídeos'}</span>
           </button>
           <input
@@ -312,13 +312,13 @@ export default function Biblioteca() {
 
       {/* Tabs Prontos/Todos + seletor de template */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 shrink-0">
+        <div className="flex gap-1 bg-surface-hover border border-line rounded-xl p-1 shrink-0">
           <button
             onClick={() => setVista('prontos')}
             className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
               vista === 'prontos'
-                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
-                : 'text-slate-500 hover:text-slate-900'
+                ? 'bg-surface text-text shadow-xs border border-line'
+                : 'text-text-muted hover:text-text'
             }`}
           >
             Prontos ({videosProntos.length})
@@ -327,19 +327,19 @@ export default function Biblioteca() {
             onClick={() => setVista('todos')}
             className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
               vista === 'todos'
-                ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
-                : 'text-slate-500 hover:text-slate-900'
+                ? 'bg-surface text-text shadow-xs border border-line'
+                : 'text-text-muted hover:text-text'
             }`}
           >
             Todos ({videos.length})
           </button>
         </div>
 
-        <label className="text-[11px] font-bold text-slate-500 shrink-0">Template pra processar:</label>
+        <label className="text-[11px] font-bold text-text-muted shrink-0">Template pra processar:</label>
         <select
           value={templateId}
           onChange={(e) => setTemplateId(e.target.value)}
-          className="w-full sm:w-56 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 outline-none focus:border-indigo-600 font-medium"
+          className="w-full sm:w-56 bg-surface border border-line rounded-xl px-3 py-2 text-xs text-text outline-none focus:border-rosa font-medium"
         >
           {templates.length === 0 && <option value="">Nenhún template criado</option>}
           {templates.map((t) => (
@@ -350,7 +350,7 @@ export default function Biblioteca() {
 
       {/* Erro de lote */}
       {erroLote && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold px-4 py-3 rounded-xl flex items-start gap-2">
+        <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold px-4 py-3 rounded-xl flex items-start gap-2">
           <span className="shrink-0">⚠️</span>
           <span>{erroLote}</span>
         </div>
@@ -360,23 +360,23 @@ export default function Biblioteca() {
       {videos.length === 0 ? (
         <div
           onClick={() => inputRef.current?.click()}
-          className="glass-panel border-2 border-dashed border-slate-300 hover:border-indigo-500/60 rounded-2xl p-16 text-center cursor-pointer transition-all duration-300 group shadow-xs"
+          className="glass-panel border-2 border-dashed border-line-light hover:border-rosa/60 rounded-2xl p-16 text-center cursor-pointer transition-all duration-300 group shadow-xs"
         >
-          <div className="w-16 h-16 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+          <div className="w-16 h-16 rounded-full bg-rosa-dim border border-rosa-borda text-rosa flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
             <Upload className="w-8 h-8" />
           </div>
-          <h3 className="font-display text-base font-bold text-slate-900 mb-1">Nenhum vídeo na biblioteca</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+          <h3 className="font-display text-base font-bold text-text mb-1">Nenhum vídeo na biblioteca</h3>
+          <p className="text-xs text-text-muted max-w-sm mx-auto font-medium">
             Clique aqui ou no botão acima para importar seus arquivos de vídeo e começar o processamento.
           </p>
         </div>
       ) : videosVisibles.length === 0 ? (
-        <div className="glass-panel rounded-2xl border-2 border-dashed border-slate-300 p-14 text-center shadow-xs">
-          <div className="w-14 h-14 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+        <div className="glass-panel rounded-2xl border-2 border-dashed border-line-light p-14 text-center shadow-xs">
+          <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-4">
             <Check className="w-7 h-7" />
           </div>
-          <h3 className="font-display text-base font-bold text-slate-900 mb-1">Nenhún vídeo concluído</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+          <h3 className="font-display text-base font-bold text-text mb-1">Nenhún vídeo concluído</h3>
+          <p className="text-xs text-text-muted max-w-sm mx-auto font-medium">
             Os vídeos que terminen de processarse com un template aparecerán aquí, prontos pra Programar.
           </p>
         </div>
@@ -391,8 +391,8 @@ export default function Biblioteca() {
                 onClick={() => alternarSelecao(video.id)}
                 className={`group text-left rounded-xl overflow-hidden border transition-all duration-200 cursor-pointer relative shadow-xs ${
                   selecionado
-                    ? 'border-indigo-600 ring-2 ring-indigo-600/30 bg-indigo-50/20'
-                    : 'border-slate-200 hover:border-slate-300 glass-card hover:-translate-y-1'
+                    ? 'border-rosa ring-2 ring-rosa/30 bg-rosa-dim/20'
+                    : 'border-line hover:border-line-light glass-card hover:-translate-y-1'
                 }`}
               >
                 <div className="aspect-[9/16] bg-slate-900 relative overflow-hidden">
@@ -403,7 +403,7 @@ export default function Biblioteca() {
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs gap-1">
+                    <div className="w-full h-full flex flex-col items-center justify-center text-text-muted text-xs gap-1">
                       <svg className="w-6 h-6 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                       </svg>
@@ -428,7 +428,7 @@ export default function Biblioteca() {
                             <div
                               key={f.id}
                               title={`${f.templateNome || 'Final'} — ${pronto ? 'pronto pra agendar' : f.status}`}
-                              className="flex items-center gap-1 rounded-lg bg-white/95 border border-white/70 shadow-sm px-1 py-0.5"
+                              className="flex items-center gap-1 rounded-lg bg-surface/95 border border-white/70 shadow-sm px-1 py-0.5"
                             >
                               {f.thumbnailFinal ? (
                                 <img
@@ -437,7 +437,7 @@ export default function Biblioteca() {
                                   className="w-4 h-6 rounded object-cover"
                                 />
                               ) : (
-                                <span className="w-4 h-6 rounded bg-slate-200 flex items-center justify-center text-[7px] text-slate-500 font-black">
+                                <span className="w-4 h-6 rounded bg-surface-hover border border-line flex items-center justify-center text-[7px] text-text-muted font-black">
                                   FD
                                 </span>
                               )}
@@ -448,12 +448,12 @@ export default function Biblioteca() {
                                     abrirPreview(video, f.id);
                                   }}
                                   title={`Preview do final • ${f.templateNome || 'Final'}`}
-                                  className="text-[9px] font-extrabold text-indigo-700 hover:text-indigo-900 hover:underline leading-none max-w-[72px] truncate cursor-pointer"
+                                  className="text-[9px] font-extrabold text-rosa hover:text-rosa-hover hover:underline leading-none max-w-[72px] truncate cursor-pointer"
                                 >
                                   {f.templateNome || 'Final'}
                                 </button>
                               ) : (
-                                <span className="text-[9px] font-bold text-slate-600 leading-none max-w-[72px] truncate">
+                                <span className="text-[9px] font-bold text-text-dim leading-none max-w-[72px] truncate">
                                   {f.templateNome || 'Final'}
                                 </span>
                               )}
@@ -474,8 +474,8 @@ export default function Biblioteca() {
 
                   {/* Selection Overlay */}
                   {selecionado && (
-                    <div className="absolute inset-0 bg-indigo-600/30 backdrop-blur-[2px] flex items-center justify-center">
-                      <div className="w-7 h-7 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-black shadow-lg">
+                    <div className="absolute inset-0 bg-rosa/30 backdrop-blur-[2px] flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-full bg-rosa text-white flex items-center justify-center text-xs font-black shadow-lg">
                         <Check className="w-4 h-4 stroke-[3]" />
                       </div>
                     </div>
@@ -489,16 +489,16 @@ export default function Biblioteca() {
                   )}
                 </div>
 
-                <div className="p-2.5 flex items-center justify-between gap-2 border-t border-slate-100 bg-white">
-                  <span className="text-[11px] font-semibold truncate text-slate-700 group-hover:text-indigo-600 transition-colors">
+                <div className="p-2.5 flex items-center justify-between gap-2 border-t border-line bg-surface">
+                  <span className="text-[11px] font-semibold truncate text-text-dim group-hover:text-rosa transition-colors">
                     {video.nomeOriginal}
                   </span>
                   <span className="flex items-center gap-1.5 shrink-0">
                     {video.status === 'processando' && (
-                      <span className="text-[10px] font-mono font-bold text-indigo-600">{video.percentual || 0}%</span>
+                      <span className="text-[10px] font-mono font-bold text-rosa">{video.percentual || 0}%</span>
                     )}
                     {video.status === 'concluido' && (
-                      <span className="text-[10px] font-extrabold text-emerald-600" title="Pronto pra publicar">✓</span>
+                      <span className="text-[10px] font-extrabold text-emerald-400" title="Pronto pra publicar">✓</span>
                     )}
                     <StatusDot status={video.status} comRotulo={false} />
                   </span>
@@ -506,13 +506,13 @@ export default function Biblioteca() {
 
                 {/* Ações do card: Preview (modal interno) e Excluir */}
                 <div
-                  className="px-2 pb-2 flex items-center gap-1.5 bg-white border-t border-slate-100"
+                  className="px-2 pb-2 flex items-center gap-1.5 bg-surface border-t border-line"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
                     onClick={() => abrirPreview(video)}
                     disabled={excluindoId === video.id}
-                    className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 hover:text-indigo-800 transition-colors disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-rosa-dim text-rosa border border-rosa-borda hover:bg-rosa-borda hover:text-rosa-hover transition-colors disabled:opacity-50"
                   >
                     <Play className="w-3 h-3 fill-current shrink-0" />
                     <span>Preview</span>
@@ -521,7 +521,7 @@ export default function Biblioteca() {
                     onClick={() => iniciarExclusao(video)}
                     disabled={excluindoId === video.id}
                     title="Excluir vídeo (removerá também os finais)"
-                    className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 hover:text-rose-700 transition-colors disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/15 hover:text-rose-300 transition-colors disabled:opacity-50"
                   >
                     <Trash2 className="w-3.5 h-3.5 shrink-0" />
                     <span>Excluir</span>
@@ -546,13 +546,13 @@ export default function Biblioteca() {
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10">
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white truncate">{preview.video.nomeOriginal}</p>
-                <p className="text-[11px] text-slate-400 font-medium truncate">
+                <p className="text-[11px] text-text-muted font-medium truncate">
                   {preview.opcoes.find((o) => o.chave === preview.chave)?.label || 'Preview'}
                 </p>
               </div>
               <button
                 onClick={fecharPreview}
-                className="shrink-0 w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 flex items-center justify-center transition-colors"
+                className="shrink-0 w-8 h-8 rounded-lg bg-surface/10 hover:bg-surface/20 text-slate-200 flex items-center justify-center transition-colors"
                 title="Fechar (Esc)"
               >
                 <X className="w-4 h-4" />
@@ -569,8 +569,8 @@ export default function Biblioteca() {
                       onClick={() => setPreview({ ...preview, chave: opcao.chave })}
                       className={`shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors ${
                         ativa
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-white/10 text-slate-300 hover:bg-white/20'
+                          ? 'bg-rosa text-white'
+                          : 'bg-surface/10 text-slate-300 hover:bg-surface/20'
                       }`}
                     >
                       {opcao.tipo === 'original' ? (
@@ -596,7 +596,7 @@ export default function Biblioteca() {
                   className="w-full h-full object-contain"
                 />
               ) : (
-                <p className="text-xs text-slate-500 font-medium px-4 text-center">
+                <p className="text-xs text-text-muted font-medium px-4 text-center">
                   Nenhuma versão disponível para preview.
                 </p>
               )}
@@ -616,34 +616,34 @@ export default function Biblioteca() {
               onClick={cancelarExclusao}
             >
               <div
-                className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden"
+                className="w-full max-w-sm bg-surface rounded-2xl border border-line shadow-2xl overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="px-5 pt-5 pb-4 border-b border-slate-100 flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <div className="px-5 pt-5 pb-4 border-b border-line flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
                     <Trash2 className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-display text-base font-bold text-slate-900">Excluir vídeo</h3>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5 break-words">
+                    <h3 className="font-display text-base font-bold text-text">Excluir vídeo</h3>
+                    <p className="text-xs text-text-muted font-medium mt-0.5 break-words">
                       {excluirAlvo.nomeOriginal}
                     </p>
                   </div>
                 </div>
 
                 <div className="px-5 py-4 space-y-3">
-                  <p className="text-sm font-semibold text-slate-800">
+                  <p className="text-sm font-semibold text-text">
                     Tem certeza que deseja excluir este vídeo?
                   </p>
-                  <p className="text-xs text-slate-500 font-medium">
+                  <p className="text-xs text-text-muted font-medium">
                     {numeroFinais > 0
                       ? `O registro da Biblioteca, ${numeroFinais} final(is) e todos os arquivos relacionados (vídeo, finais e thumbnails) serão removidos. Esta ação é irreversível.`
                       : 'O registro da Biblioteca e os arquivos relacionados (vídeo e thumbnail) serão removidos. Esta ação é irreversível.'}
                   </p>
 
                   {processandoAinda && (
-                    <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-3 py-2.5 rounded-xl">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                    <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold px-3 py-2.5 rounded-xl">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
                       <span>
                         Este vídeo ainda está em processamento. A exclusão será bloqueada até que o
                         processamento termine (ou seja cancelado).
@@ -652,18 +652,18 @@ export default function Biblioteca() {
                   )}
 
                   {erroExclusao && (
-                    <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold px-3 py-2.5 rounded-xl">
-                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-semibold px-3 py-2.5 rounded-xl">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
                       <span>{erroExclusao}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50/60">
+                <div className="px-5 py-4 border-t border-line flex items-center justify-end gap-2 bg-surface-hover/60">
                   <button
                     onClick={cancelarExclusao}
                     disabled={excluindoId !== null}
-                    className="text-xs font-bold text-slate-600 hover:text-slate-900 px-4 py-2.5 rounded-xl hover:bg-slate-100 transition-colors disabled:opacity-50"
+                    className="text-xs font-bold text-text-dim hover:text-text px-4 py-2.5 rounded-xl hover:bg-surface-hover transition-colors disabled:opacity-50"
                   >
                     Cancelar
                   </button>
