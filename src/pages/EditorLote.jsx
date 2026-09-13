@@ -45,9 +45,96 @@ import {
  *
  * Pool (usePoolDeVideos): no máximo 3 vídeos completos carregando ao mesmo
  * tempo; os demais cards ficam só na thumbnail.
+ *
+ * Persistência (localStorage `autopost:editorlote:v1`): autosave 350ms +
+ * flush no unmount + `pagehide` (reload/fechar aba) + retomada do polling.
+ * Persiste vídeos importados (metadados + URLs absolutas), vídeo selecionado,
+ * templateId e TODA a config compartilhada — incluindo a logo (como dataURL,
+ * pois File/blob: não sobrevivem). Ao voltar, tudo é restaurado como estava.
  */
 
 const CHAVE_LOTE = 'autopost:editorlote:v1';
+
+const EXTENSAO_POR_TIPO_LOGO = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+};
+
+/**
+ * Reconstrói um File a partir de um dataURL (SÍNCRONO — usado ao restaurar a
+ * logo, para que "Processar vídeos" reenvie a imagem sem re-escolher o arquivo).
+ */
+function arquivoDeDataUrl(dataUrl) {
+  try {
+    const partes = String(dataUrl).split(',');
+    const tipo = /data:(.*?);base64/.exec(partes[0] || '')?.[1] || 'image/png';
+    const bin = atob(partes[1] || '');
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const ext = EXTENSAO_POR_TIPO_LOGO[tipo] || 'png';
+    return new File([bytes], `logo-restaurada.${ext}`, { type: tipo });
+  } catch {
+    return null;
+  }
+}
+
+/** Sanitiza os vídeos para persistência (SÓ metadados serializáveis). */
+function itensParaSalvar(itens) {
+  return (Array.isArray(itens) ? itens : [])
+    .filter((it) => it && it.id && (it.urlFonte || it.thumbnail))
+    .map((it) => ({
+      id: it.id,
+      bibliotecaId: it.bibliotecaId || it.id,
+      nome: it.nome ?? null,
+      thumbnail: it.thumbnail ?? null,
+      urlFonte: it.urlFonte ?? null,
+      duracao: it.duracao ?? null,
+      filaId: it.filaId ?? null,
+    }));
+}
+
+/**
+ * Sanitiza a config para persistência. File e `blob:` NUNCA vão pro
+ * localStorage (não sobrevivem a reload) — a logo persiste como dataURL em
+ * `logo.logoDataUrl` (convertida pelo effect de conversão).
+ */
+function configParaSalvar(config, logoDataUrl) {
+  const base = config && typeof config === 'object' ? config : criarConfigPadrao();
+  const urlAtual = typeof base.logo?.url === 'string' ? base.logo.url : null;
+  const urlLogo = urlAtual && !urlAtual.startsWith('blob:') ? urlAtual : logoDataUrl || null;
+  const doBase =
+    typeof base.logo?.logoDataUrl === 'string' && base.logo.logoDataUrl.startsWith('data:')
+      ? base.logo.logoDataUrl
+      : null;
+  const dataUrl = doBase || logoDataUrl || (urlLogo && urlLogo.startsWith('data:') ? urlLogo : null);
+  return {
+    ...base,
+    canvas: { ...base.canvas },
+    areaVideo: { ...base.areaVideo },
+    logo: {
+      ...base.logo,
+      url: urlLogo,
+      arquivo: null,
+      alturaProporcao: base.logo?.alturaProporcao ?? null,
+      logoDataUrl: dataUrl,
+    },
+    textos: {
+      superior: { ...base.textos?.superior },
+      inferior: { ...base.textos?.inferior },
+    },
+    identidade: base.identidade
+      ? {
+        nome: { ...base.identidade.nome },
+        usuario: { ...base.identidade.usuario },
+        selo: { ...base.identidade.selo },
+      }
+      : base.identidade,
+    corteBordas: base.corteBordas ? { ...base.corteBordas } : base.corteBordas,
+  };
+}
 
 /** Junta a config salva sobre a padrão (tolerante a versões antigas). */
 function mesclarConfig(salva) {
@@ -90,25 +177,93 @@ function carregarLoteSalvo() {
     const dados = JSON.parse(bruto);
     if (!dados || !Array.isArray(dados.itens)) return null;
     const config = mesclarConfig(dados.config);
-    // blob: URLs não sobrevivem ao reload — descarta.
-    if (config.logo.url && String(config.logo.url).startsWith('blob:')) {
-      config.logo = { ...config.logo, url: null, arquivo: null };
-    }
-    // Sem limite de quantidade — restaura tudo o que foi salvo.
+    // LOGO: `blob:` e `File` NÃO sobrevivem a sair/voltar — a logo persiste
+    // como dataURL (`logo.logoDataUrl`); aqui ela volta como url E como File
+    // reconstruído (o "Processar" reenvia sem re-escolher o arquivo). Sem
+    // dataURL e sem URL de servidor, a logo volta vazia (resto preservado).
+    const salvaLogo = dados.config?.logo || {};
+    const dataUrl =
+      typeof salvaLogo.logoDataUrl === 'string' && salvaLogo.logoDataUrl.startsWith('data:')
+        ? salvaLogo.logoDataUrl
+        : null;
+    let urlLogo =
+      typeof salvaLogo.url === 'string' && !salvaLogo.url.startsWith('blob:') ? salvaLogo.url : null;
+    if (!urlLogo) urlLogo = dataUrl;
+    config.logo = {
+      ...config.logo,
+      url: urlLogo,
+      arquivo: urlLogo && urlLogo.startsWith('data:') ? arquivoDeDataUrl(urlLogo) : null,
+      logoDataUrl: dataUrl || (urlLogo && urlLogo.startsWith('data:') ? urlLogo : null),
+      alturaProporcao: urlLogo ? config.logo.alturaProporcao ?? null : null,
+    };
+    // VÍDEOS: só metadados serializáveis (id + URLs ABSOLUTAS do servidor —
+    // continuam válidas após sair/voltar). Estado de fila é resetado p/ valor
+    // seguro; o polling é RETOMADO no mount quando há filaId (efeito abaixo).
     const itens = dados.itens
-      .filter((v) => v && v.id)
+      .filter((v) => v && v.id && (v.urlFonte || v.url || v.thumbnail))
       .map((v) => ({
-        ...v,
-        bibliotecaId: v.bibliotecaId || null,
-        filaId: v.filaId || null,
-        percentual: v.percentual || 0,
-        erroMensagem: v.erroMensagem || null,
+        id: v.id,
+        bibliotecaId: v.bibliotecaId || v.id || null,
+        nome: v.nome ?? null,
+        thumbnail: v.thumbnail ?? null,
         urlFonte: v.urlFonte || v.url || null,
-        status: v.status || 'pronto',
+        duracao: v.duracao ?? null,
+        filaId: v.filaId ?? null,
+        status: v.filaId ? 'aguardando' : 'pronto',
+        percentual: 0,
+        erroMensagem: null,
       }));
-    return { itens, config, templateId: dados.templateId || null, assinatura: dados.assinatura || null };
+    // Seleção consistente: o id restaurado tem prioridade; se sumiu, null
+    // (o efeito abaixo abre o primeiro da lista).
+    const idSelecionado = itens.some((it) => it.id === dados.idSelecionado)
+      ? dados.idSelecionado
+      : null;
+    return {
+      itens,
+      config,
+      idSelecionado,
+      templateId: dados.templateId || null,
+      assinatura: dados.assinatura || null,
+    };
   } catch {
     return null;
+  }
+}
+
+/** GRAVA o estado atual do editor no localStorage (autosave + botão Salvar). */
+function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura, logoDataUrl }) {
+  try {
+    const carga = JSON.stringify({
+      itens: itensParaSalvar(itens),
+      config: configParaSalvar(config, logoDataUrl || null),
+      idSelecionado: idSelecionado || null,
+      templateId: templateId || null,
+      assinatura: assinatura || null,
+    });
+    try {
+      localStorage.setItem(CHAVE_LOTE, carga);
+    } catch {
+      // Quota excedida (logo em dataURL grande): regrava SEM a imagem — todo
+      // o resto (vídeos, seleção, config) continua persistido.
+      if (logoDataUrl) {
+        try {
+          localStorage.setItem(
+            CHAVE_LOTE,
+            JSON.stringify({
+              itens: itensParaSalvar(itens),
+              config: configParaSalvar(config, null),
+              idSelecionado: idSelecionado || null,
+              templateId: templateId || null,
+              assinatura: assinatura || null,
+            })
+          );
+        } catch {
+          /* storage bloqueado — o editor segue funcionando sem persistir */
+        }
+      }
+    }
+  } catch {
+    /* estado não-serializável — nunca quebra a UI */
   }
 }
 
@@ -116,7 +271,8 @@ export default function EditorLote() {
   const loteSalvo = useMemo(() => carregarLoteSalvo(), []);
   const [itens, setItens] = useState(() => loteSalvo?.itens || []);
   const [config, setConfig] = useState(() => loteSalvo?.config || criarConfigPadrao());
-  const [idSelecionado, setIdSelecionado] = useState(null);
+  // Vídeo aberto no editor — TAMBÉM persistido (voltar = exatamente como estava).
+  const [idSelecionado, setIdSelecionado] = useState(() => loteSalvo?.idSelecionado || null);
   const [salvando, setSalvando] = useState(false);
   const [enfileirando, setEnfileirando] = useState(false);
   const [templateIdSalvo, setTemplateIdSalvo] = useState(() => loteSalvo?.templateId || null);
@@ -137,10 +293,104 @@ export default function EditorLote() {
 
   useEffect(() => () => clearTimeout(timerToast.current), []);
 
-  // Seleciona o primeiro vídeo automaticamente (o canvas nunca fica vazio).
+  // Seleciona o primeiro vídeo automaticamente (o canvas nunca fica vazio) e
+  // mantém a seleção consistente: o vídeo restaurado do localStorage tem
+  // prioridade; se ele não existir mais, cai pro primeiro da lista.
   useEffect(() => {
-    if (!idSelecionado && itens.length > 0) setIdSelecionado(itens[0].id);
+    if (itens.length === 0) {
+      if (idSelecionado) setIdSelecionado(null);
+      return;
+    }
+    if (!idSelecionado || !itens.some((it) => it.id === idSelecionado)) {
+      setIdSelecionado(itens[0].id);
+    }
   }, [itens, idSelecionado]);
+
+  // dataURL da logo (File/blob: não sobrevivem a sair/voltar — o dataURL
+  // sim). Inicializado com o valor restaurado, se houver.
+  const logoDataUrlRef = useRef(
+    loteSalvo?.config?.logo?.logoDataUrl && String(loteSalvo.config.logo.logoDataUrl).startsWith('data:')
+      ? { arquivo: loteSalvo.config.logo.arquivo || null, dataUrl: loteSalvo.config.logo.logoDataUrl }
+      : null
+  );
+
+  // Espelho em ref (sempre fresco): o flush de unmount/pagehide usa este.
+  const estadoAtualRef = useRef(null);
+  estadoAtualRef.current = {
+    itens,
+    config,
+    idSelecionado,
+    templateId: templateIdSalvo,
+    assinatura: assinaturaSalva,
+  };
+
+  /** Descarrega o estado atual no localStorage (unmount + pagehide). */
+  const descarregar = useCallback(() => {
+    const atual = estadoAtualRef.current;
+    if (!atual) return;
+    salvarEstadoNoDisco({ ...atual, logoDataUrl: logoDataUrlRef.current?.dataUrl || null });
+  }, []);
+
+  // LOGO → dataURL: File/blob: NÃO sobrevivem a sair/voltar; o dataURL
+  // (persistido em `logo.logoDataUrl`) sobrevive. Converte quando o arquivo
+  // muda e regrava na hora (sem esperar outra edição).
+  useEffect(() => {
+    const arq = config.logo?.arquivo;
+    if (!(arq instanceof File)) {
+      if (!config.logo?.url) logoDataUrlRef.current = null;
+      return undefined;
+    }
+    if (logoDataUrlRef.current?.arquivo === arq && logoDataUrlRef.current?.dataUrl) return undefined;
+    let vivo = true;
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      if (!vivo) return;
+      const dataUrl = String(leitor.result || '');
+      if (!dataUrl.startsWith('data:')) return;
+      logoDataUrlRef.current = { arquivo: arq, dataUrl };
+      const atual = estadoAtualRef.current;
+      if (atual) salvarEstadoNoDisco({ ...atual, logoDataUrl: dataUrl });
+    };
+    try {
+      leitor.readAsDataURL(arq);
+    } catch {
+      // File ilegível: mantém o último dataURL válido (se houver).
+    }
+    return () => {
+      vivo = false;
+    };
+  }, [config.logo]);
+
+  // AUTOSAVE — qualquer mudança (vídeos, seleção ou a config inteira: logo,
+  // identidade, textos, área do vídeo, corte, fundo) é gravada no localStorage
+  // com debounce curto. Sair da aba e voltar recupera TUDO. Os itens guardam
+  // URLs do servidor (uploads/thumbnails) — os vídeos sobrevivem e o pool
+  // (usePoolDeVideos) remonta o <video> a partir da urlFonte.
+  useEffect(() => {
+    const timer = setTimeout(
+      () =>
+        salvarEstadoNoDisco({
+          itens,
+          config,
+          idSelecionado,
+          templateId: templateIdSalvo,
+          assinatura: assinaturaSalva,
+          logoDataUrl: logoDataUrlRef.current?.dataUrl || null,
+        }),
+      350
+    );
+    return () => clearTimeout(timer);
+  }, [itens, config, idSelecionado, templateIdSalvo, assinaturaSalva]);
+
+  // Flush no unmount: garante que o ÚLTIMO estado vá pro localStorage mesmo
+  // que o usuário saia da aba dentro da janela do debounce (trocar de página
+  // desmonta esta página). Reload/fechar a aba: o cleanup do React NÃO roda —
+  // `pagehide` garante o save nesses casos.
+  useEffect(() => () => descarregar(), [descarregar]);
+  useEffect(() => {
+    window.addEventListener('pagehide', descarregar);
+    return () => window.removeEventListener('pagehide', descarregar);
+  }, [descarregar]);
 
   const aoAdicionarVideo = useCallback((novo) => {
     setItens((atual) => {
@@ -266,12 +516,24 @@ export default function EditorLote() {
 
   useEffect(() => () => pararPolling(), [pararPolling]);
 
+  // Ao VOLTAR pro editor: se havia itens em processamento quando o usuário
+  // saiu, retoma o acompanhamento do progresso automaticamente (a fila REAL
+  // continua na Oracle/worker — só a UI tinha parado de olhar).
+  const filaRetomadaRef = useRef(false);
+  useEffect(() => {
+    if (filaRetomadaRef.current) return;
+    filaRetomadaRef.current = true;
+    if (itens.some((it) => it.filaId && (it.status === 'aguardando' || it.status === 'processando'))) {
+      iniciarPolling();
+    }
+  }, [itens, iniciarPolling]);
+
   // Fila vazia → para o polling. Fila parada demais → avisa sobre o worker.
   useEffect(() => {
     const temAtivos = itens.some((it) => it.status === 'aguardando' || it.status === 'processando');
     if (!temAtivos && pollRef.current) {
       pararPolling();
-      mostrarToast('Processamento do lote concluído.');
+      mostrarToast('Processamento concluído.');
     }
     const temAguardando = itens.some((it) => it.status === 'aguardando');
     const temProcessando = itens.some((it) => it.status === 'processando');
@@ -307,18 +569,15 @@ export default function EditorLote() {
     setSalvando(true);
     try {
       const { templateId, assinatura } = await garantirTemplate();
-      const configPraSalvar = { ...config, logo: { ...config.logo, arquivo: null } };
-      localStorage.setItem(
-        CHAVE_LOTE,
-        JSON.stringify({ itens, config: configPraSalvar, templateId, assinatura })
-      );
-      mostrarToast(`Lote salvo — ${itens.length} vídeo(s) + template no servidor.`);
+      // Grava o estado completo (itens + config + vídeo aberto) no localStorage.
+      salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura });
+      mostrarToast(`Salvo — ${itens.length} vídeo(s) importado(s) + template no servidor.`);
     } catch (erro) {
-      mostrarToast(erro.message || 'Não foi possível salvar o lote.', 'erro');
+      mostrarToast(erro.message || 'Não foi possível salvar.', 'erro');
     } finally {
       setSalvando(false);
     }
-  }, [config, itens, garantirTemplate, mostrarToast]);
+  }, [config, itens, idSelecionado, garantirTemplate, mostrarToast]);
 
   const aoProcessar = useCallback(async () => {
     if (enfileirando) return;

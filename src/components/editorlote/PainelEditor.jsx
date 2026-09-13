@@ -218,7 +218,7 @@ function TextoBloco({ chave, t, aoMudar }) {
       <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 80)} min={20} max={100} aoMudar={(v) => aoMudar('largura', v)} />
       <Deslizador rotulo="Altura do bloco" sufixo="px" valor={Math.round(t.altura ?? 240)} min={60} max={1200} aoMudar={(v) => aoMudar('altura', v)} />
       <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
-      <Alternar rotulo={`${rotulo} visível no lote`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+      <Alternar rotulo={`${rotulo} visível em todos os vídeos`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
 
       <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
         Este {rotulo.toLowerCase()} é INDEPENDENTE do outro: posição, tamanho e estilo próprios — mexer num não muda o outro.
@@ -336,7 +336,7 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           <Wand2 className="w-3.5 h-3.5 edl-icone-b shrink-0 mt-0.5" />
           <p className="text-[10px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-dim)' }}>
             Edição compartilhada: logo/texto valem{' '}
-            <span className="edl-grad-texto font-extrabold">para todos os vídeos</span> do lote — a mudança é
+            <span className="edl-grad-texto font-extrabold">para todos os vídeos importados</span> — a mudança é
             instantânea e vai pro template REAL do servidor ao processar.
           </p>
         </div>
@@ -400,13 +400,13 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
                   {config.logo.arquivo?.nome || 'Logo aplicada'}
                 </p>
                 <p className="text-[9px] font-semibold mt-0.5" style={{ color: 'var(--edl-texto-mut)' }}>
-                  aplicada em todos os vídeos do lote
+                  aplicada em todos os vídeos importados
                 </p>
               </div>
               <button
                 type="button"
                 onClick={aoRemoverLogo}
-                title="Remover logo do lote"
+                title="Remover logo"
                 className="edl-ring-foco w-8 h-8 rounded-lg edl-superficie flex items-center justify-center shrink-0"
               >
                 <Trash2 className="w-3.5 h-3.5 edl-icone-a" />
@@ -452,7 +452,7 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           <Deslizador rotulo="Posição Y" sufixo="%" valor={Math.round(config.logo.y)} min={0} max={100} aoMudar={(v) => aoMudarLogo('y', v)} />
           <Deslizador rotulo="Largura" sufixo="%" valor={Math.round(config.logo.largura)} min={2} max={60} aoMudar={(v) => aoMudarLogo('largura', v)} />
           <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(config.logo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarLogo('opacidade', v)} />
-          <Alternar rotulo="Logo visível no lote" ativo={!!config.logo.visivel} aoMudar={(v) => aoMudarLogo('visivel', v)} />
+          <Alternar rotulo="Logo visível em todos os vídeos" ativo={!!config.logo.visivel} aoMudar={(v) => aoMudarLogo('visivel', v)} />
         </div>
       )}
       {/* FERRAMENTAS: TEXTO SUPERIOR / TEXTO INFERIOR — cada um é um elemento
@@ -606,7 +606,7 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
             <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
               Não existe botão "Aplicar a todos": há UMA configuração
               compartilhada — qualquer mudança em logo, textos, área do vídeo,
-              corte ou fundo reflete automaticamente em todos os vídeos do lote.
+              corte ou fundo reflete automaticamente em todos os vídeos importados.
             </p>
           </div>
 

@@ -3,12 +3,13 @@ import { Film } from 'lucide-react';
 import PreviaLoteCard from './PreviaLoteCard';
 
 /**
- * EDITOR EM LOTE — GRADE dos vídeos do lote (coluna ESQUERDA, sob os downloads).
+ * EDITOR EM LOTE — GRADE dos vídeos importados (coluna ESQUERDA, sob os
+ * downloads — esta é a ÚNICA lista de vídeos do editor).
  *
  * Modos 1X / 2X / 3X:
  *   1X = 1 vídeo em destaque por linha; 2X = 2 vídeos diferentes por linha;
  *   3X = 3 vídeos diferentes por linha. Scroll VERTICAL mostra os demais —
- *   NUNCA é o mesmo vídeo repetido: cada célula é um vídeo do lote.
+ *   NUNCA é o mesmo vídeo repetido: cada célula é um vídeo importado.
  *
  * Desempenho com qualquer quantidade de vídeos (sem limite fixo):
  * - cada card é leve (thumbnail REAL + `loading="lazy"` + `decoding="async"`);
@@ -66,7 +67,7 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
       {/* Barra da grade — modos 1X / 2X / 3X */}
       <div className="shrink-0 px-3 py-1.5 border-t border-b border-[color:var(--edl-borda)] flex items-center gap-2">
         <Film className="w-3.5 h-3.5 edl-icone-b shrink-0" />
-        <h2 className="font-display text-xs font-extrabold text-white">Vídeos do lote</h2>
+        <h2 className="font-display text-xs font-extrabold text-white">Vídeos importados</h2>
         <span
           className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
           style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--edl-roxo)' }}
@@ -99,9 +100,9 @@ function GradeVideos({ itens, idSelecionado, ativosNoPool, aoSelecionar, aoFocar
           <div className="h-full flex items-center justify-center">
             <div className="edl-superficie rounded-lg px-4 py-3 text-center max-w-[240px]">
               <Film className="w-5 h-5 mx-auto edl-icone-a opacity-70" />
-              <h3 className="font-display text-xs font-extrabold text-white mt-1.5">Nenhum vídeo no lote</h3>
+              <h3 className="font-display text-xs font-extrabold text-white mt-1.5">Nenhum vídeo importado</h3>
               <p className="text-[10px] font-medium mt-1" style={{ color: 'var(--edl-texto-dim)' }}>
-                Adicione vídeos acima pra preencher a grade.
+                Importe vídeos acima pra aparecerem aqui.
               </p>
             </div>
           </div>

@@ -100,7 +100,7 @@ export default function ListaProgreso({ ids, onTerminado }) {
 
       {total === 0 ? (
         <p className="text-xs text-slate-500 py-4 px-3.5 font-medium">
-          Buscando os vídeos do lote na fila...
+          Buscando os vídeos importados na fila...
         </p>
       ) : (
         <div className="divide-y divide-slate-100">

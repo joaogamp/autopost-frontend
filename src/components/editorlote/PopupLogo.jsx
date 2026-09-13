@@ -292,7 +292,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
           <div className="min-w-0">
             <h2 className="text-sm font-extrabold text-slate-900 leading-none">Identidade do canal</h2>
             <p className="text-[10px] font-medium text-slate-500 mt-1 leading-none">
-              Logo · nome · @ · selo azul — cada elemento é independente · mudanças em tempo real no lote inteiro
+              Logo · nome · @ · selo azul — cada elemento é independente · mudanças em tempo real em todos os vídeos
             </p>
           </div>
           <div className="flex-1" />
@@ -384,7 +384,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
               )}
             </div>
             <p className="text-[10px] font-bold text-slate-500 text-center leading-snug">
-              Arraste com o mouse · alças laterais/cantos redimensionam · tudo reflete no canvas e no lote
+              Arraste com o mouse · alças laterais/cantos redimensionam · tudo reflete no canvas e nos vídeos
             </p>
           </div>
 
@@ -409,7 +409,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
               <DeslizadorClaro rotulo="Posição Y" sufixo="%" valor={Math.round(logo.y ?? 8)} min={0} max={100} aoMudar={(v) => aoMudarLogo('y', v)} />
               <DeslizadorClaro rotulo="Tamanho (largura)" sufixo="%" valor={Math.round(logo.largura ?? 22)} min={2} max={60} passo={0.5} aoMudar={(v) => aoMudarLogo('largura', v)} />
               <DeslizadorClaro rotulo="Opacidade" sufixo="%" valor={Math.round(logo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarLogo('opacidade', v)} />
-              <AlternarClaro rotulo="Logo visível no lote" ativo={logo.visivel !== false} aoMudar={(v) => aoMudarLogo('visivel', v)} />
+              <AlternarClaro rotulo="Logo visível em todos os vídeos" ativo={logo.visivel !== false} aoMudar={(v) => aoMudarLogo('visivel', v)} />
               {logo.url && (
                 <button
                   type="button"
@@ -417,7 +417,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
                   className="edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2 rounded-lg text-red-600 hover:bg-red-50 border border-red-200"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Remover logo do lote
+                  Remover logo
                 </button>
               )}
             </section>
@@ -450,7 +450,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
               <DeslizadorClaro rotulo="Posição Y" sufixo="%" valor={Math.round(identidade.selo.y ?? 15.6)} min={0} max={100} passo={0.2} aoMudar={(v) => aoMudarIdentidade('selo', 'y', v)} />
               <DeslizadorClaro rotulo="Tamanho" sufixo="%" valor={Math.round((identidade.selo.largura ?? 3.4) * 10) / 10} min={1} max={12} passo={0.1} aoMudar={(v) => aoMudarIdentidade('selo', 'largura', v)} />
               <DeslizadorClaro rotulo="Opacidade" sufixo="%" valor={Math.round(identidade.selo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarIdentidade('selo', 'opacidade', v)} />
-              <AlternarClaro rotulo="Selo visível no lote" ativo={!!identidade.selo.visivel} aoMudar={(v) => aoMudarIdentidade('selo', 'visivel', v)} />
+              <AlternarClaro rotulo="Selo visível em todos os vídeos" ativo={!!identidade.selo.visivel} aoMudar={(v) => aoMudarIdentidade('selo', 'visivel', v)} />
             </section>
           </div>
         </div>

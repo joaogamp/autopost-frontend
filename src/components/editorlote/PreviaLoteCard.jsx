@@ -23,7 +23,7 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  */
 
 const ROTULOS_STATUS = {
-  pronto: 'No lote',
+  pronto: 'Importado',
   aguardando: 'Na fila',
   processando: 'Processando',
   concluido: '✓ Pronto',
@@ -111,7 +111,7 @@ function PreviaLoteCard({ item, indice, urlPreviewAtiva, selecionado, aoSelecion
           }}
         >
           {item.status === 'erro' ? <AlertCircle className="w-2.5 h-2.5 shrink-0" /> : <Film className="w-2.5 h-2.5 edl-icone-a shrink-0" />}
-          {ROTULOS_STATUS[item.status] || 'No lote'}
+          {ROTULOS_STATUS[item.status] || 'Importado'}
           {item.status === 'erro' && item.erroMensagem ? ` — ${String(item.erroMensagem).slice(0, 60)}` : ''}
         </p>
       </div>
