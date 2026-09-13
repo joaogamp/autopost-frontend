@@ -96,7 +96,7 @@ function AreaCentral(p) {
   }, [itens.length, temMais]);
   const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : 300;
   const gradeCls = 'grid gap-3 w-full';
-  const modoUnicoCls = 'w-full max-w-[560px] mx-auto';
+  const modoUnicoCls = 'w-full max-w-[560px] mx-auto mt-20';
   return (
     <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-[color:var(--edl-painel)]">
       <div className="shrink-0 px-3 py-1.5 border-b border-[color:var(--edl-borda)] flex items-center gap-2">

@@ -30,15 +30,18 @@ export default function ControlesVideo({ src, encaixe }) {
   const [volumen, setVolumen] = useState(100);
   const [silenciado, setSilenciado] = useState(false);
 
-  // Al montar (src nuevo — el padre usa key={src}) intenta reproducción con
-  // sonido; si el navegador lo bloquea, el usuario pulsa Play.
+  // Al montar (src nuevo — el padre usa key={src}) o NÃO inicia
+  // reproducción automática: el vídeo queda PAUSADO no primer frame, listo
+  // para que el usuário pulse Play. Sin autoplay, sin loop automático.
+  // Se mantienen Play/Pause, áudio (no muteado por defecto), volume e barra
+  // de progresso.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     v.muted = false;
     setVolumen(100);
     setSilenciado(false);
-    v.play().catch(() => setReproduciendo(false));
+    setReproduciendo(false);
   }, []);
 
   const terminado = duracion > 0 && !reproduciendo && progreso >= duracion - 0.08;
