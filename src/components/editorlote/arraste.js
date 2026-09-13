@@ -244,6 +244,74 @@ export function gerarRedimensionarTextoLargura(ruta, aoAtualizarConfig) {
 }
 
 /* ---------------------------------------------------------------------------
+ * IDENTIDADE DO CANAL — alças dos elementos (nome, @ e selo azul).
+ * ------------------------------------------------------------------------- */
+
+/** Redimensiona a LARGURA (%) de um elemento por rota anidada — delta
+ * relativo à LARGURA DO CANVAS (mesma matemática da alça da logo). Serve pro
+ * selo e pros textos da identidade (nome/@). */
+export function gerarRedimensionarLarguraRuta(ruta, minPct, maxPct, aoAtualizarConfig) {
+  return function aoPointerDown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const canvasEl = encontrarCanvas(e.currentTarget);
+    if (!canvasEl) return;
+    const escala = parseFloat(canvasEl.dataset.escala || '1');
+    const cW = parseFloat(canvasEl.dataset.canvasLargura || String(CANVAS_LARGURA));
+
+    const el = e.currentTarget;
+    const inicialLargura = parseFloat(el.dataset.largura) || 10;
+    const startX = e.clientX;
+
+    function aoMover(ev) {
+      const dx = (ev.clientX - startX) / Math.max(escala, 0.05);
+      const largura = inicialLargura + (dx / cW) * 100;
+      aoAtualizarConfig((cfg) =>
+        atualizarRuta(cfg, ruta, { largura: Math.min(maxPct, Math.max(minPct, largura)) })
+      );
+    }
+    function aoSoltar() {
+      window.removeEventListener('pointermove', aoMover);
+      window.removeEventListener('pointerup', aoSoltar);
+    }
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+  };
+}
+
+/** Aumenta/diminui o TAMANHO DA FONTE de um texto da identidade (alça de
+ * canto): arrastar pra baixo/direita aumenta, pra cima/esquerda diminui. */
+export function gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig, minPx = 10, maxPx = 400) {
+  return function aoPointerDown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const canvasEl = encontrarCanvas(e.currentTarget);
+    if (!canvasEl) return;
+    const escala = parseFloat(canvasEl.dataset.escala || '1');
+
+    const el = e.currentTarget;
+    const inicialTamanho = parseFloat(el.dataset.tamanho) || 40;
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    function aoMover(ev) {
+      const dx = (ev.clientX - startX) / Math.max(escala, 0.05);
+      const dy = (ev.clientY - startY) / Math.max(escala, 0.05);
+      const tamanho = inicialTamanho + ((dx + dy) / 2) * 0.6;
+      aoAtualizarConfig((cfg) =>
+        atualizarRuta(cfg, ruta, { tamanho: Math.min(maxPx, Math.max(minPx, tamanho)) })
+      );
+    }
+    function aoSoltar() {
+      window.removeEventListener('pointermove', aoMover);
+      window.removeEventListener('pointerup', aoSoltar);
+    }
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+  };
+}
+
+/* ---------------------------------------------------------------------------
  * CORTE DE BORDAS — arrastar linhas superior/inferior (em % do canvas).
  * Superior e inferior são INDEPENDENTES: mudar uma linha NUNCA altera a outra.
  * ------------------------------------------------------------------------- */

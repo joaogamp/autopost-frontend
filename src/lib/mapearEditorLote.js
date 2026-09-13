@@ -73,6 +73,51 @@ export function configParaTemplatePayload(config) {
   const texto = mapearTexto(textos.superior);
   const textoInferior = mapearTexto(textos.inferior);
 
+  // IDENTIDADE DO CANAL (Editor em Lote): nome do canal, @ do canal e selo
+  // azul de verificado — MESMA matemática da prévia (px do canvas), então o
+  // render final fica idêntico ao canvas. null = elemento desligado: o
+  // servidor limpa o campo e o pipeline pula (compatível com templates
+  // antigos que não têm esses campos).
+  const mapearTextoIdentidade = (t) => {
+    if (!t || !t.visivel || String(t.conteudo || '').trim() === '') return null;
+    const larguraPx = Math.max(1, Math.round((t.largura / 100) * canvas.largura));
+    return {
+      contenido: t.conteudo,
+      fonte: t.fonte,
+      peso: t.peso,
+      alinhamento: t.alinhamento,
+      // Bloco centrado no x% e com o TOPO em y% (igual à prévia, que cresce
+      // pra baixo e quebra linha quando não cabe na largura do bloco).
+      x: Math.round((t.x / 100) * canvas.largura - larguraPx / 2),
+      y: Math.round((t.y / 100) * canvas.altura),
+      largura: larguraPx,
+      // Espaço pra DUAS linhas: a prévia cresce sem limite; o pipeline só
+      // reduz a fonte se estourar esse teto (nome de canal muito longo).
+      altura: Math.max(40, Math.round((t.tamanho || 40) * 1.25 * 2)),
+      tamanhoFonte: Math.round(t.tamanho || 40),
+      cor: t.cor,
+      alinhamentoVertical: 'topo',
+      ...(Number(t.opacidade) > 0 && Number(t.opacidade) < 100
+        ? { opacidade: Math.round(t.opacidade) }
+        : {}),
+    };
+  };
+
+  // Selo azul: x/y marca o CENTRO (translate(-50%, -50%) na prévia) e o selo
+  // é QUADRADO (ícone 24×24), então a altura em px é igual à largura.
+  const mapearSeloIdentidade = (s) => {
+    if (!s || !s.visivel) return null;
+    const larguraPx = Math.max(4, Math.round((s.largura / 100) * canvas.largura));
+    return {
+      x: Math.round((s.x / 100) * canvas.largura),
+      y: Math.round((s.y / 100) * canvas.altura),
+      largura: larguraPx,
+      ...(Number(s.opacidade) > 0 && Number(s.opacidade) < 100
+        ? { opacidade: Math.round(s.opacidade) }
+        : {}),
+    };
+  };
+
   return {
     nome: NOME_TEMPLATE_LOTE,
     corFundo: canvas.corFundo,
@@ -100,6 +145,12 @@ export function configParaTemplatePayload(config) {
     // servidor (POST /api/templates) já aceita ambos; null limpiá el campo.
     texto,
     textoInferior,
+    // IDENTIDADE DO CANAL compartilhada do lote (nome, @ e selo azul) —
+    // mesmo princípio do logo/texto: config → template → pipeline → vídeo
+    // final. null limpa o campo no servidor (pipeline pula quando ausente).
+    identidadeNome: mapearTextoIdentidade(config.identidade?.nome),
+    identidadeUsuario: mapearTextoIdentidade(config.identidade?.usuario),
+    identidadeSelo: mapearSeloIdentidade(config.identidade?.selo),
   };
 }
 

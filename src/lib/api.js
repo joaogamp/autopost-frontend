@@ -172,6 +172,13 @@ export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, temp
   // o servidor limpie valores obsoletos quando o usuário esvazia um bloco.
   formData.append('texto', JSON.stringify(payload.texto || null));
   formData.append('textoInferior', JSON.stringify(payload.textoInferior || null));
+  // IDENTIDADE DO CANAL (nome, @ e selo azul) — sempre envia (mesmo null) pra
+  // que o servidor limpe valores obsoletos quando o usuário desliga um
+  // elemento. Templates antigos, sem esses campos, chegam null e o pipeline
+  // simplesmente pula (nada muda no fluxo antigo de Templates).
+  formData.append('identidadeNome', JSON.stringify(payload.identidadeNome || null));
+  formData.append('identidadeUsuario', JSON.stringify(payload.identidadeUsuario || null));
+  formData.append('identidadeSelo', JSON.stringify(payload.identidadeSelo || null));
   if (payload.corteBordas) formData.append('corteBordas', JSON.stringify(payload.corteBordas));
   if (arquivoLogo) formData.append('logo', arquivoLogo);
 

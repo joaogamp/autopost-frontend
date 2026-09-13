@@ -221,6 +221,16 @@ body {
   cursor: grabbing;
 }
 
+/* Alça (manija) de redimensionar — feedback de hover */
+.edl-manija {
+  touch-action: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45), 0 2px 6px rgba(15, 23, 42, 0.35);
+  transition: transform 0.12s ease;
+}
+.edl-manija:hover {
+  transform: scale(1.2);
+}
+
 /* Hover misto rosa+roxo na grade */
 .edl-card-hover:hover {
   border-color: rgba(236, 72, 153, 0.55);

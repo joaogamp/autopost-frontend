@@ -5,7 +5,7 @@ import GradeVideos from '../components/editorlote/GradeVideos';
 import EditorCanvas from '../components/editorlote/EditorCanvas';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
-import { criarConfigPadrao } from '../lib/configEditorLote';
+import { criarConfigPadrao, criarIdentidadePadrao } from '../lib/configEditorLote';
 import { processarLote, salvarTemplateDoEditor, buscarFila, urlArquivo } from '../lib/api';
 import {
   configParaTemplatePayload,
@@ -52,6 +52,7 @@ const CHAVE_LOTE = 'autopost:editorlote:v1';
 /** Junta a config salva sobre a padrão (tolerante a versões antigas). */
 function mesclarConfig(salva) {
   const base = criarConfigPadrao();
+  const padraoIdentidade = criarIdentidadePadrao();
   if (!salva || typeof salva !== 'object') return base;
   // Configs salvas ANTES da renomeação usavam a chave `corte` — migra para o
   // nome unificado `corteBordas` (front + back).
@@ -69,6 +70,16 @@ function mesclarConfig(salva) {
       inferior: { ...base.textos.inferior, ...(salva.textos?.inferior || {}) },
     },
     corteBordas: { ...base.corteBordas, ...(salva.corteBordas || corte) },
+    // IDENTIDADE DO CANAL (logo + nome + @ + selo azul): mescla os padrões
+    // (configs antigas, sem `identidade`, ganham os valores padrão) — cada
+    // elemento fica INDEPENDENTE e vale pro lote inteiro (config única).
+    identidade: {
+      ...padraoIdentidade,
+      ...salva.identidade,
+      nome: { ...padraoIdentidade.nome, ...salva.identidade?.nome },
+      usuario: { ...padraoIdentidade.usuario, ...salva.identidade?.usuario },
+      selo: { ...padraoIdentidade.selo, ...salva.identidade?.selo },
+    },
   };
 }
 
@@ -374,11 +385,11 @@ export default function EditorLote() {
       />
 
       <div className="flex-1 min-h-0 flex">
-        {/* ESQUERDA — vídeos importados (downloads) + GRADE 1X/2X/3X do lote */}
+        {/* ESQUERDA — importação de vídeos locais + LISTA ÚNICA dos vídeos
+            importados (grade 1X/2X/3X: vídeos DIFERENTES por linha; clicar
+            num vídeo abre o vídeo no preview central) */}
         <aside className="w-[320px] shrink-0 h-full min-h-0 flex flex-col">
-          <div className="shrink-0 h-[42%] min-h-0 flex flex-col">
-            <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
-          </div>
+          <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
           <GradeVideos
             itens={itens}
             idSelecionado={idSelecionado}
@@ -388,7 +399,8 @@ export default function EditorLote() {
           />
         </aside>
 
-        {/* CENTRO — Canvas 9:16 GRANDE (elemento principal, sem faixa abaixo) */}
+        {/* CENTRO — preview 9:16 MÉDIO/PEQUENO, centralizado, com espaço livre
+            ao redor (vídeo real: play/pausa/áudio/volume/progresso) */}
         <section className="flex-1 min-w-0 h-full min-h-0 flex">
           <EditorCanvas
             config={config}
@@ -398,7 +410,9 @@ export default function EditorLote() {
           />
         </section>
 
-        {/* DIREITA — painel de EDITOR/FERRAMENTAS */}
+        {/* DIREITA — SOMENTE ferramentas do editor: Logo (popup de identidade:
+            logo/nome/@/selo) · Texto superior · Texto inferior · Área do vídeo ·
+            Corte de bordas · Fundo · Propriedades — config COMPARTILHADA */}
         <aside className="w-[340px] shrink-0 h-full min-h-0 overflow-y-auto border-l border-[color:var(--edl-borda)]">
           <PainelEditor config={config} aoAtualizarConfig={setConfig} itemSelecionado={itemSelecionado} />
         </aside>

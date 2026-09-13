@@ -3,7 +3,11 @@ import {
   Wand2,
   Type,
   Image as ImageIcon,
-  LayoutTemplate,
+  Scan,
+  Scissors,
+  Paintbrush,
+  SlidersHorizontal,
+  ChevronDown,
   Eye,
   EyeOff,
   Trash2,
@@ -25,19 +29,28 @@ import PopupLogo from './PopupLogo';
 /**
  * EDITOR EM LOTE — coluna DIREITA: painel do editor (PainelEditor).
  *
- * TODOS os controles escrevem na CONFIG COMPARTILHADA do lote: não existe
- * configuração por vídeo e NÃO existe botão "Aplicar a todos" — cada mudança
- * de logo/texto/tela repinta o canvas e vale para TODOS os vídeos, na hora.
+ * Na direita ficam SOMENTE as ferramentas (todas escrevem na CONFIG
+ * COMPARTILHADA do lote — sem config por vídeo e sem botão "Aplicar a todos";
+ * cada mudança repinta o canvas e vale para TODOS os vídeos, na hora):
  *
- * Abas: Logo (upload + posição/tamanho/opacidade) · Texto (conteúdo, tamanho,
- * cor, posição — o processamento centraliza as linhas e usa a fonte bold do
- * sistema) · Tela (fundo, encaixe do vídeo, área do vídeo).
+ *   1. Logo            — abre o popup GRANDE da identidade do canal
+ *   2. Texto superior  — elemento independente
+ *   3. Texto inferior  — elemento independente
+ *   4. Área do vídeo   — X/Y/largura/altura + encaixe + marcação
+ *   5. Corte de bordas — superior/inferior INDEPENDENTES (padrão 0%/0%)
+ *   6. Fundo           — cor de fundo do canvas
+ *   7. Propriedades    — infos da config compartilhada + restaurar padrão
  */
 
-const ABAS = [
-  { id: 'logo', label: 'Logo', Icone: ImageIcon },
-  { id: 'texto', label: 'Texto', Icone: Type },
-  { id: 'canvas', label: 'Tela', Icone: LayoutTemplate },
+/* ---------- ferramentas (UMA aberta por vez) ---------- */
+const FERRAMENTAS = [
+  { id: 'logo', rotulo: 'Logo', Icone: ImageIcon },
+  { id: 'superior', rotulo: 'Texto superior', Icone: Type },
+  { id: 'inferior', rotulo: 'Texto inferior', Icone: Type },
+  { id: 'area', rotulo: 'Área do vídeo', Icone: Scan },
+  { id: 'corte', rotulo: 'Corte de bordas', Icone: Scissors },
+  { id: 'fundo', rotulo: 'Fundo', Icone: Paintbrush },
+  { id: 'propriedades', rotulo: 'Propriedades', Icone: SlidersHorizontal },
 ];
 
 /* ---------- controles base ---------- */
@@ -215,10 +228,9 @@ function TextoBloco({ chave, t, aoMudar }) {
 }
 
 export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado }) {
-  const [aba, setAba] = useState('logo');
-  // Qual dos DOIS textos está aberto no painel (superior | inferior).
-  const [textoAtivo, setTextoAtivo] = useState('superior');
-  // Popup GRANDE da logo (preview grande, fundo branco, drag/resize).
+  // Ferramenta aberta — UMA por vez (a direita contém somente as ferramentas).
+  const [ferramenta, setFerramenta] = useState('logo');
+  // Popup GRANDE da identidade (logo/nome/@/selo, fundo branco, drag/resize).
   const [popupLogoAberta, setPopupLogoAberta] = useState(false);
 
   const aoMudarLogo = (campo, valor) =>
@@ -282,8 +294,12 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
   function aoRestaurar() {
     aoAtualizarConfig((cfg) => {
       const padrao = criarConfigPadrao();
-      // Mantém a logo atual (re-enviar o arquivo é chato).
-      return { ...padrao, logo: { ...padrao.logo, url: cfg.logo.url, arquivo: cfg.logo.arquivo } };
+      // Mantém a logo atual E a identidade (re-enviar/re-digitar é chato).
+      return {
+        ...padrao,
+        logo: { ...padrao.logo, url: cfg.logo.url, arquivo: cfg.logo.arquivo },
+        identidade: cfg.identidade || padrao.identidade,
+      };
     });
   }
 
@@ -326,25 +342,40 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
         </div>
       </div>
 
-      {/* Abas */}
-      <div className="flex px-2 mt-2 border-b border-[color:var(--edl-borda)]">
-        {ABAS.map(({ id, label, Icone }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setAba(id)}
-            className={`edl-ring-foco flex-1 flex items-center justify-center gap-1.5 text-[11px] font-extrabold py-2.5 ${
-              aba === id ? 'edl-tab-ativa' : 'edl-tab'
-            }`}
-          >
-            <Icone className="w-3.5 h-3.5" />
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* FERRAMENTAS — na direita ficam SOMENTE as ferramentas do editor.
+          UMA aberta por vez: clicar numa abre ela e fecha a anterior. */}
+      <nav aria-label="Ferramentas do editor" className="px-2 pt-2 grid grid-cols-2 gap-1.5">
+        {FERRAMENTAS.map(({ id, rotulo, Icone }) => {
+          const ativa = ferramenta === id;
+          const eTexto = id === 'superior' || id === 'inferior';
+          const textoVisivel = eTexto ? config.textos?.[id]?.visivel !== false : null;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-expanded={ativa}
+              onClick={() => setFerramenta(id)}
+              className={`edl-ring-foco w-full flex items-center gap-2 text-[11px] font-extrabold px-3 py-2.5 rounded-lg transition-colors ${
+                ativa ? 'edl-botao-grad' : 'edl-superficie'
+              }`}
+              style={ativa ? undefined : { color: 'var(--edl-texto-dim)' }}
+            >
+              <Icone className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{rotulo}</span>
+              <span className="flex-1" />
+              {textoVisivel !== null && !ativa && (
+                textoVisivel ? <Eye className="w-3 h-3 shrink-0 opacity-70" /> : <EyeOff className="w-3 h-3 shrink-0 opacity-40" />
+              )}
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${ativa ? 'rotate-180' : ''}`} />
+            </button>
+          );
+        })}
+      </nav>
 
-      {/* ABA LOGO */}
-      {aba === 'logo' && (
+      {/* FERRAMENTA: LOGO — abre o popup GRANDE da IDENTIDADE DO CANAL
+          (fundo branco: imagem/logo · nome do canal · @ do canal · selo azul,
+          cada elemento independente: mover/redimensionar/tamanho). */}
+      {ferramenta === 'logo' && (
         <div className="px-4 py-3.5 space-y-3.5">
           {config.logo.url ? (
             <div className="edl-superficie rounded-lg p-2.5 flex items-center gap-2.5">
@@ -396,14 +427,15 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           )}
           <input id="edl-input-logo" type="file" accept="image/*" className="hidden" onChange={aoEscolherLogo} />
 
-          {/* Popup GRANDE da logo (preview grande, fundo branco, drag+resize) */}
+          {/* Popup GRANDE da identidade (fundo branco, drag+resize de todos
+              os elementos: logo · nome · @ · selo azul) */}
           <button
             type="button"
             onClick={() => setPopupLogoAberta(true)}
             className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold py-2.5 rounded-lg"
           >
             <Maximize2 className="w-3.5 h-3.5" />
-            Abrir editor grande da logo
+            Abrir editor da identidade do canal
           </button>
 
           {config.logo.url && (
@@ -423,69 +455,23 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           <Alternar rotulo="Logo visível no lote" ativo={!!config.logo.visivel} aoMudar={(v) => aoMudarLogo('visivel', v)} />
         </div>
       )}
-      {/* ABA TEXTO — DOIS textos independentes (superior e inferior) */}
-      {aba === 'texto' && (
+      {/* FERRAMENTAS: TEXTO SUPERIOR / TEXTO INFERIOR — cada um é um elemento
+          INDEPENDENTE com conteúdo, posição, tamanho, largura/altura, fonte,
+          peso, cor, alinhamento, opacidade e visibilidade PRÓPRIOS. */}
+      {(ferramenta === 'superior' || ferramenta === 'inferior') && (
         <div className="px-4 py-3.5 space-y-3.5">
-          {/* Sub-abas: escolhe qual dos dois textos editar (independentes) */}
-          <div className="grid grid-cols-2 gap-1.5">
-            {['superior', 'inferior'].map((chave) => {
-              const t = config.textos?.[chave] || textoPadrao();
-              const subAtiva = textoAtivo === chave;
-              return (
-                <button
-                  key={chave}
-                  type="button"
-                  onClick={() => setTextoAtivo(chave)}
-                  className={`edl-ring-foco h-8 rounded-lg flex items-center justify-center gap-1.5 text-[10px] font-extrabold transition-colors ${
-                    subAtiva ? 'edl-botao-grad' : 'edl-superficie'
-                  }`}
-                  style={subAtiva ? undefined : { color: 'var(--edl-texto-dim)' }}
-                >
-                  {t.visivel ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3 opacity-60" />}
-                  {chave === 'superior' ? 'Superior' : 'Inferior'}
-                </button>
-              );
-            })}
-          </div>
-
           <TextoBloco
-            chave={textoAtivo}
-            t={config.textos?.[textoAtivo] || textoPadrao()}
-            aoMudar={(campo, valor) => aoMudarTexto(textoAtivo, campo, valor)}
+            chave={ferramenta}
+            t={config.textos?.[ferramenta] || textoPadrao()}
+            aoMudar={(campo, valor) => aoMudarTexto(ferramenta, campo, valor)}
           />
         </div>
       )}
 
-      {/* ABA TELA (canvas + área do vídeo) */}
-      {aba === 'canvas' && (
+      {/* FERRAMENTA: ÁREA DO VÍDEO — arrastável/redimensionável com o mouse
+          no canvas (linha pontilhada + handles) e ajuste fino aqui (px) */}
+      {ferramenta === 'area' && (
         <div className="px-4 py-3.5 space-y-3.5">
-          <div>
-            <Rotulo>Cor de fundo do canvas</Rotulo>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {CORES_FUNDO.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  title={c}
-                  onClick={() => aoMudarCanvas('corFundo', c)}
-                  className={`w-7 h-7 rounded-lg border-2 transition-colors ${
-                    config.canvas.corFundo === c
-                      ? 'border-[color:var(--edl-rosa)]'
-                      : 'border-[color:var(--edl-borda)]'
-                  }`}
-                  style={{ background: c }}
-                />
-              ))}
-              <input
-                type="color"
-                value={config.canvas.corFundo}
-                onChange={(e) => aoMudarCanvas('corFundo', e.target.value)}
-                title="Cor personalizada"
-                className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-2 border-[color:var(--edl-borda)] p-0"
-              />
-            </div>
-          </div>
-
           <div>
             <Rotulo>Encaixe do vídeo na área</Rotulo>
             <div className="grid grid-cols-2 gap-1.5">
@@ -526,36 +512,102 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
               />
             </div>
           </div>
+        </div>
+      )}
 
-          <div className="pt-1">
-            <Rotulo>Corte de bordas (% da altura)</Rotulo>
-            <div className="edl-superficie rounded-lg p-3 space-y-3">
-              <Alternar
-                rotulo="Ativar corte de bordas"
-                ativo={!!config.corteBordas?.ativo}
-                aoMudar={(v) => aoMudarCorte('ativo', v)}
+      {/* FERRAMENTA: CORTE DE BORDAS — superior e inferior COMPLETAMENTE
+          independentes (linhas pontilhadas arrastáveis no canvas + sliders
+          separados aqui; padrão 0%/0%; corte ESPACIAL, nunca de duração) */}
+      {ferramenta === 'corte' && (
+        <div className="px-4 py-3.5 space-y-3.5">
+          <div className="edl-superficie rounded-lg p-3 space-y-3">
+            <Alternar
+              rotulo="Ativar corte de bordas"
+              ativo={!!config.corteBordas?.ativo}
+              aoMudar={(v) => aoMudarCorte('ativo', v)}
+            />
+            <Deslizador
+              rotulo="Corte superior"
+              sufixo="%"
+              valor={Math.round(config.corteBordas?.superior || 0)}
+              min={0}
+              max={CORTE_MAXIMO}
+              aoMudar={(v) => aoMudarCorte('superior', v)}
+            />
+            <Deslizador
+              rotulo="Corte inferior"
+              sufixo="%"
+              valor={Math.round(config.corteBordas?.inferior || 0)}
+              min={0}
+              max={CORTE_MAXIMO}
+              aoMudar={(v) => aoMudarCorte('inferior', v)}
+            />
+            <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+              Corta as bordas superior/inferior do vídeo ORIGINAL no mesmo
+              encode final (single-pass, sem MP4 intermediário). Arraste cada
+              linha pontilhada no canvas — os valores são independentes.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* FERRAMENTA: FUNDO — cor de fundo do canvas (vai pro template) */}
+      {ferramenta === 'fundo' && (
+        <div className="px-4 py-3.5 space-y-3.5">
+          <div>
+            <Rotulo>Cor de fundo do canvas</Rotulo>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {CORES_FUNDO.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  title={c}
+                  onClick={() => aoMudarCanvas('corFundo', c)}
+                  className={`w-7 h-7 rounded-lg border-2 transition-colors ${
+                    config.canvas.corFundo === c
+                      ? 'border-[color:var(--edl-rosa)]'
+                      : 'border-[color:var(--edl-borda)]'
+                  }`}
+                  style={{ background: c }}
+                />
+              ))}
+              <input
+                type="color"
+                value={config.canvas.corFundo}
+                onChange={(e) => aoMudarCanvas('corFundo', e.target.value)}
+                title="Cor personalizada"
+                className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-2 border-[color:var(--edl-borda)] p-0"
               />
-              <Deslizador
-                rotulo="Corte superior"
-                sufixo="%"
-                valor={Math.round(config.corteBordas?.superior || 0)}
-                min={0}
-                max={CORTE_MAXIMO}
-                aoMudar={(v) => aoMudarCorte('superior', v)}
-              />
-              <Deslizador
-                rotulo="Corte inferior"
-                sufixo="%"
-                valor={Math.round(config.corteBordas?.inferior || 0)}
-                min={0}
-                max={CORTE_MAXIMO}
-                aoMudar={(v) => aoMudarCorte('inferior', v)}
-              />
-              <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-                Corta as bordas superior/inferior do vídeo ORIGINAL no mesmo
-                encode final (single-pass, sem MP4 intermediário).
-              </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FERRAMENTA: PROPRIEDADES — infos da config compartilhada + restaurar */}
+      {ferramenta === 'propriedades' && (
+        <div className="px-4 py-3.5 space-y-3.5">
+          <div className="edl-superficie rounded-lg p-3 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
+                Canvas
+              </span>
+              <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
+                1080×1920 (9:16)
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
+                Configuração
+              </span>
+              <span className="text-[10px] font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
+                única · compartilhada
+              </span>
+            </div>
+            <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+              Não existe botão "Aplicar a todos": há UMA configuração
+              compartilhada — qualquer mudança em logo, textos, área do vídeo,
+              corte ou fundo reflete automaticamente em todos os vídeos do lote.
+            </p>
           </div>
 
           <button
@@ -564,7 +616,7 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
             className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2.5 rounded-lg"
           >
             <RotateCcw className="w-3.5 h-3.5 edl-icone-a" />
-            Restaurar padrão (mantém a logo)
+            Restaurar padrão (mantém logo e identidade)
           </button>
         </div>
       )}

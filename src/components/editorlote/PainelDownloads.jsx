@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Download, Upload, Loader2, Check, AlertCircle, Film } from 'lucide-react';
+import { Download, Upload, Loader2, AlertCircle } from 'lucide-react';
 import { enviarVideos, urlArquivo } from '../../lib/api';
 
 /**
@@ -10,10 +10,9 @@ import { enviarVideos, urlArquivo } from '../../lib/api';
  * thumbnail e registra o vídeo na BIBLIOTECA (mesmo caminho da Biblioteca).
  * NÃO existe importação por URL aqui.
  *
- * Ao concluir, cada vídeo entra na grade do lote com thumbnail + MP4 reais
- * (urlOriginal) — os previews do pool (máx. 3) tocam o arquivo do servidor.
- *
- * NÃO existe limite de quantidade: quantos arquivos o usuário quiser.
+ * Esta coluna fica com SOMENTE o formulário de importação — a lista ÚNICA
+ * de vídeos importados fica na GradeVideos logo abaixo (clicar num vídeo
+ * dela abre o vídeo no preview central; nada de lista duplicada).
  */
 
 /** Deriva a URL pública do vídeo enviado (mesma regra do servidor: /uploads/{id}{ext}). */
@@ -26,8 +25,6 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
   const fileInputRef = useRef(null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
-  // { id, nome, thumb } — os vídeos recém-enviados (feedback visual).
-  const [recents, setRecents] = useState([]);
 
   async function aoEscolherArquivos(e) {
     const arquivos = Array.from(e.target.files || []);
@@ -44,14 +41,8 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
         setErro('Upload concluído, mas o servidor não retornou nenhum vídeo.');
         return;
       }
-      setRecents((at) => [
-        ...videosEnviados.map((v) => ({
-          id: v.id,
-          nome: v.nomeOriginal || v.id,
-          thumb: v.thumbnailUrl ? urlArquivo(v.thumbnailUrl) : null,
-        })),
-        ...at,
-      ]);
+      // Cada vídeo entra na LISTA ÚNICA (GradeVideos, logo abaixo) — sem
+      // lista duplicada: clicar nela abre o vídeo no preview central.
       videosEnviados.forEach((v) =>
         aoAdicionarVideo({
           id: v.id,
@@ -71,7 +62,7 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
   }
 
   return (
-    <div className="h-full flex flex-col edl-painel rounded-none border-r border-[color:var(--edl-borda)]">
+    <div className="shrink-0 flex flex-col edl-painel rounded-none border-r border-b border-[color:var(--edl-borda)]">
       {/* Cabeçalho */}
       <div className="px-4 py-3.5 border-b border-[color:var(--edl-borda)]">
         <div className="flex items-center gap-2">
@@ -84,7 +75,7 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
       </div>
 
       {/* Upload de arquivos locais (sem importação por URL) */}
-      <div className="px-4 py-3 border-b border-[color:var(--edl-borda)] space-y-2">
+      <div className="px-4 py-3 space-y-2">
         <input
           ref={fileInputRef}
           type="file"
@@ -107,50 +98,13 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
           {enviando ? 'Enviando...' : 'Escolher vídeos locais'}
         </button>
         <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-          Upload real no servidor (ffprobe + thumbnail + biblioteca).
+          Upload real no servidor (ffprobe + thumbnail + biblioteca). Os vídeos aparecem na lista abaixo.
         </p>
         {erro && (
           <p className="text-[10px] font-bold leading-snug flex items-start gap-1.5" style={{ color: '#f87171' }}>
             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erro}
           </p>
         )}
-      </div>
-
-      {/* Adicionados ao lote */}
-      <div className="px-4 py-2.5 border-b border-[color:var(--edl-borda)]">
-        <span className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
-          Adicionados ao lote
-        </span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {recents.length === 0 && (
-          <div className="edl-superficie rounded-lg p-4 text-center">
-            <Film className="w-5 h-5 mx-auto edl-icone-b opacity-70" />
-            <p className="text-[10px] font-semibold mt-2" style={{ color: 'var(--edl-texto-mut)' }}>
-              Nenhum vídeo ainda.
-              <br />
-              Escolha arquivos acima pra começar.
-            </p>
-          </div>
-        )}
-        {recents.map((r) => (
-          <div key={r.id} className="edl-superficie rounded-lg p-2.5 flex gap-2.5 items-start">
-            <div className="w-10 h-[71px] rounded-md overflow-hidden shrink-0 bg-[#1c1c26] flex items-center justify-center">
-              {r.thumb ? (
-                <img src={r.thumb} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-              ) : (
-                <Film className="w-4 h-4 edl-icone-b opacity-60" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-bold text-white truncate">{r.nome}</p>
-              <p className="text-[10px] font-bold mt-1 edl-icone-a flex items-center gap-1">
-                <Check className="w-3 h-3" /> Na biblioteca e na grade
-              </p>
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

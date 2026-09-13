@@ -81,6 +81,46 @@ export function textoPadrao() {
   };
 }
 
+/** Elemento de TEXTO da identidade (nome do canal | @ do canal) — cada um é
+ * 100% independente (conteúdo, posição, tamanho, cor, peso, fonte,
+ * alinhamento, opacidade e visibilidade próprios). */
+export function elementoIdentidadeTextoPadrao(padrao = {}) {
+  return {
+    conteudo: '',
+    visivel: true,
+    x: 50, // % do canvas (centro do bloco)
+    y: 16, // % do canvas (topo do bloco)
+    largura: 46, // % da largura do canvas
+    tamanho: 40, // px do canvas
+    cor: '#0f172a',
+    fonte: 'Arial',
+    peso: 'extranegrita',
+    alinhamento: 'centro',
+    opacidade: 100,
+    ...padrao,
+  };
+}
+
+/**
+ * IDENTIDADE DO CANAL — logo + nome + @ + selo azul de verificado.
+ * Cada elemento é INDEPENDENTE (movido/redimensionado com o mouse no popup
+ * grande e no canvas) e faz parte da CONFIG COMPARTILHADA: editar um vale
+ * pro lote inteiro, na hora, sem botão "Aplicar a todos".
+ */
+export function criarIdentidadePadrao() {
+  return {
+    nome: elementoIdentidadeTextoPadrao({ y: 15, tamanho: 40, peso: 'extranegrita' }),
+    usuario: elementoIdentidadeTextoPadrao({ y: 19.5, tamanho: 26, peso: 'normal', cor: '#5b6472' }),
+    // Selo azul: x/y marca o CENTRO, largura em % da largura do canvas.
+    selo: { visivel: false, x: 66, y: 15.6, largura: 3.4, opacidade: 100 },
+  };
+}
+
+/** Rótulo curto do vídeo no lote (vídeo 01, vídeo 02, ...). */
+export function rotuloDeVideo(indice) {
+  return `vídeo ${String(indice + 1).padStart(2, '0')}`;
+}
+
 export function criarConfigPadrao() {
   return {
     canvas: {
@@ -135,10 +175,8 @@ export function criarConfigPadrao() {
       superior: textoPadrao(),
       inferior: textoPadrao(),
     },
+    // Identidade do canal (logo + nome + @ + selo azul) — compartilhada por
+    // todo o lote; elementos editáveis no popup grande e no canvas.
+    identidade: criarIdentidadePadrao(),
   };
-}
-
-/** Rótulo curto do vídeo no lote (vídeo 01, vídeo 02, ...). */
-export function rotuloDeVideo(indice) {
-  return `vídeo ${String(indice + 1).padStart(2, '0')}`;
 }

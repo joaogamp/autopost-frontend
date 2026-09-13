@@ -17,11 +17,13 @@ import {
   gerarArrastarCorteInferior,
 } from './arraste';
 import ControlesVideo from './ControlesVideo';
+import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdentidade';
 
 /**
  * EDITOR EM LOTE — canvas de edición (EditorCanvas).
  *
- * CANVAS 9:16 GRANDE, elemento PRINCIPAL do CENTRO da página, com:
+ * CANVAS 9:16 MÉDIO/PEQUENO, centralizado na coluna do CENTRO com bastante
+ * espaço livre ao redor, com:
  * - fundo da config compartilhada (vai para o template do servidor);
  * - ÁREA DO VÍDEO marcada (arrastável com el ratón + manijas de redimensión)
  *   y con el reproductor REAL (play/pausa/áudio/volume/progresso);
@@ -30,11 +32,19 @@ import ControlesVideo from './ControlesVideo';
  * - logo arrastável e redimensionable (% do canvas);
  * - DOS textos independientes (superior/inferior), cada uno con contenido,
  *   posição, tamanho, largura/altura, fonte, peso, cor, alinheamento,
- *   opacidade e visibilidade propias.
+ *   opacidade e visibilidade propias;
+ * - IDENTIDADE DO CANAL: nome, @ e selo azul — elementos independentes,
+ *   compartilhados com o popup grande (arrastar/redimensionar em qualquer um
+ *   dos dois atualiza o outro na hora).
  *
  * TODAS as leituras vêm da CONFIG COMPARTILHADA: mover um elemento aqui
  * atualiza automaticamente todos os previews do lote (senza config por vídeo).
  */
+
+/** Altura MÁXIMA do preview 9:16 na TELA (px). O canvas fica MÉDIO/PEQUENO —
+ * consideravelmente menor que a área central, com bastante espaço ao redor. */
+const ALTURA_MAXIMA_CANVAS = 500;
+
 
 export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionado, urlVideoAtiva }) {
   const canvasRef = useRef(null);
@@ -65,6 +75,7 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
   const corFundo = config.canvas.corFundo;
   const area = config.areaVideo;
   const logo = config.logo || {};
+  const identidade = config.identidade || null;
   const corte = config.corteBordas || {};
   const corteAtivo = !!corte.ativo;
   const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.superior) || 0));
@@ -87,7 +98,10 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
     if (!el) return;
     const cw = cont ? cont.clientWidth : 0;
     const ch = cont ? cont.clientHeight : 0;
-    const novaEscala = cw > 0 && ch > 0 ? Math.min(cw / CANVAS_LARGURA, ch / CANVAS_ALTURA) : 1;
+    const novaEscala =
+      cw > 0 && ch > 0
+        ? Math.min(cw / CANVAS_LARGURA, ch / CANVAS_ALTURA, ALTURA_MAXIMA_CANVAS / CANVAS_ALTURA)
+        : 1;
     setEscala(novaEscala);
     el.dataset.canvasLargura = String(CANVAS_LARGURA);
     el.dataset.canvasAltura = String(CANVAS_ALTURA);
@@ -105,29 +119,6 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
 
   return (
     <div ref={contenedorRef} className="flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden px-2 pt-2 pb-1">
-      {/* Ajuste rápido da área de vídeo (posicionamento configurável) */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 edl-superficie rounded-full px-3 py-1.5">
-        <span className="text-[9px] font-bold" style={{ color: 'var(--edl-texto-dim)' }}>
-          ÁREA DO VÍDEO
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={900}
-          value={area.y}
-          onChange={(e) =>
-            aoAtualizarConfig((cfg) => ({
-              ...cfg,
-              areaVideo: { ...cfg.areaVideo, y: parseInt(e.target.value, 10) || 0 },
-            }))
-          }
-          className="w-32 accent-pink-500"
-        />
-        <span className="text-[9px] font-mono" style={{ color: 'var(--edl-texto-mut)' }}>
-          y {area.y}
-        </span>
-      </div>
-
       {/* Canvas 9:16 (fundo = corFundo que vai pro template) */}
       <div
         ref={canvasRef}
@@ -380,6 +371,14 @@ export default function EditorCanvas({ config, aoAtualizarConfig, itemSelecionad
             </div>
           );
         })}
+
+        {/* IDENTIDADE DO CANAL — nome do canal, @ do canal e selo azul de
+            verificado: elementos INDEPENDENTES (posição/tamanho próprios).
+            São os MESMOS componentes do popup grande: arrastar/redimensionar
+            aqui atualiza o popup e todo o lote na hora (config compartilhada). */}
+        <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={aoAtualizarConfig} />
+        <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={aoAtualizarConfig} />
+        <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={aoAtualizarConfig} />
       </div>
 
       {/* Rodapé do canvas */}
