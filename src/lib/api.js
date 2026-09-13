@@ -146,3 +146,53 @@ export async function conectarInstagram(accessToken, igUserId) {
 export async function desconectarConta(plataforma) {
   await fetch(`${BASE_URL}/api/contas/${plataforma}`, { method: 'DELETE' });
 }
+
+// ---------------------------------------------------------------------------
+// EDITOR EM LOTE — importação por URL (download REAL no servidor) + template
+// da config compartilhada. Endpoints: POST/GET /api/importar-url e
+// POST /api/templates (multipart).
+// ---------------------------------------------------------------------------
+
+/** Inicia a importação de um vídeo por URL no servidor. Retorna { importId }. */
+export async function importarUrl(url) {
+  const r = await fetch(`${BASE_URL}/api/importar-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao iniciar o download: ${r.status}`);
+  return corpo;
+}
+
+/** Consulta o progresso REAL (bytes) de uma importação por URL. */
+export async function statusImportacao(importId) {
+  const r = await fetch(`${BASE_URL}/api/importar-url/${encodeURIComponent(importId)}`);
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao consultar a importação: ${r.status}`);
+  return corpo; // { status, percentual, erro, video }
+}
+
+/**
+ * Salva a config COMPARTILHADA do Editor em Lote como TEMPLATE no servidor
+ * (POST /api/templates — multipart). Cria um template novo ou atualiza o
+ * existente quando `templateId` é passado. A logo (arquivo) é opcional: sem
+ * ela, o servidor mantém a logo já salva do template.
+ */
+export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, templateId = null }) {
+  const formData = new FormData();
+  if (templateId) formData.append('id', templateId);
+  formData.append('nome', payload.nome);
+  formData.append('corFundo', payload.corFundo);
+  formData.append('canvasLargura', String(payload.canvasLargura));
+  formData.append('canvasAltura', String(payload.canvasAltura));
+  formData.append('areaVideo', JSON.stringify(payload.areaVideo));
+  if (payload.logoPosicao) formData.append('logoPosicao', payload.logoPosicao);
+  if (payload.texto) formData.append('texto', JSON.stringify(payload.texto));
+  if (arquivoLogo) formData.append('logo', arquivoLogo);
+
+  const r = await fetch(`${BASE_URL}/api/templates`, { method: 'POST', body: formData });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok || corpo.erro) throw new Error(corpo.erro || `Erro ao salvar o template do lote: ${r.status}`);
+  return corpo; // template criado/atualizado
+}

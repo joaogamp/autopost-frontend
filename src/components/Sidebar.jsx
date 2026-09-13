@@ -1,4 +1,4 @@
-import { LayoutDashboard, Video, Layers, CalendarClock, Users, Zap } from 'lucide-react';
+import { LayoutDashboard, Video, Layers, CalendarClock, Users, Zap, Wand2 } from 'lucide-react';
 
 const ITENS = [
   {
@@ -10,6 +10,11 @@ const ITENS = [
     id: 'biblioteca',
     label: 'Biblioteca',
     icon: <Video className="w-4 h-4" />,
+  },
+  {
+    id: 'editorlote',
+    label: 'Editor em Lote',
+    icon: <Wand2 className="w-4 h-4" />,
   },
   {
     id: 'templates',

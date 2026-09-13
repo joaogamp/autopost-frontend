@@ -76,3 +76,212 @@ body {
   box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.03);
 }
 
+
+/* ============================================================
+   EDITOR EM LOTE — identidade escopada (preto + rosa + roxo).
+   Todas as classes usam o prefixo `edl-` e NÃO afetam as outras
+   telas (Painel, Biblioteca, Templates, Agendamento, Contas),
+   que continuam com o tema claro padrão do AutoPost.
+   ============================================================ */
+
+.edl-root {
+  --edl-fundo: #0a0a0f;
+  --edl-painel: #111117;
+  --edl-card: #16161d;
+  --edl-borda: #26262f;
+  --edl-borda-hover: #3a3a46;
+  --edl-texto: #f5f5f7;
+  --edl-texto-dim: #a1a1b0;
+  --edl-texto-mut: #6c6c7c;
+  --edl-rosa: #ec4899;
+  --edl-roxo: #8b5cf6;
+  --edl-grad: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+
+  background-color: var(--edl-fundo);
+  color: var(--edl-texto);
+  font-family: var(--font-body);
+}
+
+.edl-root ::selection {
+  background: rgba(139, 92, 246, 0.45);
+}
+
+/* Painéis / superfícies */
+.edl-painel {
+  background: var(--edl-painel);
+  border: 1px solid var(--edl-borda);
+  border-radius: 1rem;
+}
+.edl-superficie {
+  background: var(--edl-card);
+  border: 1px solid var(--edl-borda);
+}
+.edl-superficie:hover {
+  border-color: var(--edl-borda-hover);
+}
+
+/* Botões */
+.edl-botao-grad {
+  background: var(--edl-grad);
+  color: #fff;
+  transition: filter 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 2px 12px -2px rgba(236, 72, 153, 0.35);
+}
+.edl-botao-grad:hover {
+  filter: brightness(1.12) saturate(1.1);
+}
+.edl-botao-grad:active {
+  transform: scale(0.97);
+}
+.edl-botao-fantasma {
+  background: transparent;
+  border: 1px solid var(--edl-borda);
+  color: var(--edl-texto-dim);
+  transition: all 0.15s ease;
+}
+.edl-botao-fantasma:hover {
+  background: rgba(236, 72, 153, 0.08);
+  border-color: var(--edl-borda-hover);
+  color: var(--edl-texto);
+}
+
+/* Campos de entrada */
+.edl-input {
+  background: #0d0d13;
+  border: 1px solid var(--edl-borda);
+  color: var(--edl-texto);
+  border-radius: 0.5rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.edl-input:focus {
+  border-color: var(--edl-roxo);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+}
+.edl-input::placeholder {
+  color: var(--edl-texto-mut);
+}
+
+/* Tabs do editor */
+.edl-tab {
+  color: var(--edl-texto-dim);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+.edl-tab:hover {
+  color: var(--edl-texto);
+  border-bottom-color: var(--edl-borda-hover);
+}
+.edl-tab-ativa {
+  color: #fff;
+  border-image: var(--edl-grad) 1;
+  border-bottom: 2px solid;
+}
+
+/* Tratamento misto rosa+roxo para borda de card selecionado */
+.edl-selecionado {
+  position: relative;
+  border-radius: 0.85rem;
+  padding: 2px;
+  background: var(--edl-grad);
+}
+.edl-selecionado > .edl-selecionado-interno {
+  border-radius: 0.78rem;
+  background: var(--edl-card);
+  height: 100%;
+}
+
+/* Barra de progresso com gradiente */
+.edl-progresso {
+  background: var(--edl-grad);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+/* Canvas: fundo branco, área clara */
+.edl-canvas-branco {
+  background: #ffffff;
+  border-radius: 0.5rem;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 24px 60px -18px rgba(139, 92, 246, 0.28),
+    0 24px 60px -18px rgba(236, 72, 153, 0.22);
+}
+
+/* Área do vídeo marcada */
+.edl-area-video {
+  border: 2px dashed rgba(236, 72, 153, 0.75);
+  background-color: rgba(139, 92, 246, 0.1);
+}
+
+/* Logo arrastável */
+.edl-logo {
+  cursor: grab;
+  touch-action: none;
+}
+.edl-logo:active {
+  cursor: grabbing;
+}
+
+/* Hover misto rosa+roxo na grade */
+.edl-card-hover:hover {
+  border-color: rgba(236, 72, 153, 0.55);
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.35), 0 10px 28px -10px rgba(236, 72, 153, 0.3);
+}
+
+/* Texto do canvas */
+.edl-texto-canvas {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  white-space: pre-wrap;
+  line-height: 1.15;
+}
+
+/* Scrollbar dark escopada ao editor */
+.edl-root ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.edl-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.edl-root ::-webkit-scrollbar-thumb {
+  background: #2c2c38;
+  border-radius: 9999px;
+}
+.edl-root ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.7), rgba(139, 92, 246, 0.7));
+}
+
+/* Indicador de status */
+.edl-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.edl-grad-texto {
+  background: var(--edl-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.edl-ring-foco:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+}
+
+/* Ícones de ação alternando rosa/roxo */
+.edl-icone-a { color: var(--edl-rosa); }
+.edl-icone-b { color: var(--edl-roxo); }
+
+/* Controles nativos dentro do editor: tema escuro + opções legíveis */
+.edl-root {
+  color-scheme: dark;
+}
+.edl-root select.edl-input option {
+  background: var(--edl-painel);
+  color: var(--edl-texto);
+}
+
