@@ -69,7 +69,6 @@ function AreaCentral(p) {
     () => itens.find((v) => v.id === idSelecionado) || itens[0] || null,
     [itens, idSelecionado]
   );
-  const indiceUnico = seleccionadoItem ? Math.max(0, itens.findIndex((v) => v.id === seleccionadoItem.id)) : 0;
   const visiveis = useMemo(() => itens.slice(0, limite), [itens, limite]);
   // Carga progressiva e sentinela só existem nos modos múltiplos (2X/3X);
   // em 1X nunca se continua a lista de vídeos.
@@ -128,21 +127,20 @@ function AreaCentral(p) {
           </div>
         ) : modoUnico ? (
           /* 1X — VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro
-             (preview principal editável). NÃO continua a lista de vídeos abaixo. */
+             (preview principal editável). NÃO continua a lista de vídeos abaixo.
+             SIN moldura/card: apenas o canvas branco 9:16 com o vídeo dentro
+             (as linhas pontilhadas da área do vídeo/corte continuam sendo
+             ferramentas de edición e ficam intactas). */
           <div className={modoUnicoCls}>
-            <CelulaVideo
-              key={seleccionadoItem.id}
-              item={seleccionadoItem}
-              indice={indiceUnico}
-              itens={itens}
-              idSelecionado={idSelecionado}
-              urlVideoAtiva={urlVideoAtiva}
-              ativosNoPool={ativosNoPool}
+            <EditorCanvas
               config={config}
               aoAtualizarConfig={aoAtualizarConfig}
-              aoSelecionar={aoSelecionar}
-              aoFocar={aoFocar}
-              alturaPorCelula={alturaPorCelula}
+              itemSelecionado={seleccionadoItem}
+              urlVideoAtiva={urlVideoAtiva}
+              interativo
+              alturaMaxima={alturaPorCelula}
+              mostrarRodape={false}
+              compacto
             />
           </div>
         ) : (
@@ -172,10 +170,14 @@ function CelulaVideo(props) {
   const selecionado = item.id === props.idSelecionado;
   const urlCelula = selecionado ? props.urlVideoAtiva : (props.ativosNoPool ? props.ativosNoPool[item.id] : null) || null;
   const corStatus = item.status === 'concluido' ? '#4ade80' : item.status === 'erro' ? '#f87171' : item.status === 'processando' ? 'var(--edl-rosa)' : 'var(--edl-texto-mut)';
-  const classes = 'edl-ring-foco w-full rounded-xl text-left transition-all border overflow-hidden cursor-pointer' + (selecionado ? '' : ' edl-card-hover');
+  const classes = 'edl-ring-foco w-full rounded-xl text-left transition-all border overflow-hidden cursor-pointer';
+  const estiloCard = {
+    background: 'var(--edl-card)',
+    borderColor: 'var(--edl-borda)',
+  };
   return (
-    <div onClick={() => props.aoSelecionar(item)} onMouseEnter={() => { if (props.aoFocar) props.aoFocar(item); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.aoSelecionar(item); } }} aria-current={selecionado} title={nome + ' — abrir no editor'} className={classes} style={selecionado ? { boxShadow: 'inset 0 0 0 2px var(--edl-rosa)', background: 'rgba(236,72,153,0.06)', borderColor: 'transparent' } : { background: 'var(--edl-card)', borderColor: 'var(--edl-borda)' }}>
-      <div className="flex items-center gap-1.5 px-2 py-1 text-[9px] font-black text-white" style={{ background: selecionado ? 'var(--edl-grad)' : 'rgba(255,255,255,0.04)' }}>
+    <div onClick={() => props.aoSelecionar(item)} onMouseEnter={() => { if (props.aoFocar) props.aoFocar(item); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.aoSelecionar(item); } }} aria-current={selecionado} title={nome + ' — abrir no editor'} className={classes} style={estiloCard}>
+      <div className="flex items-center gap-1.5 px-2 py-1 text-[9px] font-black text-white" style={{ background: 'rgba(255,255,255,0.04)' }}>
         <Film className="w-3 h-3 shrink-0" />
         <span className="truncate flex-1">{nome}</span>
         {selecionado && <span className="shrink-0">NO EDITOR</span>}
