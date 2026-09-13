@@ -12,11 +12,15 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  * textos, identidade, área do vídeo e corte de bordas aparecen iguais em
  * todas as células).
  *
- * 1X / 2X / 3X = SOMENTE a quantidade de vídeos lado a lado no espaço central:
- * - 1X: 1 vídeo por linha (vídeo maior, centralizado);
- * - 2X: 2 vídeos DIFERENTES lado a lado ([V1][V2] / [V3][V4] ...);
- * - 3X: 3 vídeos DIFERENTES lado a lado ([V1][V2][V3] / [V4][V5][V6] ...).
- * NUNCA repite o mesmo vídeo; scroll VERTICAL mostra os demais.
+ * 1X / 2X / 3X = modo de visualização do espaço central:
+ * - 1X (VÍDEO ÚNICO/DESTAQUE): SOMENTE o vídeo selecionado no centro — É o
+ *   preview principal editável. Não mostra outro vídeo abaixo: NÃO continua
+ *   a lista de vídeos neste modo;
+ * - 2X (MÚLTIPLOS): 2 vídeos DIFERENTES lado a lado, continuando nas linhas
+ *   seguintes: [V1][V2] / [V3][V4] / [V5][V6] ...;
+ * - 3X (MÚLTIPLOS): 3 vídeos DIFERENTES lado a lado, continuando nas linhas
+ *   seguintes: [V1][V2][V3] / [V4][V5][V6] / [V7][V8][V9] ....
+ * NUNCA repite o mesmo vídeo; scroll VERTICAL mostra os demais (2X/3X).
  *
  * Edição COMPARTILHADA: clicar numa célula selecciona o vídeo principal
  * (idêntico a clicar na esquerda). SÓ a célula selecionada é interativa
@@ -31,9 +35,9 @@ const JANELA = 60;
 const PASSO = 30;
 
 const MODOS_AREA = [
-  { colunas: 1, rotulo: '1X', titulo: '1 vídeo por linha' },
-  { colunas: 2, rotulo: '2X', titulo: '2 vídeos por linha' },
-  { colunas: 3, rotulo: '3X', titulo: '3 vídeos por linha' },
+  { colunas: 1, rotulo: '1X', titulo: '1X — vídeo único (destaque)' },
+  { colunas: 2, rotulo: '2X', titulo: '2X — 2 vídeos lado a lado' },
+  { colunas: 3, rotulo: '3X', titulo: '3X — 3 vídeos lado a lado' },
 ];
 
 const ROTULOS_STATUS = {
@@ -56,8 +60,20 @@ function AreaCentral(p) {
   const sentinelaRef = useRef(null);
   const [limite, setLimite] = useState(JANELA);
   const [colunas, setColunas] = useState(1);
+  // 1X = modo de VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro,
+  // sem continuar a lista abaixo. 2X/3X = múltiplos vídeos lado a lado.
+  const modoUnico = colunas === 1;
+  // Preview principal: o vídeo seleccionado (fallback ao primeiro da lista).
+  // A seleção continua sendo feita pela lista da ESQUERDA (via `aoSelecionar`).
+  const seleccionadoItem = useMemo(
+    () => itens.find((v) => v.id === idSelecionado) || itens[0] || null,
+    [itens, idSelecionado]
+  );
+  const indiceUnico = seleccionadoItem ? Math.max(0, itens.findIndex((v) => v.id === seleccionadoItem.id)) : 0;
   const visiveis = useMemo(() => itens.slice(0, limite), [itens, limite]);
-  const temMais = itens.length > visiveis.length;
+  // Carga progressiva e sentinela só existem nos modos múltiplos (2X/3X);
+  // em 1X nunca se continua a lista de vídeos.
+  const temMais = !modoUnico && itens.length > visiveis.length;
   const assinaturaIds = useMemo(() => itens.map((v) => v.id).join(','), [itens]);
   useEffect(() => {
     setLimite(JANELA);
@@ -79,8 +95,9 @@ function AreaCentral(p) {
     obs.observe(sentinela);
     return () => obs.disconnect();
   }, [itens.length, temMais]);
-  const alturaPorCelula = colunas === 1 ? 520 : colunas === 2 ? 380 : 300;
-  const gradeCls = colunas === 1 ? 'grid gap-3 w-full max-w-[460px] mx-auto' : 'grid gap-3 w-full';
+  const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : 300;
+  const gradeCls = 'grid gap-3 w-full';
+  const modoUnicoCls = 'w-full max-w-[560px] mx-auto';
   return (
     <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-[color:var(--edl-painel)]">
       <div className="shrink-0 px-3 py-1.5 border-b border-[color:var(--edl-borda)] flex items-center gap-2">
@@ -108,6 +125,25 @@ function AreaCentral(p) {
                 Importe vídeos na coluna da esquerda.
               </p>
             </div>
+          </div>
+        ) : modoUnico ? (
+          /* 1X — VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro
+             (preview principal editável). NÃO continua a lista de vídeos abaixo. */
+          <div className={modoUnicoCls}>
+            <CelulaVideo
+              key={seleccionadoItem.id}
+              item={seleccionadoItem}
+              indice={indiceUnico}
+              itens={itens}
+              idSelecionado={idSelecionado}
+              urlVideoAtiva={urlVideoAtiva}
+              ativosNoPool={ativosNoPool}
+              config={config}
+              aoAtualizarConfig={aoAtualizarConfig}
+              aoSelecionar={aoSelecionar}
+              aoFocar={aoFocar}
+              alturaPorCelula={alturaPorCelula}
+            />
           </div>
         ) : (
           <div className={gradeCls} style={{ gridTemplateColumns: 'repeat(' + colunas + ', minmax(0, 1fr))' }}>
