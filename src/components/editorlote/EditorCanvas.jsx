@@ -28,8 +28,8 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
  *   área arrastável/redimensionável + cortes arrastáveis;
  * - DEMAIS CÉLULAS (interativo=false): SOMENTE visualização do MESMO canvas
  *   com a MESMA config compartilhada (logo/textos/identidade/área/cortes
- *   aparecem iguais), mas sem arrastes/manijas/áudio — thumbnail ou <video>
- *   mutado, com pointer-events desligados para o clique selecionar a célula.
+ *   aparecem iguais), mas sem arrastes/manijas/áudio — SOLO thumbnail
+ *   estática (parada), nunca un <video> con autoplay/loop en background.
  */
 
 /** Altura MÁXIMA padrão do preview 9:16 na TELA (px). Pode ser sobrescrita
@@ -53,6 +53,10 @@ export default function EditorCanvas({
   mostrarRodape = true,
   // Layout compacto de célula (área central): sem `flex-1`, largura total.
   compacto = false,
+  // Token de "remontaje" del reproductor: a área central muda de modo (1X→2X→3X)
+  // y al cambiar, el ControlesVideo DEBE remontar-se pausado (nunca queda un
+  // vídeo antiguo reproduciendo). Se concatena a la `key` do reproductor.
+  claveReproductor = '',
 }) {
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
@@ -255,26 +259,22 @@ export default function EditorCanvas({
             backgroundColor: area.mostrarMarcacao ? undefined : 'transparent',
           }}
         >
-          {/* <video> REAL do servidor dentro da região (só nos slots do pool) */}
-          {urlVideoAtiva ? (
-            podeEditar ? (
-              <ControlesVideo key={urlVideoAtiva} src={urlVideoAtiva} encaixe={encaixe} />
-            ) : (
-              <video
-                key={urlVideoAtiva}
-                src={urlVideoAtiva}
-                muted
-                loop
-                playsInline
-                autoPlay
-                preload="metadata"
-                className="w-full h-full pointer-events-none"
-                style={{ objectFit: encaixe }}
-              />
-            )
+          {/* VÍDEO dentro da região:
+              - Célula EDITABLE (1X/seleccionada): ControlesVideo REAL, mas
+                SEM AUTOPLAY — queda PAUSADO no primer frame até o usuário
+                pulsar Play (áudio só então);
+              - Células NÃO seleccionadas: NUNCA se monta <video> (nada de
+                autoplay/loop/áudio em background) — somente a THUMBNAIL
+                estática e parada. A `key` do reproductor inclui
+                `claveReproductor` para que ao mudar 1X/2X/3X o player se
+                remonte pausado (vídeos antigos não seguem tocando). */}
+          {podeEditar && urlVideoAtiva ? (
+            <ControlesVideo
+              key={`${urlVideoAtiva}|${claveReproductor}`}
+              src={urlVideoAtiva}
+              encaixe={encaixe}
+            />
           ) : item && item.thumbnail ? (
-            /* Célula NÃO no pool: mostra a THUMBNAIL REAL do servidor (leve,
-               lazy) dentro da área — MESMO encaixe do pipeline. */
             <img
               src={item.thumbnail}
               alt={item.nome || 'Video'}

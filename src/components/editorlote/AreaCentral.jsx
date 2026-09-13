@@ -24,8 +24,14 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  *
  * Edição COMPARTILHADA: clicar numa célula selecciona o vídeo principal
  * (idêntico a clicar na esquerda). SÓ a célula selecionada é interativa
- * (ControlesVideo + arrastes/manijas); as demais são SOMENTE visualização
- * (thumbnail real ou <video> mutado dos slots do pool + overlays iguais).
+ * (ControlesVideo PAUSADO com Play manual + arrastes/manijas); as demais
+ * mostran SOLO a thumbnail estática (parada, sem áudio, sem autoplay/loop).
+ * Al mudar 1X/2X/3X a `claveReproductor` cambia e o player se remonta
+ * pausado — nunca fica um vídeo antigo tocando em background.
+ *
+ * CÉLULAS SEM MOLDURA: a grade 2X/3X NÃO usa card/fundo/borde/glow — cada
+ * vídeo é somente o canvas branco 9:16 (única excepción: as linhas
+ * pontilhadas das ferramentas REAIS de edición, área do vídeo e cortes).
  *
  * NÃO cria segunda lista de vídeos: `itens` é a MESMA lista da esquerda
  * (mesmos ids/objetos). Percentual/status vêm da cola real (GET /api/fila).
@@ -40,24 +46,21 @@ const MODOS_AREA = [
   { colunas: 3, rotulo: '3X', titulo: '3X — 3 vídeos lado a lado' },
 ];
 
-const ROTULOS_STATUS = {
-  pronto: 'Importado',
-  aguardando: 'Na fila',
-  processando: 'Processando',
-  concluido: '✓ Pronto',
-  erro: 'Erro',
-};
 function AreaCentral(p) {
   const itens = p.itens || [];
   const idSelecionado = p.idSelecionado;
   const urlVideoAtiva = p.urlVideoAtiva;
-  const ativosNoPool = p.ativosNoPool;
   const config = p.config;
   const aoAtualizarConfig = p.aoAtualizarConfig;
   const aoSelecionar = p.aoSelecionar;
   const aoFocar = p.aoFocar;
   const containerRef = useRef(null);
   const sentinelaRef = useRef(null);
+  // Referencia à célula ATUALMENTE selecionada + flag de "fuera de vista":
+  // serve para pausar obrigatoriamente o player quando a célula seleccionada
+  // deixa de intersectar o contenedor (nunca un vídeo tocando off-screen).
+  const celulaSelRef = useRef(null);
+  const [selFuera, setSelFuera] = useState(false);
   const [limite, setLimite] = useState(JANELA);
   const [colunas, setColunas] = useState(1);
   // 1X = modo de VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro,
@@ -94,9 +97,31 @@ function AreaCentral(p) {
     obs.observe(sentinela);
     return () => obs.disconnect();
   }, [itens.length, temMais]);
+
+  // Pausa automática off-screen: se a célula seleccionada deixa de
+  // intersectar o contenedor, a clave do reproductor cambia -> ControlesVideo
+  // se remonta PAUSADO. Garantiza que nenhum vídeo toque sem que o usuário
+  // o veja (nada de background playback).
+  useEffect(() => {
+    const cont = containerRef.current;
+    const celda = celulaSelRef.current;
+    if (!cont || !celda) return undefined;
+    const obs = new IntersectionObserver(
+      (entradas) => {
+        for (const e of entradas) setSelFuera(!e.isIntersecting);
+      },
+      { root: cont, threshold: 0 }
+    );
+    obs.observe(celda);
+    return () => obs.disconnect();
+  }, [colunas, seleccionadoItem ? seleccionadoItem.id : null]);
   const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : 300;
   const gradeCls = 'grid gap-3 w-full';
   const modoUnicoCls = 'w-full max-w-[560px] mx-auto mt-20';
+  // Clave do reproductor por modo (1X/2X/3X) + visibilidad: qualquer cambio
+  // remonta o player PAUSADO (sem autoplay, sem loop), nunca deja un vídeo
+  // tocando em background tras mudar la vista.
+  const claveReproductor = colunas + 'X|' + (selFuera ? 'off' : 'on');
   return (
     <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-[color:var(--edl-painel)]">
       <div className="shrink-0 px-3 py-1.5 border-b border-[color:var(--edl-borda)] flex items-center gap-2">
@@ -131,7 +156,7 @@ function AreaCentral(p) {
              SIN moldura/card: apenas o canvas branco 9:16 com o vídeo dentro
              (as linhas pontilhadas da área do vídeo/corte continuam sendo
              ferramentas de edición e ficam intactas). */
-          <div className={modoUnicoCls}>
+          <div ref={celulaSelRef} className={modoUnicoCls}>
             <EditorCanvas
               config={config}
               aoAtualizarConfig={aoAtualizarConfig}
@@ -141,12 +166,27 @@ function AreaCentral(p) {
               alturaMaxima={alturaPorCelula}
               mostrarRodape={false}
               compacto
+              claveReproductor={claveReproductor}
             />
           </div>
         ) : (
           <div className={gradeCls} style={{ gridTemplateColumns: 'repeat(' + colunas + ', minmax(0, 1fr))' }}>
             {visiveis.map((item, i) => (
-              <CelulaVideo key={item.id} item={item} indice={i} itens={itens} idSelecionado={idSelecionado} urlVideoAtiva={urlVideoAtiva} ativosNoPool={ativosNoPool} config={config} aoAtualizarConfig={aoAtualizarConfig} aoSelecionar={aoSelecionar} aoFocar={aoFocar} alturaPorCelula={alturaPorCelula} />
+              <CelulaVideo
+                key={item.id}
+                item={item}
+                indice={i}
+                itens={itens}
+                idSelecionado={idSelecionado}
+                urlVideoAtiva={urlVideoAtiva}
+                config={config}
+                aoAtualizarConfig={aoAtualizarConfig}
+                aoSelecionar={aoSelecionar}
+                aoFocar={aoFocar}
+                alturaPorCelula={alturaPorCelula}
+                claveReproductor={claveReproductor}
+                referenciaSel={item.id === idSelecionado ? celulaSelRef : undefined}
+              />
             ))}
           </div>
         )}
@@ -168,26 +208,35 @@ function CelulaVideo(props) {
   const idx = itens.findIndex((v) => v.id === item.id);
   const nome = item.nome || rotuloDeVideo(idx >= 0 ? idx : props.indice);
   const selecionado = item.id === props.idSelecionado;
-  const urlCelula = selecionado ? props.urlVideoAtiva : (props.ativosNoPool ? props.ativosNoPool[item.id] : null) || null;
-  const corStatus = item.status === 'concluido' ? '#4ade80' : item.status === 'erro' ? '#f87171' : item.status === 'processando' ? 'var(--edl-rosa)' : 'var(--edl-texto-mut)';
-  const classes = 'edl-ring-foco w-full rounded-xl text-left transition-all border overflow-hidden cursor-pointer';
-  const estiloCard = {
-    background: 'var(--edl-card)',
-    borderColor: 'var(--edl-borda)',
-  };
+  // Sem moldura/card/glow/fundo: cada célula é SOLO o canvas branco 9:16 com
+  // o vídeo (thumbnail estática) dentro. Nada de borde/background decorativo.
   return (
-    <div onClick={() => props.aoSelecionar(item)} onMouseEnter={() => { if (props.aoFocar) props.aoFocar(item); }} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.aoSelecionar(item); } }} aria-current={selecionado} title={nome + ' — abrir no editor'} className={classes} style={estiloCard}>
-      <div className="flex items-center gap-1.5 px-2 py-1 text-[9px] font-black text-white" style={{ background: 'rgba(255,255,255,0.04)' }}>
-        <Film className="w-3 h-3 shrink-0" />
-        <span className="truncate flex-1">{nome}</span>
-        {selecionado && <span className="shrink-0">NO EDITOR</span>}
-      </div>
+    <div
+      ref={props.referenciaSel}
+      onClick={() => props.aoSelecionar(item)}
+      onMouseEnter={() => { if (props.aoFocar) props.aoFocar(item); }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.aoSelecionar(item); } }}
+      aria-current={selecionado}
+      title={nome + ' — abrir no editor'}
+      className="edl-ring-foco w-full overflow-hidden"
+    >
+      {/* MESMO canvas do editor (config COMPARTILHADA) sem moldura: a célula
+          NÃO selecionada fica parada (thumbnail estática, sem <video>); a
+          selecionada mostra o player PAUSADO (Play manual, sem autoplay). */}
       <div className={selecionado ? undefined : 'pointer-events-none'}>
-        <EditorCanvas config={props.config} aoAtualizarConfig={selecionado ? props.aoAtualizarConfig : undefined} itemSelecionado={item} urlVideoAtiva={urlCelula} interativo={selecionado} alturaMaxima={props.alturaPorCelula} mostrarRodape={false} compacto />
-      </div>
-      <div className="flex items-center gap-1 px-2 py-1 text-[8px] font-semibold truncate border-t border-[color:var(--edl-borda)]" style={{ color: corStatus }}>
-        <Film className="w-2.5 h-2.5 shrink-0" />
-        <span className="truncate">{ROTULOS_STATUS[item.status] || 'Importado'}{item.status === 'erro' && item.erroMensagem ? ' - ' + String(item.erroMensagem).slice(0, 60) : ''}</span>
+        <EditorCanvas
+          config={props.config}
+          aoAtualizarConfig={selecionado ? props.aoAtualizarConfig : undefined}
+          itemSelecionado={item}
+          urlVideoAtiva={props.urlVideoAtiva}
+          interativo={selecionado}
+          alturaMaxima={props.alturaPorCelula}
+          mostrarRodape={false}
+          compacto
+          claveReproductor={props.claveReproductor}
+        />
       </div>
     </div>
   );
