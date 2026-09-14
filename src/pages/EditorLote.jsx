@@ -86,10 +86,20 @@ function arquivoDeDataUrl(dataUrl) {
   }
 }
 
-/** Sanitiza os vídeos para persistência (SÓ metadados serializáveis). */
+/** Sanitiza os vídeos para persistência (SÓ metadados serializáveis).
+ * filaId/status/percentual/erro NUNCA são persistidos: o estado de fila é
+ * sempre revalidado contra o backend (retomada de polling no mount). Isso
+ * também garante que um vídeo removido após concluir NÃO reaparece no reload
+ * (não há como "ressuscitar" sem filaId salvo). */
 function itensParaSalvar(itens) {
   return (Array.isArray(itens) ? itens : [])
-    .filter((it) => it && it.id && (it.urlFonte || it.thumbnail))
+    .filter(
+      (it) =>
+        it &&
+        it.id &&
+        (it.urlFonte || it.thumbnail) &&
+        !(it.filaId && it.status === 'concluido' && Number(it.percentual) === 100)
+    )
     .map((it) => ({
       id: it.id,
       bibliotecaId: it.bibliotecaId || it.id,
@@ -97,7 +107,6 @@ function itensParaSalvar(itens) {
       thumbnail: it.thumbnail ?? null,
       urlFonte: it.urlFonte ?? null,
       duracao: it.duracao ?? null,
-      filaId: it.filaId ?? null,
     }));
 }
 
@@ -288,10 +297,19 @@ function carregarLoteSalvo() {
       alturaProporcao: urlLogo ? config.logo.alturaProporcao ?? null : null,
     };
     // VÍDEOS: só metadados serializáveis (id + URLs ABSOLUTAS do servidor —
-    // continuam válidas após sair/voltar). Estado de fila é resetado p/ valor
-    // seguro; o polling é RETOMADO no mount quando há filaId (efeito abaixo).
+    // continuam válidas após sair/voltar). filaId NÃO é restaurado (o
+    // itensParaSalvar não o persiste): todo item volta 'pronto' e o
+    // acompanhamento recomeça do zero no próximo "Processar vídeos". Itens
+    // concluídos que porventura estejam no estado no momento do save são
+    // filtrados na escrita — nunca reaparecem após reload.
     const itens = dados.itens
-      .filter((v) => v && v.id && (v.urlFonte || v.url || v.thumbnail))
+      .filter(
+        (v) =>
+          v &&
+          v.id &&
+          (v.urlFonte || v.url || v.thumbnail) &&
+          !(v.filaId && v.status === 'concluido' && Number(v.percentual) === 100)
+      )
       .map((v) => ({
         id: v.id,
         bibliotecaId: v.bibliotecaId || v.id || null,
@@ -299,8 +317,8 @@ function carregarLoteSalvo() {
         thumbnail: v.thumbnail ?? null,
         urlFonte: v.urlFonte || v.url || null,
         duracao: v.duracao ?? null,
-        filaId: v.filaId ?? null,
-        status: v.filaId ? 'aguardando' : 'pronto',
+        filaId: null,
+        status: 'pronto',
         percentual: 0,
         erroMensagem: null,
       }));
@@ -396,6 +414,48 @@ export default function EditorLote() {
       setIdSelecionado(itens[0].id);
     }
   }, [itens, idSelecionado]);
+
+  // REMOÇÃO AUTOMÁTICA DE CONCLUÍDOS — vídeos do Editor em Lote saem da lista
+  // de importados SOMENTE após confirmação real do backend (GET /api/fila com
+  // status === 'concluido' E percentual === 100, refletidos no item pelo
+  // polling). Remoção individual (cada vídeo sai assim que termina, mesmo em
+  // lote). NÃO toca na Biblioteca, no Oracle nem nos finais gerados — apenas
+  // filtra o estado local `itens`; o AUTOSAVE (effect, 350ms) + flush de
+  // unmount/pagehide regravam `autopost:editorlote:v1` sem o item, então ele
+  // não reaparece após reload. Itens 'aguardando'/'processando'/'erro' nunca
+  // são removidos. A seleção (effect acima) e o pool (usePoolDeVideos) se
+  // ajustam sozinhos quando um item sai.
+  const concluidosAvisadosRef = useRef(new Set());
+  const concluidosRemovidosRef = useRef(0);
+  useEffect(() => {
+    const prontos = itens.filter(
+      (it) => it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100
+    );
+    if (prontos.length === 0) return;
+    const novos = prontos.filter((it) => !concluidosAvisadosRef.current.has(it.filaId));
+    novos.forEach((it) => concluidosAvisadosRef.current.add(it.filaId));
+    concluidosRemovidosRef.current += prontos.length;
+    // Restam itens ativos (aguardando/processando)? Se sim, avisa a remoção
+    // agora; se não, o effect "Fila vazia" (abaixo) mostra a mensagem final
+    // combinada ao parar o polling — sem toast duplicado.
+    const restamAtivos = itens.some(
+      (it) =>
+        !(it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100) &&
+        (it.status === 'aguardando' || it.status === 'processando')
+    );
+    setItens((atual) =>
+      (Array.isArray(atual) ? atual : []).filter(
+        (it) => !(it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100)
+      )
+    );
+    if (restamAtivos && novos.length > 0) {
+      mostrarToast(
+        novos.length === 1
+          ? 'Vídeo concluído removido da lista do Editor (final salvo na Biblioteca).'
+          : `${novos.length} vídeos concluídos removidos da lista do Editor (finais salvos na Biblioteca).`
+      );
+    }
+  }, [itens, mostrarToast]);
 
   // dataURL da logo (File/blob: não sobrevivem a sair/voltar — o dataURL
   // sim). Inicializado com o valor restaurado, se houver.
@@ -649,8 +709,10 @@ export default function EditorLote() {
 
   useEffect(() => () => pararPolling(), [pararPolling]);
 
-  // Ao VOLTAR pro editor: se havia itens em processamento quando o usuário
-  // saiu, retoma o acompanhamento do progresso automaticamente (a fila REAL
+  // Ao VOLTAR pro editor: o estado de fila NÃO é restaurado do localStorage
+  // (filaId não é persistido — ver itensParaSalvar). Se o usuário saiu no
+  // meio de um processamento e voltou, os itens voltam 'pronto' e o
+  // acompanhamento recomeça no próximo "Processar vídeos" (a fila REAL
   // continua na Oracle/worker — só a UI tinha parado de olhar).
   const filaRetomadaRef = useRef(false);
   useEffect(() => {
@@ -666,7 +728,15 @@ export default function EditorLote() {
     const temAtivos = itens.some((it) => it.status === 'aguardando' || it.status === 'processando');
     if (!temAtivos && pollRef.current) {
       pararPolling();
-      mostrarToast('Processamento concluído.');
+      const n = concluidosRemovidosRef.current;
+      concluidosRemovidosRef.current = 0;
+      mostrarToast(
+        n > 0
+          ? n === 1
+            ? 'Processamento concluído — vídeo removido da lista do Editor (final salvo na Biblioteca).'
+            : `Processamento concluído — ${n} vídeos removidos da lista do Editor (finais salvos na Biblioteca).`
+          : 'Processamento concluído.'
+      );
     }
     const temAguardando = itens.some((it) => it.status === 'aguardando');
     const temProcessando = itens.some((it) => it.status === 'processando');
