@@ -136,7 +136,10 @@ export function criarConfigPadrao() {
       largura: 900,
       altura: 1000,
       fit: 'cobrir',
-      mostrarMarcacao: true, // guia visual da prévia (não afeta o render)
+      // DESLIGADO por padrão: o vídeo importado aparece NORMAL, sem véu
+      // azul/roxo. A ferramenta continua existindo (arrastar/redimensionar
+      // funciona); só o guia visual nasce oculto. Não vai ao backend.
+      mostrarMarcacao: false,
     },
     // CORTE DE BORDAS: corte ESPACIAL superior/inferior do vídeo ORIGINAL
     // (percentuais da altura). Compartilhado por todo o lote; entra no mesmo

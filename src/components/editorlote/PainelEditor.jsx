@@ -25,6 +25,9 @@ import {
   ALINEACIONES_TEXTO,
 } from '../../lib/configEditorLote';
 import PopupLogo from './PopupLogo';
+import ControleDirecional from './ControleDirecional';
+import BotaoEmoji from './BotaoEmoji';
+import { useRef } from 'react';
 
 /**
  * EDITOR EM LOTE — coluna DIREITA: painel do editor (PainelEditor).
@@ -120,17 +123,22 @@ function TextoBloco({ chave, t, aoMudar }) {
   const rotulo = chave === 'superior' ? 'Texto superior' : 'Texto inferior';
   const pesoAtivo = t.peso || 'negrita';
   const alinhamentoAtivo = t.alinhamento || 'centro';
+  const campoRef = useRef(null);
   return (
     <>
       <div>
         <Rotulo>{rotulo} — conteúdo</Rotulo>
-        <textarea
-          value={t.conteudo || ''}
-          onChange={(e) => aoMudar('conteudo', e.target.value)}
-          rows={3}
-          placeholder={chave === 'superior' ? 'Ex.: o título que aparece em cima...' : 'Ex.: a legenda que aparece embaixo...'}
-          className="edl-input w-full text-[12px] font-medium px-2.5 py-2 resize-none leading-relaxed"
-        />
+        <div className="flex items-start gap-1.5">
+          <textarea
+            ref={campoRef}
+            value={t.conteudo || ''}
+            onChange={(e) => aoMudar('conteudo', e.target.value)}
+            rows={3}
+            placeholder={chave === 'superior' ? 'Ex.: o título que aparece em cima...' : 'Ex.: a legenda que aparece embaixo...'}
+            className="edl-input flex-1 min-w-0 text-[12px] font-medium px-2.5 py-2 resize-none leading-relaxed"
+          />
+          <BotaoEmoji campoRef={campoRef} aoInserir={(novo) => aoMudar('conteudo', novo)} />
+        </div>
       </div>
 
       <div>
@@ -213,8 +221,16 @@ function TextoBloco({ chave, t, aoMudar }) {
         </div>
       </div>
 
-      <Deslizador rotulo="Posição X" sufixo="%" valor={Math.round(t.x ?? 50)} min={0} max={100} aoMudar={(v) => aoMudar('x', v)} />
-      <Deslizador rotulo="Posição Y" sufixo="%" valor={Math.round(t.y ?? 12)} min={0} max={100} aoMudar={(v) => aoMudar('y', v)} />
+      {/* Posição via controle direcional (mesmos x/y internos; sem sliders X/Y) */}
+      <ControleDirecional
+        rotulo="Posição"
+        x={t.x ?? 50}
+        y={t.y ?? 12}
+        aoMudar={(nx, ny) => {
+          aoMudar('x', nx);
+          aoMudar('y', ny);
+        }}
+      />
       <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 80)} min={20} max={100} aoMudar={(v) => aoMudar('largura', v)} />
       <Deslizador rotulo="Altura do bloco" sufixo="px" valor={Math.round(t.altura ?? 240)} min={60} max={1200} aoMudar={(v) => aoMudar('altura', v)} />
       <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
@@ -227,7 +243,7 @@ function TextoBloco({ chave, t, aoMudar }) {
   );
 }
 
-export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado }) {
+export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado: _itemSelecionado }) {
   // Ferramenta aberta — UMA por vez (a direita contém somente as ferramentas).
   const [ferramenta, setFerramenta] = useState('logo');
   // Popup GRANDE da identidade (logo/nome/@/selo, fundo branco, drag/resize).
@@ -305,40 +321,14 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
 
   return (
     <div className="flex flex-col">
-      {/* Cabeçalho */}
+      {/* Cabeçalho — somente título; sem badge de arquivo (limpeza visual).
+          `itemSelecionado` continua recebido via props para lógica/futuro, mas
+          sem apresentação visual aqui. */}
       <div className="px-4 pt-3.5 pb-3 border-b border-[color:var(--edl-borda)]">
         <div className="flex items-center gap-2">
           <Wand2 className="w-4 h-4 edl-icone-a" />
           <h2 className="font-display text-sm font-extrabold text-white">Editor</h2>
           <div className="flex-1" />
-          {itemSelecionado ? (
-            <span
-              className="text-[9px] font-bold px-2 py-0.5 rounded-full truncate max-w-[150px]"
-              style={{ background: 'rgba(236,72,153,0.14)', color: 'var(--edl-rosa)' }}
-              title={itemSelecionado.nome}
-            >
-              {itemSelecionado.nome}
-            </span>
-          ) : (
-            <span className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-              nenhum vídeo selecionado
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Edição compartilhada — vale pro lote inteiro (sem "aplicar a todos") */}
-      <div className="px-4 pt-3">
-        <div
-          className="rounded-lg px-3 py-2 flex items-start gap-2"
-          style={{ background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.35)' }}
-        >
-          <Wand2 className="w-3.5 h-3.5 edl-icone-b shrink-0 mt-0.5" />
-          <p className="text-[10px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-dim)' }}>
-            Edição compartilhada: logo/texto valem{' '}
-            <span className="edl-grad-texto font-extrabold">para todos os vídeos importados</span> — a mudança é
-            instantânea e vai pro template REAL do servidor ao processar.
-          </p>
         </div>
       </div>
 
@@ -448,8 +438,15 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
             </label>
           )}
 
-          <Deslizador rotulo="Posição X" sufixo="%" valor={Math.round(config.logo.x)} min={0} max={100} aoMudar={(v) => aoMudarLogo('x', v)} />
-          <Deslizador rotulo="Posição Y" sufixo="%" valor={Math.round(config.logo.y)} min={0} max={100} aoMudar={(v) => aoMudarLogo('y', v)} />
+          <ControleDirecional
+            rotulo="Posição"
+            x={config.logo.x ?? 50}
+            y={config.logo.y ?? 8}
+            aoMudar={(nx, ny) => {
+              aoMudarLogo('x', nx);
+              aoMudarLogo('y', ny);
+            }}
+          />
           <Deslizador rotulo="Largura" sufixo="%" valor={Math.round(config.logo.largura)} min={2} max={60} aoMudar={(v) => aoMudarLogo('largura', v)} />
           <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(config.logo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarLogo('opacidade', v)} />
           <Alternar rotulo="Logo visível em todos os vídeos" ativo={!!config.logo.visivel} aoMudar={(v) => aoMudarLogo('visivel', v)} />

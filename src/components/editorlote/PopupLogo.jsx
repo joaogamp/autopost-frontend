@@ -2,6 +2,9 @@ import { X, Upload, Trash2, Eye, EyeOff, Type, AtSign, Image as ImageIcon, MoveD
 import { useEffect, useRef, useState } from 'react';
 import { gerarArrasteDeRuta, gerarRedimensionarLogo } from './arraste';
 import { ElementoIdentidadeTexto, ElementoIdentidadeSelo, COR_SELO_AZUL } from './ElementoIdentidade';
+import ControleDirecional from './ControleDirecional';
+import BotaoEmoji from './BotaoEmoji';
+import { familiaDeFonte, pesoDeTexto } from '../../lib/configEditorLote';
 import {
   CANVAS_LARGURA,
   criarIdentidadePadrao,
@@ -78,6 +81,19 @@ function AlternarClaro({ rotulo, ativo, aoMudar }) {
   );
 }
 
+/* Direcional claro (popup branco) — mesmo comportamento do ControleDirecional
+   escuro: escreve nos mesmos x/y internos, 1% clique, Shift = 0.2%. */
+function DirecionalClaro({ x = 50, y = 50, aoMudar }) {
+  return (
+    <ControleDirecional
+      x={x}
+      y={y}
+      rotulo="Posição"
+      aoMudar={aoMudar}
+    />
+  );
+}
+
 /* --------------------------------------------------------------------- */
 /* Controles de UM texto da identidade (nome | @ do canal) — escreve      */
 /* SOMENTE na rota `identidade.<chave>`; os outros elementos nunca mudam. */
@@ -85,6 +101,7 @@ function AlternarClaro({ rotulo, ativo, aoMudar }) {
 function SecaoTextoIdentidade({ chave, rotulo, Icone, t, aoMudar }) {
   const pesoAtivo = t.peso || 'extranegrita';
   const alinhamentoAtivo = t.alinhamento || 'centro';
+  const campoRef = useRef(null);
   return (
     <section className="rounded-xl border border-slate-200 p-3.5 space-y-3">
       <div className="flex items-center gap-2">
@@ -94,13 +111,17 @@ function SecaoTextoIdentidade({ chave, rotulo, Icone, t, aoMudar }) {
 
       <div>
         <RotuloClaro>Conteúdo</RotuloClaro>
-        <input
-          type="text"
-          value={t.conteudo || ''}
-          onChange={(e) => aoMudar('conteudo', e.target.value)}
-          placeholder={chave === 'nome' ? 'Ex.: Canal Oficial' : 'Ex.: @canaloficial'}
-          className="w-full text-[12px] font-bold px-3 py-2 rounded-lg border border-slate-300 text-slate-900 outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200"
-        />
+        <div className="flex items-start gap-1.5">
+          <input
+            ref={campoRef}
+            type="text"
+            value={t.conteudo || ''}
+            onChange={(e) => aoMudar('conteudo', e.target.value)}
+            placeholder={chave === 'nome' ? 'Ex.: Canal Oficial' : 'Ex.: @canaloficial'}
+            className="flex-1 min-w-0 text-[12px] font-bold px-3 py-2 rounded-lg border border-slate-300 text-slate-900 outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200"
+          />
+          <BotaoEmoji campoRef={campoRef} aoInserir={(novo) => aoMudar('conteudo', novo)} />
+        </div>
       </div>
 
       <div>
@@ -183,8 +204,8 @@ function SecaoTextoIdentidade({ chave, rotulo, Icone, t, aoMudar }) {
         </div>
       </div>
 
-      <DeslizadorClaro rotulo="Posição X" sufixo="%" valor={Math.round(t.x ?? 50)} min={0} max={100} aoMudar={(v) => aoMudar('x', v)} />
-      <DeslizadorClaro rotulo="Posição Y" sufixo="%" valor={Math.round(t.y ?? 16)} min={0} max={100} aoMudar={(v) => aoMudar('y', v)} />
+      {/* Posição via controle direcional claro (mesmos x/y; sem sliders X/Y) */}
+      <DirecionalClaro x={t.x ?? 50} y={t.y ?? 16} aoMudar={(nx, ny) => { aoMudar('x', nx); aoMudar('y', ny); }} />
       <DeslizadorClaro rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 46)} min={10} max={100} aoMudar={(v) => aoMudar('largura', v)} />
       <DeslizadorClaro rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
       <AlternarClaro rotulo={`${rotulo} visível`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
@@ -200,6 +221,11 @@ function SecaoTextoIdentidade({ chave, rotulo, Icone, t, aoMudar }) {
 
 export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
   const logo = config.logo || {};
+  const area = config.areaVideo || {};
+  const canvas = config.canvas || {};
+  const textos = config.textos || {};
+  const textoSup = textos.superior || {};
+  const textoInf = textos.inferior || {};
   const previewRef = useRef(null);
   // Escala LIVE do preview px→px do canvas real (medida no próprio elemento):
   // as alças usam isso pra converter arraste do popup em % do canvas 9:16.
@@ -306,18 +332,58 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-4 px-5 py-4 overflow-y-auto">
-          {/* PREVIEW BRANCO 9:16 — arraste/redimensione os elementos aqui.
-              data-escala/data-canvas-largura LIVE: o arraste do popup é
-              convertido pra % do canvas 9:16 REAL (mesma matemática). */}
-          <div className="shrink-0 flex flex-col items-center gap-2">
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-4 px-5 py-4 md:overflow-hidden overflow-y-auto">
+          {/* MINI-TEMPLATE COMPLETO (leitura) + identidade interativa.
+              Reusa a MESMA matemática do EditorCanvas (%, escalaPreview,
+              fontes): fundo real, área do vídeo como referência (sem drag),
+              textos sup/inf estáticos + logo/identidade editáveis.
+              data-escala/data-canvas-largura LIVE para o arraste. */}
+          <div className="shrink-0 flex flex-col items-center gap-2 md:sticky md:top-0 md:self-start">
             <div
               ref={previewRef}
-              className="relative w-full md:w-[380px] shrink-0 aspect-[9/16] rounded-xl bg-white overflow-hidden"
+              className="relative w-full md:w-[290px] shrink-0 aspect-[9/16] rounded-xl overflow-hidden"
               data-escala={String(escalaPreview)}
               data-canvas-largura={String(CANVAS_LARGURA)}
-              style={{ boxShadow: 'inset 0 0 0 2px rgba(15,23,42,0.15)' }}
+              style={{ background: canvas.corFundo || '#ffffff', boxShadow: 'inset 0 0 0 2px rgba(15,23,42,0.15)' }}
             >
+              {/* Área do vídeo — referência visual (sem drag dentro do popup) */}
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  left: `${((area.x || 0) / CANVAS_LARGURA) * 100}%`,
+                  top: `${((area.y || 0) / 1920) * 100}%`,
+                  width: `${((area.largura || 0) / CANVAS_LARGURA) * 100}%`,
+                  height: `${((area.altura || 0) / 1920) * 100}%`,
+                  border: '1.5px dashed rgba(139,92,246,0.55)',
+                  background: 'rgba(139,92,246,0.06)',
+                }}
+              />
+              {/* Textos sup/inf — leitura (mesma matemática do canvas) */}
+              {[textoSup, textoInf].map((t, i) =>
+                t?.visivel !== false && String(t?.conteudo || '').trim() !== '' ? (
+                  <div
+                    key={i === 0 ? 'sup' : 'inf'}
+                    className="absolute pointer-events-none"
+                    style={{
+                      left: `${t.x ?? 50}%`,
+                      top: `${t.y ?? 12}%`,
+                      width: `${t.largura ?? 80}%`,
+                      transform: 'translate(-50%, 0)',
+                      textAlign: t.alinhamento || 'centro',
+                      fontFamily: familiaDeFonte(t.fonte),
+                      fontSize: (t.tamanho || 40) * escalaPreview,
+                      fontWeight: pesoDeTexto(t.peso),
+                      color: t.cor,
+                      opacity: (t.opacidade ?? 100) / 100,
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.15,
+                      zIndex: 5,
+                    }}
+                  >
+                    {t.conteudo}
+                  </div>
+                ) : null
+              )}
               {logo.visivel && logo.url ? (
                 <div
                   role="button"
@@ -388,8 +454,8 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
             </p>
           </div>
 
-          {/* CONTROLES — um bloco SEPARADO por elemento */}
-          <div className="flex-1 min-w-0 space-y-4">
+          {/* CONTROLES — um bloco SEPARADO por elemento (única coluna com scroll) */}
+          <div className="flex-1 min-w-0 space-y-4 md:overflow-y-auto md:min-h-0 md:pr-1">
             {/* SEÇÃO: imagem / logo */}
             <section className="rounded-xl border border-slate-200 p-3.5 space-y-3">
               <div className="flex items-center gap-2">
@@ -405,8 +471,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
                 {logo.url ? 'Trocar logo' : 'Adicionar logo'}
               </label>
               <input id="edl-popup-input-logo" type="file" accept="image/*" className="hidden" onChange={aoEscolherLogo} />
-              <DeslizadorClaro rotulo="Posição X" sufixo="%" valor={Math.round(logo.x ?? 50)} min={0} max={100} aoMudar={(v) => aoMudarLogo('x', v)} />
-              <DeslizadorClaro rotulo="Posição Y" sufixo="%" valor={Math.round(logo.y ?? 8)} min={0} max={100} aoMudar={(v) => aoMudarLogo('y', v)} />
+              <DirecionalClaro x={logo.x ?? 50} y={logo.y ?? 8} aoMudar={(nx, ny) => { aoMudarLogo('x', nx); aoMudarLogo('y', ny); }} />
               <DeslizadorClaro rotulo="Tamanho (largura)" sufixo="%" valor={Math.round(logo.largura ?? 22)} min={2} max={60} passo={0.5} aoMudar={(v) => aoMudarLogo('largura', v)} />
               <DeslizadorClaro rotulo="Opacidade" sufixo="%" valor={Math.round(logo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarLogo('opacidade', v)} />
               <AlternarClaro rotulo="Logo visível em todos os vídeos" ativo={logo.visivel !== false} aoMudar={(v) => aoMudarLogo('visivel', v)} />
@@ -446,8 +511,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
                 <BadgeCheck className="w-3.5 h-3.5" style={{ color: COR_SELO_AZUL }} />
                 <h3 className="text-xs font-extrabold text-slate-800">Selo azul de verificado</h3>
               </div>
-              <DeslizadorClaro rotulo="Posição X" sufixo="%" valor={Math.round(identidade.selo.x ?? 66)} min={0} max={100} aoMudar={(v) => aoMudarIdentidade('selo', 'x', v)} />
-              <DeslizadorClaro rotulo="Posição Y" sufixo="%" valor={Math.round(identidade.selo.y ?? 15.6)} min={0} max={100} passo={0.2} aoMudar={(v) => aoMudarIdentidade('selo', 'y', v)} />
+              <DirecionalClaro x={identidade.selo.x ?? 66} y={identidade.selo.y ?? 15.6} aoMudar={(nx, ny) => { aoMudarIdentidade('selo', 'x', nx); aoMudarIdentidade('selo', 'y', ny); }} />
               <DeslizadorClaro rotulo="Tamanho" sufixo="%" valor={Math.round((identidade.selo.largura ?? 3.4) * 10) / 10} min={1} max={12} passo={0.1} aoMudar={(v) => aoMudarIdentidade('selo', 'largura', v)} />
               <DeslizadorClaro rotulo="Opacidade" sufixo="%" valor={Math.round(identidade.selo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarIdentidade('selo', 'opacidade', v)} />
               <AlternarClaro rotulo="Selo visível em todos os vídeos" ativo={!!identidade.selo.visivel} aoMudar={(v) => aoMudarIdentidade('selo', 'visivel', v)} />

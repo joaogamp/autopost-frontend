@@ -6,7 +6,7 @@ import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
 import { criarConfigPadrao, criarIdentidadePadrao } from '../lib/configEditorLote';
-import { processarLote, salvarTemplateDoEditor, buscarFila, urlArquivo } from '../lib/api';
+import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
 import {
   configParaTemplatePayload,
   assinarConfig,
@@ -51,6 +51,11 @@ import {
  * Persiste vídeos importados (metadados + URLs absolutas), vídeo selecionado,
  * templateId e TODA a config compartilhada — incluindo a logo (como dataURL,
  * pois File/blob: não sobrevivem). Ao voltar, tudo é restaurado como estava.
+ * A restauração também VALIDA cada `bibliotecaId` contra GET /api/biblioteca:
+ * referências órfãs (vídeo que não existe mais no servidor) são limpas na
+ * entrada — itens válidos ficam intactos; consulta falhando, nada é removido
+ * (fail-open). Sem isso, um id antigo no localStorage faz o /api/lote rejeitar
+ * o lote inteiro com "Vídeo ... não encontrado na biblioteca do servidor."
  */
 
 const CHAVE_LOTE = 'autopost:editorlote:v1';
@@ -144,11 +149,18 @@ function mesclarConfig(salva) {
   // Configs salvas ANTES da renomeação usavam a chave `corte` — migra para o
   // nome unificado `corteBordas` (front + back).
   const { corte, ...salvaSemLegado } = salva;
+  // MIGRAÇÃO marcação da área: o default antigo era `mostrarMarcacao: true`,
+  // então configs salvas trazem `true` mesmo sem o usuário ter ligado. Força
+  // `false` UMA vez (flag `marcacaoMigradaV2`); depois disso o toggle do
+  // usuário volta a persistir normalmente.
+  const areaSalva = salva.areaVideo || {};
+  const jaMigrada = areaSalva.marcacaoMigradaV2 === true;
+  const marcacaoMigrada = jaMigrada ? areaSalva.mostrarMarcacao : false;
   return {
     ...base,
     ...salvaSemLegado,
     canvas: { ...base.canvas, ...salva.canvas },
-    areaVideo: { ...base.areaVideo, ...salva.areaVideo },
+    areaVideo: { ...base.areaVideo, ...areaSalva, mostrarMarcacao: marcacaoMigrada ?? false, marcacaoMigradaV2: true },
     logo: { ...base.logo, ...salva.logo },
     // DOIS textos independentes: `textos.superior` + `textos.inferior`.
     // Configs antigas tinham um único `texto` — migra pra superior.
@@ -169,6 +181,85 @@ function mesclarConfig(salva) {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// REFERÊNCIAS ÓRFÃS — itens restaurados do localStorage podem carregar um
+// `bibliotecaId` que não existe mais no servidor (vídeo excluído, servidor
+// reiniciado etc.). Nesse caso o /api/lote rejeita o lote INTEIRO ("Vídeo ...
+// não encontrado na biblioteca do servidor."). A validação acontece na
+// RESTAURAÇÃO, contra GET /api/biblioteca (fonte da verdade), item a item:
+//   - bibliotecaId existe no servidor  → item mantido EXATAMENTE como está;
+//   - bibliotecaId órfão:
+//       · bibliotecaId === id (caso real do editor) → SÓ esse item sai do lote;
+//       · bibliotecaId !== id                       → item fica, bibliotecaId vira null.
+// `id` NUNCA é validado contra o servidor (identidade LOCAL do item — pool,
+// seleção e canvas). `config`/`templateId`/`assinatura` não participam da
+// limpeza. FAIL-OPEN: consulta falhando (rede/servidor fora), NADA é removido
+// — remover sem confirmação do servidor poderia apagar vídeo válido.
+// ---------------------------------------------------------------------------
+
+// >>> LOGICA-ORFAS-INICIO (marcadores usados por teste_referencias_orfas.js)
+
+/**
+ * Decide, item a item, o que fazer com as referências restauradas:
+ * `remover` — ids de itens ÓRFÃOS (bibliotecaId === id, arquivo original não
+ *             existe mais no servidor → nada a exibir nem a processar);
+ * `anular`  — id → item com `bibliotecaId: null` (bibliotecaId !== id: item
+ *             tem identidade própria e fica, só perde a referência servidora).
+ * Itens sem `bibliotecaId` ou com referência válida NÃO entram em nenhum Map/Set.
+ */
+function limparReferenciasOrfas(itens, idsValidos) {
+  const remover = new Set();
+  const anular = new Map();
+  for (const it of Array.isArray(itens) ? itens : []) {
+    if (!it?.bibliotecaId || idsValidos.has(it.bibliotecaId)) continue;
+    if (it.bibliotecaId !== it.id) anular.set(it.id, { ...it, bibliotecaId: null });
+    else remover.add(it.id);
+  }
+  return { remover, anular };
+}
+
+/**
+ * Valida o lote restaurado contra a biblioteca REAL do servidor.
+ * Devolve `{ itens, idSelecionado, remover, anular }` quando há algo a limpar —
+ * `itens` já é a lista LIMPA (órfãos fora, itens válidos intocados, inclusive
+ * os adicionados DEPOIS da restauração) — ou `null` quando NADA muda: lote sem
+ * órfãos OU consulta falhou (fail-open, estado preservado como estava).
+ */
+async function validarLoteRestaurado({ itensRestaurados, itensAtuais, idSelecionado, buscarBibliotecaFn }) {
+  let biblioteca;
+  try {
+    biblioteca = await buscarBibliotecaFn();
+  } catch (erro) {
+    console.warn(
+      '[EditorLote] GET /api/biblioteca falhou — referências do lote restaurado mantidas sem validação (fail-open).',
+      erro
+    );
+    return null;
+  }
+  const idsValidos = new Set(
+    (Array.isArray(biblioteca) ? biblioteca : []).map((v) => v?.id).filter(Boolean)
+  );
+  const { remover, anular } = limparReferenciasOrfas(itensRestaurados, idsValidos);
+  if (remover.size === 0 && anular.size === 0) return null;
+  // Aplica sobre o estado ATUAL (não sobre o snapshot do mount): a decisão de
+  // órfão vem de `itensRestaurados`, mas a lista final preserva tudo que existe
+  // hoje — nada além dos itens decididos acima é tocado.
+  const itens = [];
+  for (const it of Array.isArray(itensAtuais) ? itensAtuais : []) {
+    if (remover.has(it.id)) continue;
+    const anulado = anular.get(it.id);
+    itens.push(anulado || it);
+  }
+  return {
+    itens,
+    idSelecionado: idSelecionado && remover.has(idSelecionado) ? null : idSelecionado,
+    remover,
+    anular,
+  };
+}
+
+// >>> LOGICA-ORFAS-FIM
 
 function carregarLoteSalvo() {
   try {
@@ -323,6 +414,48 @@ export default function EditorLote() {
     templateId: templateIdSalvo,
     assinatura: assinaturaSalva,
   };
+
+  // VALIDAÇÃO DA RESTAURAÇÃO (1× por mount): confere o `bibliotecaId` de cada
+  // item vindo do localStorage contra a biblioteca REAL do servidor e limpa
+  // SOMENTE as referências confirmadas como órfãs — antes de qualquer
+  // "Processar" (o /api/lote rejeitaria o lote inteiro: "Vídeo ... não
+  // encontrado na biblioteca do servidor."). Falha de rede = fail-open (nada
+  // é removido, só registra). O estado limpo é regravado pelo AUTOSAVE já
+  // existente (o `setItens` abaixo dispara o effect de autosave de 350ms) —
+  // formato da chave `autopost:editorlote:v1` inalterado.
+  const itensRestauradosRef = useRef(loteSalvo?.itens || []);
+  const referenciasValidadasRef = useRef(false);
+  useEffect(() => {
+    if (referenciasValidadasRef.current) return; // roda 1× (StrictMode remonta o effect)
+    referenciasValidadasRef.current = true;
+    if (!itensRestauradosRef.current.length) return; // lote vazio: nada a validar
+    const atual = estadoAtualRef.current;
+    validarLoteRestaurado({
+      itensRestaurados: itensRestauradosRef.current,
+      itensAtuais: atual?.itens || [],
+      idSelecionado: atual?.idSelecionado || null,
+      buscarBibliotecaFn: buscarBiblioteca,
+    })
+      .then((limpo) => {
+        if (!limpo) return; // nada órfão — ou consulta falhou (fail-open)
+        setItens(limpo.itens);
+        // Seleção apontando pra item órfão removido → null: o efeito de seleção
+        // (acima) recai no primeiro item válido automaticamente.
+        if (limpo.idSelecionado === null) setIdSelecionado(null);
+        // Feedback discreto — nunca bloqueia o editor; itens válidos intactos.
+        const partes = [];
+        if (limpo.remover.size > 0) {
+          partes.push(`${limpo.remover.size} vídeo(s) do lote não existe(m) mais na biblioteca do servidor e foram removidos`);
+        }
+        if (limpo.anular.size > 0) partes.push(`${limpo.anular.size} referência(s) inválida(s) limpa(s)`);
+        mostrarToast(`Editor ajustado: ${partes.join(' · ')}.`);
+      })
+      .catch((erro) => {
+        // Belt-and-braces: qualquer falha inesperada NÃO derruba o editor nem
+        // remove nada — o estado restaurado segue como estava.
+        console.warn('[EditorLote] Validação das referências restauradas falhou — estado mantido (fail-open).', erro);
+      });
+  }, [mostrarToast]);
 
   /** Descarrega o estado atual no localStorage (unmount + pagehide). */
   const descarregar = useCallback(() => {

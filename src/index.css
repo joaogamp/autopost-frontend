@@ -266,6 +266,25 @@ select option {
   line-height: 1.15;
 }
 
+/* Item 4 — handles/alças dos textos SÓ aparecem no hover/focus do bloco ou
+   quando o popup precisa (classe utilitária). Durante a digitação no painel
+   (sem hover no canvas) o texto fica limpo: sem bola rosa, sem tracinhos.
+   Ferramentas reais preservadas: área do vídeo, linhas de corte, drag. */
+.edl-texto-canvas [role="slider"],
+.edl-logo [role="slider"] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.edl-texto-canvas:hover [role="slider"],
+.edl-texto-canvas:focus-within [role="slider"],
+.edl-logo:hover [role="slider"],
+.edl-logo:focus-within [role="slider"],
+.edl-mostra-alcas [role="slider"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Scrollbar dark escopada ao editor */
 .edl-root ::-webkit-scrollbar {
   width: 8px;
