@@ -128,7 +128,15 @@ export function configParaTemplatePayload(config) {
       largura: areaVideo.largura,
       altura: areaVideo.altura,
       fit: areaVideo.fit === 'ajustar' ? 'ajustar' : 'cobrir',
-      detectarContenido: false,
+      // CORTE AUTOMÁTICO DE BORDAS (auditoria item 3): o toggle `ativo` do
+      // corte de bordas LIGA a detecção automática da região útil do vídeo
+      // original (`detectarRegiaoVideo` no pipeline — analisa só 5 frames
+      // amostrados, fail-open por confiança e o crop entra como filtro prévio
+      // ANTES do scale/crop/pad, single-pass). Quando o toggle está OFF o
+      // vídeo original passa NORMAL, sem nenhuma detecção. O comportamento
+      // anterior do corte de bordas (faixas sup/inf cobertas com o fundo) é
+      // PRESERVADO — os dois mecanismos coexistem no mesmo toggle.
+      detectarContenido: !!corteBordas?.ativo,
     },
     // Corte de bordas compartilhado (single-pass no FFmpeg). Padrão guardado
     // também quando inactivo pra que o template no servidor nunca fique

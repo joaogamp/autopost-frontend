@@ -6,7 +6,7 @@ import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
 import { criarConfigPadrao, criarIdentidadePadrao } from '../lib/configEditorLote';
-import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
+import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo, listarFinais } from '../lib/api';
 import {
   configParaTemplatePayload,
   assinarConfig,
@@ -107,6 +107,7 @@ function itensParaSalvar(itens) {
       thumbnail: it.thumbnail ?? null,
       urlFonte: it.urlFonte ?? null,
       duracao: it.duracao ?? null,
+      filaId: it.filaId ?? null,
     }));
 }
 
