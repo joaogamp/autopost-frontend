@@ -29,6 +29,12 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  * Al mudar 1X/2X/3X a `claveReproductor` cambia e o player se remonta
  * pausado — nunca fica um vídeo antigo tocando em background.
  *
+ * VÍDEO BASE: o vídeo SELECIONADO é o "vídeo base" do editor — a célula dele
+ * mostra o selo discreto "Base" + a LIXEIRA pequena (remove só o vídeo base
+ * da lista do Editor; o arquivo original continua na Biblioteca). Sem seleção,
+ * o modo 1X mostra um estado explícito ("Nenhum vídeo base selecionado") para
+ * o usuário escolher outro.
+ *
  * CÉLULAS SEM MOLDURA: a grade 2X/3X NÃO usa card/fundo/borde/glow — cada
  * vídeo é somente o canvas branco 9:16 (única excepción: as linhas
  * pontilhadas das ferramentas REAIS de edición, área do vídeo e cortes).
@@ -54,6 +60,8 @@ function AreaCentral(p) {
   const aoAtualizarConfig = p.aoAtualizarConfig;
   const aoSelecionar = p.aoSelecionar;
   const aoFocar = p.aoFocar;
+  // Lixeira dos vídeos do Editor (removçom LOCAL — ver EditorLote.aoRemoverVideo).
+  const aoRemoverItem = p.aoRemoverItem;
   const containerRef = useRef(null);
   const sentinelaRef = useRef(null);
   // Referencia à célula ATUALMENTE selecionada + flag de "fuera de vista":
@@ -72,6 +80,10 @@ function AreaCentral(p) {
     () => itens.find((v) => v.id === idSelecionado) || itens[0] || null,
     [itens, idSelecionado]
   );
+  // VÍDEO BASE = o vídeo com a seleção VÁLIDA (a que a lista/célula apontam).
+  // `false` (após remover o base pela lixeira) = modo 1X mostra o estado "sem
+  // vídeo base" e nenhum card ganha selo/lixeira.
+  const temBase = !!idSelecionado && itens.some((it) => it.id === idSelecionado);
   const visiveis = useMemo(() => itens.slice(0, limite), [itens, limite]);
   // Carga progressiva e sentinela só existem nos modos múltiplos (2X/3X);
   // em 1X nunca se continua a lista de vídeos.
@@ -152,23 +164,39 @@ function AreaCentral(p) {
           </div>
         ) : modoUnico ? (
           /* 1X — VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro
-             (preview principal editável). NÃO continua a lista de vídeos abaixo.
-             SIN moldura/card: apenas o canvas branco 9:16 com o vídeo dentro
-             (as linhas pontilhadas da área do vídeo/corte continuam sendo
-             ferramentas de edición e ficam intactas). */
-          <div ref={celulaSelRef} className={modoUnicoCls}>
-            <EditorCanvas
-              config={config}
-              aoAtualizarConfig={aoAtualizarConfig}
-              itemSelecionado={seleccionadoItem}
-              urlVideoAtiva={urlVideoAtiva}
-              interativo
-              alturaMaxima={alturaPorCelula}
-              mostrarRodape={false}
-              compacto
-              claveReproductor={claveReproductor}
-            />
-          </div>
+             (preview principal editável = VÍDEO BASE). NÃO continua a lista de
+             vídeos abaixo. SIN moldura/card: apenas o canvas branco 9:16 com o
+             vídeo ORIGINAL dentro (as linhas pontilhadas da área do vídeo/corte
+             continuam sendo ferramentas de edición e ficam intactas).
+             SEM VÍDEO BASE (base removida pela lixeira): estado explícito —
+             basta clicar num vídeo da lista (ou numa célula) para escolher. */
+          temBase ? (
+            <div ref={celulaSelRef} className={modoUnicoCls}>
+              <EditorCanvas
+                config={config}
+                aoAtualizarConfig={aoAtualizarConfig}
+                itemSelecionado={seleccionadoItem}
+                urlVideoAtiva={urlVideoAtiva}
+                interativo
+                alturaMaxima={alturaPorCelula}
+                mostrarRodape={false}
+                compacto
+                claveReproductor={claveReproductor}
+                base
+                aoRemoverBase={aoRemoverItem ? () => aoRemoverItem(seleccionadoItem) : undefined}
+              />
+            </div>
+          ) : (
+            <div className={modoUnicoCls}>
+              <div className="edl-superficie rounded-lg px-4 py-3 text-center max-w-[260px] mx-auto">
+                <Film className="w-5 h-5 mx-auto edl-icone-a opacity-70" />
+                <h3 className="font-display text-xs font-extrabold text-white mt-1.5">Nenhum vídeo base selecionado</h3>
+                <p className="text-[10px] font-medium mt-1" style={{ color: 'var(--edl-texto-dim)' }}>
+                  Clique num vídeo da lista (ou numa célula) para usá-lo como base do editor.
+                </p>
+              </div>
+            </div>
+          )
         ) : (
           <div className={gradeCls} style={{ gridTemplateColumns: 'repeat(' + colunas + ', minmax(0, 1fr))' }}>
             {visiveis.map((item, i) => (
@@ -183,6 +211,7 @@ function AreaCentral(p) {
                 aoAtualizarConfig={aoAtualizarConfig}
                 aoSelecionar={aoSelecionar}
                 aoFocar={aoFocar}
+                aoRemoverItem={aoRemoverItem}
                 alturaPorCelula={alturaPorCelula}
                 claveReproductor={claveReproductor}
                 referenciaSel={item.id === idSelecionado ? celulaSelRef : undefined}
@@ -236,6 +265,13 @@ function CelulaVideo(props) {
           mostrarRodape={false}
           compacto
           claveReproductor={props.claveReproductor}
+          /* Só a célula do VÍDEO BASE (selecionada) mostra o selo "Base" + a
+             lixeira que remove o vídeo base do Editor (local, sem apagar o
+             arquivo original). */
+          base={selecionado}
+          aoRemoverBase={
+            selecionado && props.aoRemoverItem ? () => props.aoRemoverItem(item) : undefined
+          }
         />
       </div>
     </div>

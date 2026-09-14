@@ -465,12 +465,16 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
         </div>
       )}
 
-      {/* FERRAMENTA: ÁREA DO VÍDEO — arrastável/redimensionável com o mouse
-          no canvas (linha pontilhada + handles) e ajuste fino aqui (px) */}
+      {/* FERRAMENTA: ÁREA DO VÍDEO (composiçom do vídeo FINAL) — define ONDE o
+          vídeo entra no 1080×1920 final (`areaVideo` → scale/crop/pad do
+          FFmpeg). No canvas ela é só um GUIA tracejado (arrastável/
+          redimensionável na célula selecionada quando "Marcação da área" está
+          LIGADA): a PRÉVIA continua mostrando o vídeo ORIGINAL normal, sem
+          aplicar esta área. Ajuste fino aqui (px). */}
       {ferramenta === 'area' && (
         <div className="px-4 py-3.5 space-y-3.5">
           <div>
-            <Rotulo>Encaixe do vídeo na área</Rotulo>
+            <Rotulo>Encaixe do vídeo na área (vídeo final)</Rotulo>
             <div className="grid grid-cols-2 gap-1.5">
               {[
                 { id: 'cobrir', titulo: 'Preenche a área inteira (pode cortar bordas)' },
@@ -496,7 +500,7 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           </div>
 
           <div className="pt-1">
-            <Rotulo>Área do vídeo (px do canvas)</Rotulo>
+            <Rotulo>Área do vídeo (px do canvas final)</Rotulo>
             <div className="edl-superficie rounded-lg p-3 space-y-3">
               <Deslizador rotulo="X" sufixo="px" valor={config.areaVideo.x} min={0} max={500} aoMudar={(v) => aoMudarArea('x', v)} />
               <Deslizador rotulo="Y" sufixo="px" valor={config.areaVideo.y} min={0} max={1200} aoMudar={(v) => aoMudarArea('y', v)} />
@@ -507,19 +511,27 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
                 ativo={!!config.areaVideo.mostrarMarcacao}
                 aoMudar={(v) => aoMudarArea('mostrarMarcacao', v)}
               />
+              <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+                Esta área posiciona o vídeo no vídeo FINAL. A prévia do Editor
+                mostra o vídeo ORIGINAL normal, no canvas inteiro — a composição
+                entra só no processamento.
+              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* FERRAMENTA: CORTE DE BORDAS — superior e inferior COMPLETAMENTE
-          independentes (linhas pontilhadas arrastáveis no canvas + sliders
-          separados aqui; padrão 0%/0%; corte ESPACIAL, nunca de duração) */}
+      {/* FERRAMENTA: CORTE AUTOMÁTICO DE BORDAS — roda SOMENTE no
+          processamento final (o detector amostra frames, acha a região útil e
+          aplica o crop ANTES do scale/crop/pad). A PRÉVIA do editor NÃO mostra
+          o auto crop: mostra sempre o VÍDEO ORIGINAL normal. Superior/inferior
+          seguem INDEPENDENTES (linhas tracejadas no canvas = guias de ediçom,
+          nunca um corte aplicado na prévia). */}
       {ferramenta === 'corte' && (
         <div className="px-4 py-3.5 space-y-3.5">
           <div className="edl-superficie rounded-lg p-3 space-y-3">
             <Alternar
-              rotulo="Ativar corte de bordas"
+              rotulo="Corte automático de bordas"
               ativo={!!config.corteBordas?.ativo}
               aoMudar={(v) => aoMudarCorte('ativo', v)}
             />
@@ -540,9 +552,12 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
               aoMudar={(v) => aoMudarCorte('inferior', v)}
             />
             <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-              Corta as bordas superior/inferior do vídeo ORIGINAL no mesmo
-              encode final (single-pass, sem MP4 intermediário). Arraste cada
-              linha pontilhada no canvas — os valores são independentes.
+              Aplicado SOMENTE no processamento final: LIGADO, o detector
+              analisa os frames amostrados, encontra a região útil e aplica o
+              crop antes do encaixe e dos overlays; DESLIGADO, o vídeo original
+              segue normal. A prévia do Editor mostra sempre o vídeo original,
+              sem crop. Superior/inferior são independentes — arraste cada
+              linha pontilhada no canvas (guia de ediçom).
             </p>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff, Trash2 } from 'lucide-react';
 import {
   CORTE_MAXIMO,
   CANVAS_LARGURA,
@@ -25,17 +25,32 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
  * Canvas 9:16 reutilizado em DOIS lugares:
  * - CÉLULA SELECIONADA da área central (interativo=true): canvas completo,
  *   editável — vídeo REAL com ControlesVideo + logo + textos + identidade +
- *   área arrastável/redimensionável + cortes arrastáveis;
+ *   guia da área arrastável/redimensionável + cortes arrastáveis;
  * - DEMAIS CÉLULAS (interativo=false): SOMENTE visualização do MESMO canvas
  *   com a MESMA config compartilhada (logo/textos/identidade/área/cortes
  *   aparecem iguais), mas sem arrastes/manijas/áudio — SOLO thumbnail
  *   estática (parada), nunca un <video> con autoplay/loop en background.
+ *
+ * PRÉVIA x PROCESSAMENTO (separaçom obrigatória):
+ * - A PRÉVIA mostra o VÍDEO ORIGINAL NORMAL, ocupando o canvas inteiro com
+ *   `object-fit: contain` (quadro completo do que foi baixado/importado);
+ * - `areaVideo` (área de composiçom) NUNCA recorta a prévia: aqui ela é só um
+ *   GUIA tracejado de onde o vídeo entra no FINAL;
+ * - o corte automático de bordas (detecçom) também NUNCA aparece na prévia —
+ *   roda só no processamento (FFmpeg/worker);
+ * - logo, textos e identidade continuam sendo renderizados por cima do vídeo
+ *   original (posiçom/tamanho/proporçom preservados; editáveis normalmente).
  */
 
 /** Altura MÁXIMA padrão do preview 9:16 na TELA (px). Pode ser sobrescrita
  * por célula via prop `alturaMaxima` (a área central usa valores menores
  * nos modos 2X/3X para caberem lado a lado). */
 const ALTURA_MAXIMA_PADRAO = 500;
+
+/** Encaixe da PRÉVIA: `contain` = vídeo ORIGINAL inteiro, sem cortes — o
+ * usuário vê exatamente o que baixou (o `fit` do template é aplicado só no
+ * processamento final, dentro da área de composiçom). */
+const ENCAIXE_PREVIA = 'contain';
 
 
 export default function EditorCanvas({
@@ -57,6 +72,12 @@ export default function EditorCanvas({
   // y al cambiar, el ControlesVideo DEBE remontar-se pausado (nunca queda un
   // vídeo antiguo reproduciendo). Se concatena a la `key` do reproductor.
   claveReproductor = '',
+  // Card do VÍDEO BASE (célula selecionada na área central): mostra o selo
+  // discreto "Base" + a LIXEIRA pequena no canto do canvas.
+  base = false,
+  // Remove o VÍDEO BASE deste card (removçom LOCAL: sai da lista do Editor e do
+  // localStorage; o arquivo original continua na Biblioteca — sem DELETE).
+  aoRemoverBase,
 }) {
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
@@ -102,7 +123,9 @@ export default function EditorCanvas({
   // sendo independentes en la config.
   const posLinhaInferior = Math.max(corteSup + 1, 100 - corteInf);
   const item = itemSelecionado;
-  const encaixe = area.fit === 'ajustar' ? 'contain' : 'cover';
+  // NOTA: `area.fit` (cobrir/ajustar) é usado SOMENTE no vídeo FINAL (vai no
+  // template → scale/crop/pad do FFmpeg). A PRÉVIA sempre mostra o vídeo
+  // ORIGINAL inteiro (`ENCAIXE_PREVIA = 'contain'`).
 
   // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
@@ -153,8 +176,11 @@ export default function EditorCanvas({
           background: corFundo,
         }}
       >
-        {/* Cortes de bordas — linhas pontilhadas (arrastáveis SÓ na célula
-            selecionada; nas demais são SOMENTE visualização) */}
+        {/* CORTE DE BORDAS — linhas pontilhadas (arrastáveis SÓ na célula
+            selecionada; nas demais são SOMENTE visualização). São APENAS
+            GUIAS de ediçom: a prévia continua mostrando o VÍDEO ORIGINAL
+            inteiro — o corte (manual sup/inf e/ou automático) é aplicado
+            SOMENTE no processamento final. */}
         {corteAtivo && (
           <>
             {/* Linha superior de corte */}
@@ -201,78 +227,29 @@ export default function EditorCanvas({
               )}
             </div>
 
-            {/* Faixas de cobertura do corte: área cortada COBERTA pelo fundo do
-                template (prévia em tempo real, igual ao FFmpeg). Opacas, na cor
-                exata de `corFundo` (branco fica branco, outra cor usa essa cor —
-                sem cor fixa). Acima da base (vídeo + overlay), abaixo das linhas
-                (z-20) e dos textos/logo/identidade — mesma ordem do FFmpeg
-                (drawbox antes dos textos/identidade). Sup/inf independentes. */}
-            {corteSup > 0 && (
-              <div
-                className="absolute left-0 right-0 pointer-events-none"
-                style={{
-                  top: 0,
-                  height: `${corteSup}%`,
-                  background: corFundo,
-                  zIndex: 16,
-                }}
-              />
-            )}
-            {corteInf > 0 && (
-              <div
-                className="absolute left-0 right-0 pointer-events-none"
-                style={{
-                  bottom: 0,
-                  height: `${corteInf}%`,
-                  background: corFundo,
-                  zIndex: 16,
-                }}
-              />
-            )}
+            {/* SEM faixas de cobertura na prévia: o corte NUNCA é aplicado
+                visualmente sobre o vídeo original (a prévia representa o vídeo
+                baixado/importado NORMAL). O corte — manual (sup/inf) e/ou o
+                automático de bordas — entra SOMENTE no processamento final
+                (FFmpeg/worker). As linhas pontilhadas acima continuam como
+                guias de ediçom. */}
           </>
         )}
 
-        {/* ÁREA DO VÍDEO — na célula selecionada é arrastável + redimensionável
-            com o reprodutor REAL (ControlesVideo). Nas demais células é SOMENTE
-            visualização: <video> MUTADO sem controles (sem áudio), com
-            pointer-events desligados para o clique selecionar a célula. */}
-        <div
-          role={podeEditar ? 'button' : undefined}
-          tabIndex={podeEditar ? 0 : undefined}
-          aria-label="Mover a área do vídeo"
-          data-x={String(area.x)}
-          data-y={String(area.y)}
-          data-largura={String(area.largura)}
-          data-altura={String(area.altura)}
-          onPointerDown={podeEditar ? arrastarArea : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar ? '' : 'pointer-events-none'}`}
-          style={{
-            left: area.x * escala,
-            top: area.y * escala,
-            width: area.largura * escala,
-            height: area.altura * escala,
-            borderRadius: 8 * escala,
-            cursor: podeEditar ? 'move' : 'default',
-            // Marcação desativada = só some a GUIA (borda/menijas) — o vídeo
-            // continua visível e rodando dentro da área.
-            border: area.mostrarMarcacao ? undefined : '2px dashed transparent',
-            backgroundColor: area.mostrarMarcacao ? undefined : 'transparent',
-          }}
-        >
-          {/* VÍDEO dentro da região:
-              - Célula EDITABLE (1X/seleccionada): ControlesVideo REAL, mas
-                SEM AUTOPLAY — queda PAUSADO no primer frame até o usuário
-                pulsar Play (áudio só então);
-              - Células NÃO seleccionadas: NUNCA se monta <video> (nada de
-                autoplay/loop/áudio em background) — somente a THUMBNAIL
-                estática e parada. A `key` do reproductor inclui
-                `claveReproductor` para que ao mudar 1X/2X/3X o player se
-                remonte pausado (vídeos antigos não seguem tocando). */}
+        {/* VÍDEO ORIGINAL — PRÉVIA NORMAL (o vídeo que o usuário baixou/importou).
+            A camada ocupa o CANVAS INTEIRO 9:16 com `object-fit: contain`: o
+            quadro completo do vídeo, sem crop, sem escala prévia e sem alterar
+            o arquivo original. A área de composiçom (`areaVideo`) e o corte
+            automático de bordas NÃO são aplicados na prévia — só no
+            processamento final. A camada é `pointer-events-none` (o player
+            reativa os eventos nele mesmo) para o clique fora do player cair no
+            guia da área. */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
           {podeEditar && urlVideoAtiva ? (
             <ControlesVideo
               key={`${urlVideoAtiva}|${claveReproductor}`}
               src={urlVideoAtiva}
-              encaixe={encaixe}
+              encaixe={ENCAIXE_PREVIA}
             />
           ) : item && item.thumbnail ? (
             <img
@@ -282,16 +259,75 @@ export default function EditorCanvas({
               decoding="async"
               draggable={false}
               className="w-full h-full pointer-events-none"
-              style={{ objectFit: encaixe }}
+              style={{ objectFit: ENCAIXE_PREVIA }}
             />
           ) : item && (
             <div className="flex flex-col items-center gap-1 pointer-events-none">
               <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
               <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
-                ÁREA DO VÍDEO
+                VÍDEO ORIGINAL
               </span>
             </div>
           )}
+        </div>
+
+        {/* VÍDEO BASE — selo discreto + LIXEIRA (só no card do vídeo base).
+            A lixeira remove o vídeo base da lista do Editor (e do localStorage):
+            é removçom LOCAL — o arquivo original NÃO é apagado da Biblioteca/
+            Oracle nem da fila, e os demais vídeos do lote ficam intactos. */}
+        {base && (
+          <span
+            className="edl-selo-base absolute z-40 text-[8px] font-black px-1.5 py-0.5 rounded"
+            style={{ top: 6, left: 6 }}
+          >
+            BASE
+          </span>
+        )}
+        {base && typeof aoRemoverBase === 'function' && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              aoRemoverBase();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            aria-label="Remover vídeo base do Editor"
+            title="Remover vídeo base do Editor (o arquivo original continua na Biblioteca)"
+            className="edl-lixeira edl-ring-foco absolute z-40 w-6 h-6 rounded-md flex items-center justify-center"
+            style={{ top: 6, right: 6, cursor: 'pointer' }}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+
+        {/* ÁREA DO VÍDEO — GUIA da COMPOSIÇÃO FINAL (nunca recorta a prévia).
+            O retângulo tracejado mostra ONDE o vídeo entra no vídeo FINAL
+            (`areaVideo` → scale/crop/pad do FFmpeg), mas a prévia segue
+            mostrando o VÍDEO ORIGINAL inteiro. É só ferramenta de ediçom: com a
+            "Marcação da área" DESLIGADA fica invisível e `pointer-events-none`
+            (nunca atrapalha o player); LIGADA, pode ser arrastado/
+            redimensionado na célula selecionada. */}
+        <div
+          role={podeEditar && area.mostrarMarcacao ? 'button' : undefined}
+          tabIndex={podeEditar && area.mostrarMarcacao ? 0 : undefined}
+          aria-label="Mover a área do vídeo (composiçom final)"
+          data-x={String(area.x)}
+          data-y={String(area.y)}
+          data-largura={String(area.largura)}
+          data-altura={String(area.altura)}
+          onPointerDown={podeEditar && area.mostrarMarcacao ? arrastarArea : undefined}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && area.mostrarMarcacao ? '' : 'pointer-events-none'}`}
+          style={{
+            left: area.x * escala,
+            top: area.y * escala,
+            width: area.largura * escala,
+            height: area.altura * escala,
+            borderRadius: 8 * escala,
+            cursor: podeEditar && area.mostrarMarcacao ? 'move' : 'default',
+            border: area.mostrarMarcacao ? undefined : '2px dashed transparent',
+            backgroundColor: area.mostrarMarcacao ? undefined : 'transparent',
+          }}
+        >
 
           {/* Manijas de redimensionar (SÓ na célula editável) */}
           {podeEditar && area.mostrarMarcacao && (
@@ -351,8 +387,8 @@ export default function EditorCanvas({
               width: `${logo.largura}%`,
               transform: 'translate(-50%, 0)',
               opacity: (logo.opacidade ?? 100) / 100,
-              // Acima das faixas de cobertura do corte (z-16) — mesma ordem do
-              // FFmpeg (cobertura no ramo do vídeo, antes do overlay + textos).
+              // Acima da camada do vídeo original e do guia da área — mesma
+              // ordem do FFmpeg (vídeo/composição antes do overlay da logo).
               zIndex: 17,
             }}
           >
@@ -418,8 +454,8 @@ export default function EditorCanvas({
                 fontWeight: pesoDeTexto(t.peso),
                 color: t.cor,
                 opacity: (t.opacidade ?? 100) / 100,
-                // Acima das faixas de cobertura do corte (z-16) — mesma ordem
-                // do FFmpeg (drawbox antes dos textos).
+                // Acima da camada do vídeo original e do guia da área — mesma
+                // ordem do FFmpeg (vídeo/composição antes dos textos).
                 zIndex: 17,
               }}
             >
@@ -450,7 +486,7 @@ export default function EditorCanvas({
       {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}
       {mostrarRodape && (
         <p className="text-[9px] font-semibold mt-3" style={{ color: 'var(--edl-texto-mut)' }}>
-          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • encaixe: {area.fit}
+          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • prévia: vídeo original • encaixe do final: {area.fit}
         </p>
       )}
     </div>

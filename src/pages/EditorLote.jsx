@@ -36,6 +36,18 @@ import {
  *                               Logo (popup grande) · Texto superior/inferior ·
  *                               Área do vídeo · Corte de bordas
  *
+ * PRÉVIA x PROCESSAMENTO: o canvas (AreaCentral → EditorCanvas) mostra SEMPRE
+ * o VÍDEO ORIGINAL NORMAL (quadro completo, `contain`) + logo/textos/
+ * identidade — a área de composiçom (`areaVideo`) é apenas um GUIA tracejado e
+ * o corte automático de bordas NÃO aparece na prévia: ambos são aplicados
+ * SOMENTE no processamento final (template → FFmpeg/worker).
+ *
+ * LIXEIRA: a lista (ListaVideos) e o card do VÍDEO BASE (AreaCentral) têm uma
+ * lixeira discreta que remove o vídeo da LISTA do Editor — remoção LOCAL
+ * (estado + localStorage, feita por `aoRemoverVideo`), sem apagar o arquivo
+ * original da Biblioteca/Oracle, sem tocar na fila/worker e sem afetar os
+ * demais vídeos nem a config compartilhada (logo/texto/template).
+ *
  * "Processar vídeos" (REAL): salva a config compartilhada como TEMPLATE no
  * servidor (POST /api/templates, multipart com a logo) → enfileira os vídeos
  * (POST /api/lote → Supabase fila_processamento) → a Oracle e/ou o WORKER
@@ -392,6 +404,11 @@ export default function EditorLote() {
   const pollRef = useRef(null);
   const inicioFilaRef = useRef(0);
   const avisoWorkerRef = useRef(false);
+  // LIXEIRA: quando o usuário remove o VÍDEO BASE pela lixeira, o editor fica
+  // no estado "sem vídeo base" — este flag impede o auto-select (effect abaixo)
+  // de ressuscitar outro vídeo no lugar; ele volta a valer quando o usuário
+  // escolhe outro vídeo (ou quando o lote fica vazio).
+  const preservarSemBaseRef = useRef(false);
 
   const pool = usePoolDeVideos(itens, idSelecionado);
 
@@ -406,10 +423,18 @@ export default function EditorLote() {
   // Seleciona o primeiro vídeo automaticamente (o canvas nunca fica vazio) e
   // mantém a seleção consistente: o vídeo restaurado do localStorage tem
   // prioridade; se ele não existir mais, cai pro primeiro da lista.
+  // EXCEÇÃO (lixeira): se o usuário acabou de remover o VÍDEO BASE, o editor
+  // fica no estado "sem vídeo base" (`preservarSemBaseRef`) até ele escolher
+  // outro — o auto-select não pega nenhum vídeo no lugar.
   useEffect(() => {
     if (itens.length === 0) {
       if (idSelecionado) setIdSelecionado(null);
+      preservarSemBaseRef.current = false;
       return;
+    }
+    if (preservarSemBaseRef.current) {
+      if (!idSelecionado) return; // continua SEM base (o usuário escolhe outro)
+      preservarSemBaseRef.current = false; // já escolheu outro → fluxo normal
     }
     if (!idSelecionado || !itens.some((it) => it.id === idSelecionado)) {
       setIdSelecionado(itens[0].id);
@@ -587,6 +612,9 @@ export default function EditorLote() {
   }, [descarregar]);
 
   const aoAdicionarVideo = useCallback((novo) => {
+    // Importou vídeo novo: o fluxo normal de auto-select volta a valer (não faz
+    // sentido manter o editor "sem vídeo base" depois de uma importação).
+    preservarSemBaseRef.current = false;
     setItens((atual) => {
       // Sem limite de quantidade — só evita duplicado (mesmo vídeo da
       // biblioteca importado duas vezes).
@@ -611,6 +639,52 @@ export default function EditorLote() {
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
   const aoFocar = useCallback((item) => pool.solicitar(item.id), [pool.solicitar]);
+
+  /**
+   * LIXEIRA DO EDITOR — remove UM vídeo da lista do Editor em Lote (tanto o
+   * VÍDEO BASE quanto qualquer item da lista). É remoção LOCAL e INDIVIDUAL:
+   * - NÃO apaga o arquivo original (Biblioteca/Oracle intactos), NÃO mexe na
+   *   fila do servidor, no worker, no template nem nos finais já concluídos —
+   *   nenhuma chamada destrutiva (nada de exclusão duplicada);
+   * - reusa a MESMA mecânica da remoção automática dos concluídos: filtra
+   *   `itens` (o pool `usePoolDeVideos` se ajusta sozinho, sem referência
+   *   pendente) e o localStorage é regravado (aqui NA HORA, sem esperar o
+   *   debounce do autosave) — o vídeo removido NÃO volta no reload;
+   * - se o removido era o VÍDEO BASE, a seleção vai a `null` e o auto-select
+   *   não ressuscita outro: o editor fica no estado "sem vídeo base" até o
+   *   usuário escolher outro vídeo.
+   */
+  const aoRemoverVideo = useCallback(
+    (item) => {
+      if (!item || !item.id) return;
+      const atual = estadoAtualRef.current || {};
+      const lista = Array.isArray(atual.itens) ? atual.itens : [];
+      if (!lista.some((it) => it.id === item.id)) return;
+      const proximos = lista.filter((it) => it.id !== item.id);
+      const eraBase = atual.idSelecionado === item.id;
+      if (eraBase) {
+        preservarSemBaseRef.current = true; // mantém o editor SEM vídeo base
+        setIdSelecionado(null);
+      }
+      setItens(proximos);
+      // localStorage IMEDIATO: a referência do vídeo removido sai na hora (o
+      // autosave de 350ms continua valendo para o resto).
+      salvarEstadoNoDisco({
+        itens: proximos,
+        config: atual.config,
+        idSelecionado: eraBase ? null : atual.idSelecionado,
+        templateId: atual.templateId,
+        assinatura: atual.assinatura,
+        logoDataUrl: logoDataUrlRef.current?.dataUrl || null,
+      });
+      mostrarToast(
+        eraBase
+          ? 'Vídeo base removido do Editor — escolha outro na lista (o arquivo original continua na Biblioteca).'
+          : 'Vídeo removido do Editor (o arquivo original continua na Biblioteca).'
+      );
+    },
+    [mostrarToast]
+  );
 
   const itemSelecionado = useMemo(
     () => itens.find((v) => v.id === idSelecionado) || null,
@@ -857,6 +931,7 @@ export default function EditorLote() {
             idSelecionado={idSelecionado}
             aoSelecionar={aoSelecionar}
             aoFocar={aoFocar}
+            aoRemover={aoRemoverVideo}
           />
         </aside>
 
@@ -875,6 +950,7 @@ export default function EditorLote() {
             aoAtualizarConfig={setConfig}
             aoSelecionar={aoSelecionar}
             aoFocar={aoFocar}
+            aoRemoverItem={aoRemoverVideo}
           />
         </section>
 

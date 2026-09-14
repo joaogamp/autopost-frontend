@@ -95,7 +95,14 @@ export default function ControlesVideo({ src, encaixe }) {
   }
 
   return (
-    <div data-edl-jugador="true" className="absolute inset-0 w-full h-full">
+    // `pointer-events: auto` explícito: a camada de vídeo do EditorCanvas é
+    // `pointer-events-none` (para os cliques fora do player caírem no guia da
+    // área); o player (vídeo + controles) continua 100% interativo.
+    <div
+      data-edl-jugador="true"
+      className="absolute inset-0 w-full h-full"
+      style={{ pointerEvents: 'auto' }}
+    >
       <video
         ref={videoRef}
         src={src}

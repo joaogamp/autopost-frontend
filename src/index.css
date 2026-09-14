@@ -238,6 +238,25 @@ select option {
   background-color: rgba(139, 92, 246, 0.1);
 }
 
+/* Selo "BASE" (card do vídeo base) — discreto, sem brilho/glow */
+.edl-selo-base {
+  background: rgba(10, 10, 16, 0.55);
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.08em;
+}
+
+/* Lixeira discreta (lista de vídeos do Editor + card do vídeo base):
+   compacta, sem brilho/glow — só escurece e pinta o ícone no hover. */
+.edl-lixeira {
+  background: rgba(10, 10, 16, 0.5);
+  color: rgba(255, 255, 255, 0.82);
+  transition: color 0.12s ease, background-color 0.12s ease;
+}
+.edl-lixeira:hover {
+  background: rgba(10, 10, 16, 0.72);
+  color: #f87171;
+}
+
 /* Logo arrastável */
 .edl-logo {
   cursor: grab;
