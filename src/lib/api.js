@@ -100,6 +100,12 @@ export async function listarAgendamentos() {
   return r.json();
 }
 
+/**
+ * Cria um agendamento (POST /api/agendamentos).
+ * Body: { finalId?, bibliotecaId?, redes, data, horario, legenda? }
+ * NOTA Fase 1: `legenda` é coletada na UI e enviada no body, mas o backend
+ * ainda NÃO persiste nem usa esse campo — só na Fase 2.
+ */
 export async function criarAgendamento(dados) {
   const r = await fetch(`${BASE_URL}/api/agendamentos`, {
     method: 'POST',
@@ -112,7 +118,33 @@ export async function criarAgendamento(dados) {
 }
 
 export async function cancelarAgendamento(id) {
-  await fetch(`${BASE_URL}/api/agendamentos/${id}`, { method: 'DELETE' });
+  const r = await fetch(`${BASE_URL}/api/agendamentos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!r.ok) throw new Error(`Erro ao cancelar agendamento: ${r.status}`);
+}
+
+/**
+ * REMARCAÇÃO (Fase 1) — usa criar+cancelar porque o backend ainda não tem
+ * PATCH /api/agendamentos/:id. A assinatura já é a da Fase 2: quando o PATCH
+ * existir, trocar SOMENTE esta implementação (as telas não mudam).
+ * Falha explícita se o antigo não puder ser removido, para evitar publicação
+ * duplicada silenciosa.
+ */
+export async function remarcarAgendamento(agendamentoAntigo, { data, horario }) {
+  const criado = await criarAgendamento({
+    finalId: agendamentoAntigo.finalId || undefined,
+    bibliotecaId: agendamentoAntigo.finalId ? undefined : agendamentoAntigo.bibliotecaId,
+    redes: agendamentoAntigo.redes && agendamentoAntigo.redes.length > 0 ? agendamentoAntigo.redes : ['instagram'],
+    data,
+    horario,
+  });
+  try {
+    await cancelarAgendamento(agendamentoAntigo.id);
+  } catch {
+    throw new Error(
+      'Remarcado, mas o agendamento antigo não pôde ser removido — cancele-o manualmente para evitar publicação duplicada.'
+    );
+  }
+  return criado;
 }
 
 export async function buscarRegraPublicacao() {

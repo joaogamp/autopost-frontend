@@ -5,15 +5,15 @@ import { LayoutDashboard, Video, CalendarClock, Users, Zap, Wand2 } from 'lucide
  * Menu compacto, discreto e centralizado horizontalmente no topo.
  * Tema escuro/quase preto com detalhes em rosa→roxo (identidade AutoPost).
  *
- * Ordem obrigatória: Painel → Editor → Biblioteca → Agendamento → Contas.
+ * Ordem do fluxo do produto: Painel → Editor → AGENDAMENTO → Biblioteca → Contas.
  * "Editor" é o Editor em Lote existente. Templates NÃO faz parte da navegação.
  * Reutiliza o contrato da navegação antiga: paginaAtiva + aoMudarPagina.
  */
 const ITENS = [
   { id: 'dashboard', label: 'Painel', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
   { id: 'editorlote', label: 'Editor', icon: <Wand2 className="w-3.5 h-3.5" /> },
-  { id: 'biblioteca', label: 'Biblioteca', icon: <Video className="w-3.5 h-3.5" /> },
   { id: 'agendamento', label: 'Agendamento', icon: <CalendarClock className="w-3.5 h-3.5" /> },
+  { id: 'biblioteca', label: 'Biblioteca', icon: <Video className="w-3.5 h-3.5" /> },
   { id: 'contas', label: 'Contas', icon: <Users className="w-3.5 h-3.5" /> },
 ];
 

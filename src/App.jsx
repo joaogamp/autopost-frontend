@@ -8,6 +8,15 @@ import EditorLote from './pages/EditorLote';
 
 export default function App() {
   const [pagina, setPagina] = useState('dashboard');
+  // Fluxo do produto: EDITOR → AGENDAMENTO → BIBLIOTECA (Instagram é o destino
+  // da publicação, não uma etapa da navegação). A Biblioteca pode pedir o
+  // Agendamento já com um vídeo final pré-selecionado.
+  const [agendarFinalId, setAgendarFinalId] = useState(null);
+
+  function agendarVideo(finalId) {
+    setAgendarFinalId(finalId);
+    setPagina('agendamento');
+  }
 
   // Navegação principal: barra superior compacta (BarraNavegacao), no topo e
   // centralizada. O conteúdo ocupa o restante da altura. O Editor em Lote é
@@ -24,8 +33,13 @@ export default function App() {
       ) : (
         <main className="flex-1 min-w-0 overflow-y-auto px-6 sm:px-10 py-10 transition-all">
           {pagina === 'dashboard' && <Dashboard />}
-          {pagina === 'biblioteca' && <Biblioteca />}
-          {pagina === 'agendamento' && <Agendamento />}
+          {pagina === 'agendamento' && (
+            <Agendamento
+              finalIdInicial={agendarFinalId}
+              aoAbrirContas={() => setPagina('contas')}
+            />
+          )}
+          {pagina === 'biblioteca' && <Biblioteca aoAgendar={agendarVideo} />}
           {pagina === 'contas' && <Contas />}
         </main>
       )}

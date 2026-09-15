@@ -1,17 +1,12 @@
-import { Clock, Loader2, CheckCircle2, AlertCircle, Upload, Calendar, FileText, Video } from 'lucide-react';
+import { Clock, Loader2, CheckCircle2, AlertCircle, Upload, Calendar, FileText, Video, Film, Ban } from 'lucide-react';
 
 const CONFIG = {
+  // ---- Estados da fila de PROCESSAMENTO (Editor/Dashboard) — não alterar ----
   aguardando: {
     bgDot: 'bg-slate-400',
     badge: 'bg-surface-hover text-text-dim border-line',
     label: 'Aguardando',
     icon: Clock,
-  },
-  agendado: {
-    bgDot: 'bg-rosa',
-    badge: 'bg-rosa-dim text-rosa-hover border-rosa-borda/80',
-    label: 'Agendado',
-    icon: Calendar,
   },
   processando: {
     bgDot: 'bg-blue-500 animate-pulse',
@@ -25,18 +20,39 @@ const CONFIG = {
     badge: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
     label: 'Renderizando',
     icon: Video,
-  },
-  publicando: {
-    bgDot: 'bg-amber-500 animate-pulse',
-    badge: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-    label: 'Publicando',
-    icon: Upload,
+    spin: true,
   },
   concluido: {
     bgDot: 'bg-emerald-500',
     badge: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
     label: 'Concluído',
     icon: CheckCircle2,
+  },
+  rascunho: {
+    bgDot: 'bg-slate-400',
+    badge: 'bg-surface-hover text-text-dim border-line',
+    label: 'Rascunho',
+    icon: FileText,
+  },
+  // ---- Estados de AGENDAMENTO (rótulos da UI; valores internos não mudam) ----
+  pronto: {
+    bgDot: 'bg-slate-300',
+    badge: 'bg-surface-hover text-text-dim border-line',
+    label: 'Pronto',
+    icon: Film,
+  },
+  programado: {
+    bgDot: 'bg-rosa',
+    badge: 'bg-rosa-dim text-rosa-hover border-rosa-borda/80',
+    label: 'Programado',
+    icon: Calendar,
+  },
+  publicando: {
+    bgDot: 'bg-amber-500 animate-pulse',
+    badge: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+    label: 'Publicando',
+    icon: Upload,
+    spin: true,
   },
   publicado: {
     bgDot: 'bg-emerald-500',
@@ -50,11 +66,18 @@ const CONFIG = {
     label: 'Erro',
     icon: AlertCircle,
   },
-  rascunho: {
-    bgDot: 'bg-slate-400',
-    badge: 'bg-surface-hover text-text-dim border-line',
-    label: 'Rascunho',
-    icon: FileText,
+  cancelado: {
+    bgDot: 'bg-slate-500',
+    badge: 'bg-surface-hover text-text-muted border-line',
+    label: 'Cancelado',
+    icon: Ban,
+  },
+  // Compatibilidade: agendamentos vindos do backend com status interno 'agendado'.
+  agendado: {
+    bgDot: 'bg-rosa',
+    badge: 'bg-rosa-dim text-rosa-hover border-rosa-borda/80',
+    label: 'Programado',
+    icon: Calendar,
   },
 };
 

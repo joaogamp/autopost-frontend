@@ -1,5 +1,6 @@
 import RedeIcon from './RedeIcon';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { hojeIso } from '../lib/fuso';
 
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const NOMES_MES = [
@@ -17,7 +18,9 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
 
   const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
   const totalDias = new Date(ano, mes + 1, 0).getDate();
-  const hojeChave = paraChaveData(new Date());
+  // "Hoje" em America/Sao_Paulo — igual ao backend, independente do fuso do
+  // navegador (antes usava new Date() local e podia divergir do servidor).
+  const hojeChave = hojeIso();
 
   const agendamentosPorDia = agendamentos.reduce((acc, ag) => {
     (acc[ag.data] ||= []).push(ag);
@@ -101,10 +104,20 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
 
               {redesDoDia.length > 0 && (
                 <div className="flex gap-0.5 items-center justify-center flex-wrap mb-0.5">
-                  {redesDoDia.map((r) => (
+                  {redesDoDia.slice(0, 3).map((r) => (
                     <RedeIcon key={r} rede={r} className="w-2.5 h-2.5" colored={true} />
                   ))}
                 </div>
+              )}
+
+              {/* Contador de agendamentos do dia */}
+              {itensDoDia.length > 0 && (
+                <span
+                  className="absolute top-1 right-1 text-[9px] font-mono font-bold leading-none text-text-dim bg-surface-hover border border-line rounded-md px-1 py-0.5"
+                  title={`${itensDoDia.length} agendamento(s) neste dia`}
+                >
+                  {itensDoDia.length}
+                </span>
               )}
             </button>
           );
