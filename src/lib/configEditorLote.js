@@ -241,12 +241,14 @@ export function corteEfetivoDoVideo(config, videoId) {
 export function criarConfigPadrao() {
   return {
     // FASE 1 — PREVIEW FIEL: estado inicial = vídeo original sem edição minha.
-    // Logo/textos/identidade nascem desligados (opt-in); fundo neutro escuro
-    // só para letterbox (não é "fundo aplicado"); corte zerado.
+    // Logo/textos/identidade nascem desligados (opt-in). Fundo BRANCO padrão:
+    // a área revelada pelo corte (manual ou automático) mostra o fundo puro —
+    // o MESMO `corFundo` que o render final usa, prévia e render idênticos.
+    // O usuário pode escolher outra cor (CORES_FUNDO) e ela vence.
     canvas: {
       largura: CANVAS_LARGURA,
       altura: CANVAS_ALTURA,
-      corFundo: '#000000',
+      corFundo: '#ffffff',
     },
     // Área do vídeo: onde o vídeo encaixa (px do canvas — formato do template
     // do servidor). fit: 'cobrir' | 'ajustar' (o mesmo do pipeline FFmpeg).

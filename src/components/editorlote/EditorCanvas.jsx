@@ -183,17 +183,12 @@ export default function EditorCanvas({
       >
         {/* CORTE DE BORDAS — linhas pontilhadas (arrastáveis SÓ na célula
             selecionada; nas demais são SOMENTE visualização). São APENAS
-            GUIAS de ediçom: a prévia continua mostrando o VÍDEO ORIGINAL
-            inteiro — o corte (manual sup/inf e/ou automático) é aplicado
-            SOMENTE no processamento final. */}
+            GUIAS de ediçom. A área cortada revela o FUNDO DO CANVAS puro
+            (`corFundo` — BRANCO por padrão), SEM véu/faixa escura por cima:
+            é o MESMO `corFundo` que o render final usa pra cobrir o corte,
+            então prévia e processamento ficam visualmente idênticos. */}
         {(corteAtivo || podeEditar) && (
           <>
-            {(corteSupEfetivo > 0 || corteInfEfetivo > 0) && (
-              <div aria-hidden className="absolute left-0 right-0 top-0 z-10 pointer-events-none" style={{ height: `${corteSupEfetivo}%`, background: 'rgba(0,0,0,0.45)' }} />
-            )}
-            {(corteSupEfetivo > 0 || corteInfEfetivo > 0) && (
-              <div aria-hidden className="absolute left-0 right-0 bottom-0 z-10 pointer-events-none" style={{ height: `${corteInfEfetivo}%`, background: 'rgba(0,0,0,0.45)' }} />
-            )}
             {/* Linha superior de corte */}
             <div
               role={podeEditar ? 'slider' : undefined}
@@ -239,9 +234,10 @@ export default function EditorCanvas({
             </div>
 
             {/* FASE 2: o corte EFETIVO (global + override do video) APARECE
-                na previa via clip + sombras (feedback imediato do arraste e da
-                deteccao). O arquivo original segue intacto; o mesmo % vai ao
-                render final (Fase 3). */}
+                na previa via clip-path (feedback imediato do arraste e da
+                deteccao); a área cortada revela o `corFundo` PURO — sem véu
+                escuro (o render final cobre o corte com o mesmo `corFundo`).
+                O arquivo original segue intacto; o mesmo % vai ao render (Fase 3). */}
           </>
         )}
 
