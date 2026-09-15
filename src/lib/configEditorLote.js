@@ -22,6 +22,29 @@ export const LIMITE_VIDEOS_COMPLETOS = 3;
 
 export const CORES_FUNDO = ['#000000', '#ffffff', '#f8fafc', '#fdf2f8', '#f5f3ff', '#fff1f2', '#fafafa'];
 
+/** BRANCO PURO — o swatch `#ffffff` é o branco ABSOLUTO do canvas: com ele,
+ * a área cortada (revelada pelo clip-path na prévia e coberta pelo drawbox
+ * opaco no render) é BRANCO PURO — sem cinza, sombra, transparência ou
+ * tingimento. A cor escolhida é usada EXATAMENTE como escolhida: nada aqui
+ * normaliza/reescreve `canvas.corFundo` (as outras cores da paleta valem
+ * exatamente o seu hex). */
+export const BRANCO_PURO = '#ffffff';
+
+/** Identificação EXPLÍCITA de cada swatch da paleta (hex → rótulo). O
+ * `#ffffff` é o único "Branco puro"; os demais são quase-brancos tingidos
+ * (#f8fafc gelo, #fdf2f8 rosado, #f5f3ff lilás, #fff1f2 rosé, #fafafa cinza
+ * claríssimo) — escolhê-los pinta o canvas/fundo com o TOM do hex, não com
+ * branco puro. */
+export const ROTULOS_CORES_FUNDO = {
+  '#000000': 'Preto',
+  '#ffffff': 'Branco puro',
+  '#f8fafc': 'Branco gelo (quase branco)',
+  '#fdf2f8': 'Branco rosado (quase branco)',
+  '#f5f3ff': 'Branco lilás (quase branco)',
+  '#fff1f2': 'Branco rosé (quase branco)',
+  '#fafafa': 'Cinza claríssimo (quase branco)',
+};
+
 /** Fontes do texto do lote (famílias web-safe — a prévia usa 1:1). */
 export const FONTES_TEXTO = [
   { id: 'Arial', rotulo: 'Arial', familia: 'Arial, Helvetica, sans-serif' },
