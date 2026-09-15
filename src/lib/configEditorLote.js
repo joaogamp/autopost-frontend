@@ -121,6 +121,21 @@ export function criarIdentidadePadrao() {
   };
 }
 
+/** Sessão/lote atual do Editor: dono lógico da config de edição.
+ * Regra definitiva anti-herança: `overridesPorVideo`, logo, textos e
+ * identidade pertencem ao lote identificado por `loteId`. Um lote NOVO
+ * (lista vazia → primeiro import) começa LIMPO, sem herdar overlays da
+ * sessão anterior. Dentro do mesmo lote, a config compartilhada continua
+ * valendo para todos os vídeos já importados. */
+export function criarConfigLimpaDeLote() {
+  const base = criarConfigPadrao();
+  return {
+    ...base,
+    loteId: `lote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    loteCriadoEm: Date.now(),
+  };
+}
+
 /** Rótulo curto do vídeo no lote (vídeo 01, vídeo 02, ...). */
 export function rotuloDeVideo(indice) {
   return `vídeo ${String(indice + 1).padStart(2, '0')}`;
@@ -143,6 +158,8 @@ export function normalizarConfigEditor(salva) {
   const cfg = {
     ...base,
     ...(salva || {}),
+    loteId: salva?.loteId || base.loteId || null,
+    loteCriadoEm: salva?.loteCriadoEm || null,
     canvas: { ...base.canvas, ...(salva?.canvas || {}) },
     areaVideo: { ...base.areaVideo, ...(salva?.areaVideo || {}) },
     corteBordas: { ...base.corteBordas, ...(salva?.corteBordas || {}) },
@@ -190,6 +207,22 @@ export function logoVisivelNoPreview(logo) {
 export function identidadeTextoVisivelNoPreview(t) {
   return textoVisivelNoPreview(t);
 }
+/** REGRA DEFINITIVA — detecta QUALQUER edição minha ativa na config (logo,
+ * textos, identidade, cortes global e por vídeo). Usada ao encerrar um lote:
+ * lote sem vídeos + config com edições → config é zerada para o próximo
+ * import começar limpo (nada herda). Config virgem → false. */
+export function loteTemEdicoesAtivas(cfg) {
+  if (!cfg || typeof cfg !== 'object') return false;
+  if (cfg.logo?.url) return true;
+  if (['superior', 'inferior'].some((k) => textoVisivelNoPreview(cfg.textos?.[k]))) return true;
+  if (['nome', 'usuario'].some((k) => identidadeTextoVisivelNoPreview(cfg.identidade?.[k]))) return true;
+  if (cfg.identidade?.selo?.visivel) return true;
+  const corte = cfg.corteBordas || {};
+  if (corte.ativo || Number(corte.superior) > 0 || Number(corte.inferior) > 0) return true;
+  if (Object.keys(cfg.overridesPorVideo || {}).length > 0) return true;
+  return false;
+}
+
 
 /** FASE 2 — corte efetivo de UM vídeo: override individual vence o global.
  * `overridesPorVideo` = { [videoId]: { superior, inferior } }. Fail-open:
@@ -252,6 +285,9 @@ export function criarConfigPadrao() {
     logo: {
       url: null,
       arquivo: null,
+      // dataURL persistido da logo (sobrevive ao reload). Nasce null — sem
+      // ressurreição de logo de sessão anterior (regra definitiva).
+      logoDataUrl: null,
       alturaProporcao: null,
       x: 50,
       y: 8,

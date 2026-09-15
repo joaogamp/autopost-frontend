@@ -5,7 +5,13 @@ import ListaVideos from '../components/editorlote/ListaVideos';
 import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
-import { criarConfigPadrao, criarIdentidadePadrao, normalizarConfigEditor } from '../lib/configEditorLote';
+import {
+  criarConfigPadrao,
+  criarConfigLimpaDeLote,
+  criarIdentidadePadrao,
+  loteTemEdicoesAtivas,
+  normalizarConfigEditor,
+} from '../lib/configEditorLote';
 import { detectarBordasDoVideo } from '../lib/detectorBordas.js';
 import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo, listarFinais } from '../lib/api';
 import {
@@ -63,7 +69,19 @@ import {
  * flush no unmount + `pagehide` (reload/fechar aba) + retomada do polling.
  * Persiste vídeos importados (metadados + URLs absolutas), vídeo selecionado,
  * templateId e TODA a config compartilhada — incluindo a logo (como dataURL,
- * pois File/blob: não sobrevivem). Ao voltar, tudo é restaurado como estava.
+ * pois File/blob: não sobrevivem).
+ *
+ * REGRA DEFINITIVA anti-herança (sessão/lote): a config pertence a um lote
+ * (`config.loteId`). A marca do lote atual vive no sessionStorage — morre
+ * quando a aba fecha, sobrevive a F5/reload na MESMA aba:
+ *   · MESMA sessão (marca === loteId salvo)  → restaura TUDO como estava
+ *     (inclui a logo adicionada explicitamente naquele lote);
+ *   · NOVA sessão (aba fechada/nova/1º acesso) → config ZERADA: logo, textos,
+ *     identidade, cortes (global e overridesPorVideo) NÃO herdam nada do lote
+ *     anterior; os VÍDEOS seguem restaurados (são conteúdo, não edição).
+ * Lote vazio (último vídeo removido) encerra o lote: o próximo import começa
+ * limpo. O template só é reutilizado quando o usuário processa de novo com a
+ * MESMA config (assinatura) — reutilização nunca é automática entre lotes.
  * A restauração também VALIDA cada `bibliotecaId` contra GET /api/biblioteca:
  * referências órfãs (vídeo que não existe mais no servidor) são limpas na
  * entrada — itens válidos ficam intactos; consulta falhando, nada é removido
@@ -124,10 +142,21 @@ function itensParaSalvar(itens) {
     }));
 }
 
+/** Chave do lote no localStorage (sessão atual). */
+export const CHAVE_LOTE_ATUAL = 'autopost:editorlote:lote_atual_v1';
+
+/** Gera o id de um NOVO lote (nova sessão de edição). */
+export function novoIdDeLote() {
+  return `lote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /**
  * Sanitiza a config para persistência. File e `blob:` NUNCA vão pro
  * localStorage (não sobrevivem a reload) — a logo persiste como dataURL em
  * `logo.logoDataUrl` (convertida pelo effect de conversão).
+ *
+ * Anti-herança: `loteId`/`loteCriadoEm` viajam junto para que a restauração
+ * saiba a qual lote a config pertence; `overridesPorVideo` pertence ao lote.
  */
 function configParaSalvar(config, logoDataUrl) {
   const base = config && typeof config === 'object' ? config : criarConfigPadrao();
@@ -140,6 +169,8 @@ function configParaSalvar(config, logoDataUrl) {
   const dataUrl = doBase || logoDataUrl || (urlLogo && urlLogo.startsWith('data:') ? urlLogo : null);
   return {
     ...base,
+    loteId: base.loteId || null,
+    loteCriadoEm: base.loteCriadoEm || null,
     canvas: { ...base.canvas },
     areaVideo: { ...base.areaVideo },
     logo: {
@@ -161,6 +192,7 @@ function configParaSalvar(config, logoDataUrl) {
       }
       : base.identidade,
     corteBordas: base.corteBordas ? { ...base.corteBordas } : base.corteBordas,
+    overridesPorVideo: { ...(base.overridesPorVideo || {}) },
   };
 }
 
@@ -276,26 +308,47 @@ function carregarLoteSalvo() {
     if (!bruto) return null;
     const dados = JSON.parse(bruto);
     if (!dados || !Array.isArray(dados.itens)) return null;
-    const config = mesclarConfig(dados.config);
-    // LOGO: `blob:` e `File` NÃO sobrevivem a sair/voltar — a logo persiste
-    // como dataURL (`logo.logoDataUrl`); aqui ela volta como url E como File
-    // reconstruído (o "Processar" reenvia sem re-escolher o arquivo). Sem
-    // dataURL e sem URL de servidor, a logo volta vazia (resto preservado).
-    const salvaLogo = dados.config?.logo || {};
-    const dataUrl =
-      typeof salvaLogo.logoDataUrl === 'string' && salvaLogo.logoDataUrl.startsWith('data:')
-        ? salvaLogo.logoDataUrl
-        : null;
-    let urlLogo =
-      typeof salvaLogo.url === 'string' && !salvaLogo.url.startsWith('blob:') ? salvaLogo.url : null;
-    if (!urlLogo) urlLogo = dataUrl;
-    config.logo = {
-      ...config.logo,
-      url: urlLogo,
-      arquivo: urlLogo && urlLogo.startsWith('data:') ? arquivoDeDataUrl(urlLogo) : null,
-      logoDataUrl: dataUrl || (urlLogo && urlLogo.startsWith('data:') ? urlLogo : null),
-      alturaProporcao: urlLogo ? config.logo.alturaProporcao ?? null : null,
-    };
+    // REGRA DEFINITIVA — NOVA SESSÃO/LOTE começa LIMPA. A marca do lote vive
+    // no sessionStorage (sobrevive a F5/reload na MESMA aba; morre quando a
+    // aba fecha):
+    //   · marca existe E === loteId salvo → continuação do MESMO lote: restaura
+    //     TUDO exatamente como estava;
+    //   · marca ausente (aba fechada/aba nova/1º acesso) OU lote salvo sem
+    //     loteId (config antiga) → todo lote salvo vira lote ANTERIOR: config
+    //     ZERADA (logo/textos/identidade/cortes/overrides não herdam NADA);
+    //     os VÍDEOS seguem restaurados (conteúdo, não edição minha).
+    const loteIdSalvo = dados.config?.loteId || null;
+    let marcaSessao = null;
+    try {
+      marcaSessao =
+        typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(CHAVE_LOTE_ATUAL) : null;
+    } catch {
+      marcaSessao = null;
+    }
+    const mesmaSessao = !!loteIdSalvo && marcaSessao === loteIdSalvo;
+    const config = mesmaSessao ? mesclarConfig(dados.config) : criarConfigLimpaDeLote();
+    // LOGO — SOMENTE em continuação de sessão: `blob:`/File não sobrevivem a
+    // sair/voltar; a logo persistida como dataURL volta como url + File
+    // reconstruído (o "Processar" reenvia sem re-escolher o arquivo). Em
+    // sessão NOVA este bloco é pulado: logo.url/logoDataUrl/visivel NÃO
+    // ressuscitam (a config limpa já nasce com tudo nulo).
+    if (mesmaSessao) {
+      const salvaLogo = dados.config?.logo || {};
+      const dataUrl =
+        typeof salvaLogo.logoDataUrl === 'string' && salvaLogo.logoDataUrl.startsWith('data:')
+          ? salvaLogo.logoDataUrl
+          : null;
+      let urlLogo =
+        typeof salvaLogo.url === 'string' && !salvaLogo.url.startsWith('blob:') ? salvaLogo.url : null;
+      if (!urlLogo) urlLogo = dataUrl;
+      config.logo = {
+        ...config.logo,
+        url: urlLogo,
+        arquivo: urlLogo && urlLogo.startsWith('data:') ? arquivoDeDataUrl(urlLogo) : null,
+        logoDataUrl: dataUrl || (urlLogo && urlLogo.startsWith('data:') ? urlLogo : null),
+        alturaProporcao: urlLogo ? config.logo.alturaProporcao ?? null : null,
+      };
+    }
     // VÍDEOS: só metadados serializáveis (id + URLs ABSOLUTAS do servidor —
     // continuam válidas após sair/voltar). filaId NÃO é restaurado (o
     // itensParaSalvar não o persiste): todo item volta 'pronto' e o
@@ -327,12 +380,15 @@ function carregarLoteSalvo() {
     const idSelecionado = itens.some((it) => it.id === dados.idSelecionado)
       ? dados.idSelecionado
       : null;
+    // templateId/assinatura pertencem ao LOTE: só voltam em continuação da
+    // mesma sessão. Sessão nova começa sem template — o próximo "Processar"
+    // salva um template NOVO com a config limpa (reutilização nunca automática).
     return {
       itens,
       config,
       idSelecionado,
-      templateId: dados.templateId || null,
-      assinatura: dados.assinatura || null,
+      templateId: mesmaSessao ? dados.templateId || null : null,
+      assinatura: mesmaSessao ? dados.assinatura || null : null,
     };
   } catch {
     return null;
@@ -379,7 +435,7 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
 export default function EditorLote() {
   const loteSalvo = useMemo(() => carregarLoteSalvo(), []);
   const [itens, setItens] = useState(() => loteSalvo?.itens || []);
-  const [config, setConfig] = useState(() => loteSalvo?.config || criarConfigPadrao());
+  const [config, setConfig] = useState(() => loteSalvo?.config || criarConfigLimpaDeLote());
   // Vídeo aberto no editor — TAMBÉM persistido (voltar = exatamente como estava).
   const [idSelecionado, setIdSelecionado] = useState(() => loteSalvo?.idSelecionado || null);
   const [salvando, setSalvando] = useState(false);
@@ -427,6 +483,31 @@ export default function EditorLote() {
       setIdSelecionado(itens[0].id);
     }
   }, [itens, idSelecionado]);
+
+  // REGRA DEFINITIVA — marca o lote atual na SESSÃO (sessionStorage). A partir
+  // daqui, F5/reload NA MESMA ABA é continuação do MESMO lote (o editor
+  // restaura exatamente como estava, incluindo logo/texto adicionados à mão).
+  // Fechar a aba encerra a sessão: o próximo acesso é um NOVO lote, que
+  // começa LIMPO (nada herda do lote anterior).
+  useEffect(() => {
+    if (!config.loteId) return;
+    try {
+      sessionStorage.setItem(CHAVE_LOTE_ATUAL, config.loteId);
+    } catch {
+      /* storage bloqueado — editor segue; apenas não há continuação marcada */
+    }
+  }, [config.loteId]);
+
+  // LOTE VAZIO = lote encerrado. Quando o usuário remove o último vídeo (ou o
+  // lote restaurado veio sem vídeos), a config de edição é ZERADA para que o
+  // PRÓXIMO import comece um lote novo e limpo — sem herdar logo/texto/
+  // identidade/cortes/overrides. A config compartilhada dos vídeos que JÁ
+  // estão no lote atual NUNCA é tocada aqui (o efeito só roda com a lista
+  // vazia). Importar vídeo NÃO limpa nada (config compartilhada preservada).
+  useEffect(() => {
+    if (itens.length > 0) return;
+    setConfig((atual) => (loteTemEdicoesAtivas(atual) ? criarConfigLimpaDeLote() : atual));
+  }, [itens.length]);
 
   // REMOÇÃO AUTOMÁTICA DE CONCLUÍDOS — vídeos do Editor em Lote saem da lista
   // de importados SOMENTE após confirmação real do backend (GET /api/fila com

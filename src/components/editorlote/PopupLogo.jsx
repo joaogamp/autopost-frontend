@@ -290,7 +290,20 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
 
   function aoRemoverLogo() {
     if (logo.url && logo.url.startsWith('blob:')) URL.revokeObjectURL(logo.url);
-    aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, url: null, arquivo: null } }));
+    // REGRA DEFINITIVA — limpeza COMPLETA (igual ao PainelEditor): sem url/
+    // arquivo/logoDataUrl/visibilidade não há como a logo ressuscitar depois
+    // da remoção (nem no preview, nem pelo autosave do localStorage).
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      logo: {
+        ...cfg.logo,
+        url: null,
+        arquivo: null,
+        logoDataUrl: null,
+        alturaProporcao: null,
+        visivel: false,
+      },
+    }));
   }
 
   const temIdentidade =

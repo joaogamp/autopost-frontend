@@ -304,16 +304,40 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
 
   function aoRemoverLogo() {
     if (config.logo.url && config.logo.url.startsWith('blob:')) URL.revokeObjectURL(config.logo.url);
-    aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, url: null, arquivo: null } }));
+    // REGRA DEFINITIVA — limpeza COMPLETA: url + arquivo + logoDataUrl +
+    // visibilidade + proporção. Sem isso o autosave (logoDataUrl no
+    // localStorage) e o `visivel` antigo ressuscitariam a logo que o usuário
+    // acabou de remover.
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      logo: {
+        ...cfg.logo,
+        url: null,
+        arquivo: null,
+        logoDataUrl: null,
+        alturaProporcao: null,
+        visivel: false,
+      },
+    }));
   }
 
   function aoRestaurar() {
     aoAtualizarConfig((cfg) => {
       const padrao = criarConfigPadrao();
-      // Mantém a logo atual E a identidade (re-enviar/re-digitar é chato).
+      // Mantém a logo atual E a identidade (re-enviar/re-digitar é chato) —
+      // reutilização EXPLÍCITA escolhida pelo usuário (regra anti-herança não
+      // se aplica aqui: é um clique consciente). Preserva dataURL/visibilidade
+      // para a logo continuar idêntica após o autosave.
       return {
         ...padrao,
-        logo: { ...padrao.logo, url: cfg.logo.url, arquivo: cfg.logo.arquivo },
+        logo: {
+          ...padrao.logo,
+          url: cfg.logo.url,
+          arquivo: cfg.logo.arquivo,
+          logoDataUrl: cfg.logo.logoDataUrl ?? null,
+          alturaProporcao: cfg.logo.alturaProporcao ?? null,
+          visivel: cfg.logo.visivel,
+        },
         identidade: cfg.identidade || padrao.identidade,
       };
     });
@@ -367,7 +391,7 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
           cada elemento independente: mover/redimensionar/tamanho). */}
       {ferramenta === 'logo' && (
         <div className="px-4 py-3.5 space-y-3.5">
-          {config.logo.url ? (
+          {config.logo.url && config.logo.visivel ? (
             <div className="edl-superficie rounded-lg p-2.5 flex items-center gap-2.5">
               <div className="w-12 h-12 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0 p-1.5">
                 <img
