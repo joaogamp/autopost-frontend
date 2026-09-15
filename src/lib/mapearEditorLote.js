@@ -1,4 +1,4 @@
-import { BASE_URL } from './api';
+import { BASE_URL } from './api.js';
 
 /**
  * EDITOR EM LOTE — conversão da config COMPARTILHADA (%) para o payload do
@@ -138,15 +138,15 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
       largura: areaVideo.largura,
       altura: areaVideo.altura,
       fit: areaVideo.fit === 'ajustar' ? 'ajustar' : 'cobrir',
-      // CORTE AUTOMÁTICO DE BORDAS (auditoria item 3): o toggle `ativo` do
-      // corte de bordas LIGA a detecção automática da região útil do vídeo
-      // original (`detectarRegiaoVideo` no pipeline — analisa só 5 frames
-      // amostrados, fail-open por confiança e o crop entra como filtro prévio
-      // ANTES do scale/crop/pad, single-pass). Quando o toggle está OFF o
-      // vídeo original passa NORMAL, sem nenhuma detecção. O comportamento
-      // anterior do corte de bordas (faixas sup/inf cobertas com o fundo) é
-      // PRESERVADO — os dois mecanismos coexistem no mesmo toggle.
-      detectarContenido: !!(corteBordas?.ativo || overrideVideo),
+      // CORREÇÃO 1/2 (REGRA DEFINITIVA do corte automático — auditoria): a
+      // detecção da região útil acontece UMA ÚNICA vez, no botão "Corte
+      // automático de bordas" do Editor (detectorBordas.js). O resultado é
+      // salvo na config (overridesPorVideo) e chega AQUI já decidido, dentro
+      // do corteBordas POR VÍDEO do template — o FFmpeg apenas materializa
+      // (drawbox single-pass). Este campo fica SEMPRE false: "Processar
+      // vídeos" NUNCA re-detecta nem recalcula enquadramento. O corte MANUAL
+      // (toggle + sliders) preserva o comportamento anterior intacto.
+      detectarContenido: false,
     },
     // Corte de bordas compartilhado (single-pass no FFmpeg). Padrão guardado
     // também quando inactivo pra que o template no servidor nunca fique

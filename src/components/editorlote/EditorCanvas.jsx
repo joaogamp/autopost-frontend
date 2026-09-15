@@ -32,13 +32,16 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
  *   aparecem iguais), mas sem arrastes/manijas/áudio — SOLO thumbnail
  *   estática (parada), nunca un <video> con autoplay/loop en background.
  *
- * PRÉVIA x PROCESSAMENTO (separaçom obrigatória):
+ * PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para o corte):
  * - A PRÉVIA mostra o VÍDEO ORIGINAL NORMAL, ocupando o canvas inteiro com
  *   `object-fit: contain` (quadro completo do que foi baixado/importado);
  * - `areaVideo` (área de composiçom) NUNCA recorta a prévia: aqui ela é só um
  *   GUIA tracejado de onde o vídeo entra no FINAL;
- * - o corte automático de bordas (detecçom) também NUNCA aparece na prévia —
- *   roda só no processamento (FFmpeg/worker);
+ * - O CORTE (manual ou o resultado SALVO do "Corte automático de bordas")
+ *   aparece na prévia como recorte visual (clip-path) usando EXATAMENTE os
+ *   mesmos % (`corteEfetivoDoVideo`) que viajam no template — e o FFmpeg
+ *   materializa com o MESMO valor (drawbox single-pass). NENHUMA detecção
+ *   acontece no processamento: o render nunca re-detecta nem re-enquadra;
  * - logo, textos e identidade continuam sendo renderizados por cima do vídeo
  *   original (posiçom/tamanho/proporçom preservados; editáveis normalmente).
  */
@@ -120,7 +123,11 @@ export default function EditorCanvas({
   const corteAtivo = !!corte.ativo || !!(itemSelecionado?.id && config?.overridesPorVideo?.[itemSelecionado.id]);
   const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.superior) || 0));
   const corteInf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.inferior) || 0));
-  const corteMostraClip = corteSup > 0 || corteInf > 0;
+  // CORTE — PREVIEW = RENDER (CORREÇÃO 3): o recorte visual (clip-path) usa a
+  // MESMA condição e os MESMOS valores que o render (template.corteBordas.
+  // ativo || override → drawbox no FFmpeg). Toggle desligado e sem override =
+  // prévia inteira E vídeo inteiro no render — nenhuma das pontas corta.
+  const corteMostraClip = corteAtivo && (corteSup > 0 || corteInf > 0);
   const corteSupEfetivo = corteSup;
   const corteInfEfetivo = corteInf;
   // Linha inferior vive em 100%−inf. Evita que cruce la superior si el usuario

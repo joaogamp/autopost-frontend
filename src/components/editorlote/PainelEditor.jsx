@@ -604,10 +604,11 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
               aoMudar={(v) => aoMudarCorte('inferior', v)}
             />
             <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-              O botao analisa cada video (6 frames amostrados) e aplica o
-              resultado no preview na hora; o arquivo original segue intacto.
-              Sem confianca, o video fica sem corte. Arraste as linhas no
-              canvas para ajuste fino individual.
+              Única detecção do sistema: o botao analisa cada video (8 frames
+              amostrados) e SALVA o resultado; o preview mostra exatamente esse
+              corte e "Processar videos" apenas materializa — sem nova
+              deteccao. Sem confianca, o video fica sem corte. Arraste as
+              linhas no canvas para ajuste fino individual.
             </p>
           </div>
         </div>

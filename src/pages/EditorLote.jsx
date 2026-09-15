@@ -707,10 +707,12 @@ export default function EditorLote() {
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
 
-  // FASE 2 — ACAO "Corte automatico de bordas": analisa cada video importado
-  // individualmente (6 frames amostrados, sem MP4, sem tocar o original),
+  // ACAO "Corte automatico de bordas" — ÚNICO momento de detecção (regra
+  // definitiva): analisa cada vídeo importado individualmente (20 frames
+  // amostrados 16–24 pelo detector ESTRUTURAL, sem MP4, sem tocar o original),
   // guarda o resultado em `overridesPorVideo` e o preview mostra na hora via
-  // clip. Fail-open por video: sem confianca, fica 0/0 (video NORMAL).
+  // clip. "Processar vídeos" NÃO detecta nada: apenas materializa o que está
+  // salvo aqui. Fail-open por vídeo: sem confiança, fica 0/0 (vídeo NORMAL).
   const [detectandoBordas, setDetectandoBordas] = useState(false);
   const [progressoBordas, setProgressoBordas] = useState(null);
   const aoDetectarBordas = useCallback(async () => {
@@ -802,8 +804,13 @@ export default function EditorLote() {
   // -----------------------------------------------------------------------
 
   /** Salva/atualiza o TEMPLATE no servidor a partir da config compartilhada.
-   * FASE 3: com `overrideVideo`, gera o template daquele video (global + corte
-   * individual). Sem override, template unico como antes. */
+   * CORREÇÃO (templates por corte): cada ASSINATURA de config tem SEU PRÓPRIO
+   * template. O template BASE (sem override) continua atualizado in-place
+   * (id estável entre sessões); qualquer override (corte automático salvo ou
+   * ajuste manual por vídeo) cria um template NOVO — nunca reutiliza nem
+   * sobrescreve o id de outra configuração. Cache por assinatura evita
+   * duplicar templates dentro do mesmo processamento. */
+  const templatesPorAssinaturaRef = useRef(new Map());
   const garantirTemplate = useCallback(async (overrideVideo = null) => {
     let configAtual = config;
     // Proporção da logo em falta (ex.: config restaurada do localStorage)?
@@ -817,14 +824,23 @@ export default function EditorLote() {
     }
 
     const assinatura = assinarConfig(configAtual, overrideVideo);
-    if (templateIdSalvo && assinatura === assinaturaSalva) {
+    const emCache = templatesPorAssinaturaRef.current.get(assinatura);
+    if (emCache) return { templateId: emCache, assinatura };
+    // Template BASE já salvo (nesta sessão ou restaurado do disco): reuso
+    // direto — a config não mudou, nada a re-salvar.
+    if (!overrideVideo && templateIdSalvo && assinatura === assinaturaSalva) {
+      templatesPorAssinaturaRef.current.set(assinatura, templateIdSalvo);
       return { templateId: templateIdSalvo, assinatura };
     }
 
+    // CORREÇÃO DO BUG: override NUNCA reutiliza `templateIdSalvo` (antes, o
+    // payload do override sobrescrevia o template base e os vídeos sem corte
+    // recebiam o corte do último override). Configs diferentes => templates
+    // diferentes; cada vídeo recebe exatamente o template do seu corte.
     const template = await salvarTemplateDoEditor({
       payload: configParaTemplatePayload(configAtual, overrideVideo),
       arquivoLogo: configAtual.logo.visivel && configAtual.logo.url ? configAtual.logo.arquivo || null : null,
-      templateId: templateIdSalvo || null,
+      templateId: overrideVideo ? null : templateIdSalvo || null,
     });
 
     // URL estável da logo no servidor (a mesma que o worker baixa depois) —
@@ -835,8 +851,12 @@ export default function EditorLote() {
       setConfig(configAtual);
     }
     const assinaturaFinal = assinarConfig(configAtual, overrideVideo);
-    setTemplateIdSalvo(template.id);
-    setAssinaturaSalva(assinaturaFinal);
+    templatesPorAssinaturaRef.current.set(assinaturaFinal, template.id);
+    // Apenas o template BASE atualiza o estado persistido de sessão.
+    if (!overrideVideo) {
+      setTemplateIdSalvo(template.id);
+      setAssinaturaSalva(assinaturaFinal);
+    }
     return { templateId: template.id, assinatura: assinaturaFinal };
   }, [config, templateIdSalvo, assinaturaSalva]);
 
@@ -977,6 +997,9 @@ export default function EditorLote() {
     }
 
     setEnfileirando(true);
+    // Cache LOCAL da sessão de processamento: UMA chamada por assinatura
+    // distinta (garantirTemplate já tem o seu próprio cache por assinatura —
+    // cada corte diferente recebe um template NOVO e próprio, CORREÇÃO).
     const cacheTemplates = new Map();
     const templateDoVideo = async (it) => {
       const over = config?.overridesPorVideo?.[it.id] || null;
@@ -984,7 +1007,6 @@ export default function EditorLote() {
       if (cacheTemplates.has(chave)) return cacheTemplates.get(chave);
       const { templateId: tid } = await garantirTemplate(over);
       cacheTemplates.set(chave, tid);
-      cacheTemplates.set('__base__', tid);
       return tid;
     };
     try {
