@@ -221,7 +221,6 @@ function SecaoTextoIdentidade({ chave, rotulo, Icone, t, aoMudar }) {
 
 export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
   const logo = config.logo || {};
-  const area = config.areaVideo || {};
   const canvas = config.canvas || {};
   const textos = config.textos || {};
   const textoSup = textos.superior || {};
@@ -260,12 +259,23 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
     aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, [campo]: valor } }));
 
   // Identidade: cada elemento escreve SOMENTE na sua rota (identidade.<chave>)
-  // — os demais elementos nunca são alterados.
+  // — os demais elementos nunca são alterados. Digitar/inserir CONTEÚDO liga o
+  // elemento automaticamente (mesmo opt-in dos textos de arte): nome/@ aparecem
+  // na hora no popup, no canvas principal e em todos os vídeos do lote, e seguem
+  // para o payload com `visivel:true` (mapearTextoIdentidade exige visivel).
+  // Posição/tamanho/fonte/peso/alinhamento/cor/largura/opacidade preservados.
   const aoMudarIdentidade = (chave, campo, valor) =>
     aoAtualizarConfig((cfg) => {
       const pad = criarIdentidadePadrao();
       const atual = { ...pad, ...cfg.identidade };
-      atual[chave] = { ...pad[chave], ...atual[chave], [campo]: valor };
+      atual[chave] = {
+        ...pad[chave],
+        ...atual[chave],
+        [campo]: valor,
+        // Opt-in ao digitar: campo 'conteudo' preenchido → visivel:true
+        // (o botão de emoji também passa por aqui via aoMudar('conteudo', …)).
+        ...((campo === 'conteudo' && String(valor || '').trim() !== '') ? { visivel: true } : null),
+      };
       return { ...cfg, identidade: atual };
     });
 
@@ -302,6 +312,57 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
         logoDataUrl: null,
         alturaProporcao: null,
         visivel: false,
+      },
+    }));
+  }
+
+  // SELO PNG — imagem INDEPENDENTE da logo (rota `identidade.selo`; nem a
+  // logo, nem nome/@ são tocados). Lê o arquivo como dataURL (sobrevive ao
+  // reload: `configParaSalvar` persiste `identidade.selo` inteiro) + guarda
+  // a proporção natural da imagem. IMPORTAR liga o selo automaticamente
+  // (opt-in explícito, mesma lógica do digitar/remover-logo). REMOVER limpa
+  // urlImagem/proporção e desliga — nada ressuscita (nem no autosave).
+  function aoEscolherSelo(e) {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      const dataUrl = typeof leitor.result === 'string' && leitor.result.startsWith('data:image/') ? leitor.result : null;
+      if (!dataUrl) return;
+      aoAtualizarConfig((cfg) => ({
+        ...cfg,
+        identidade: {
+          ...criarIdentidadePadrao(),
+          ...cfg.identidade,
+          selo: { ...(cfg.identidade?.selo || {}), urlImagem: dataUrl, visivel: true },
+        },
+      }));
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth > 0) {
+          aoAtualizarConfig((cfg) => ({
+            ...cfg,
+            identidade: {
+              ...criarIdentidadePadrao(),
+              ...cfg.identidade,
+              selo: { ...(cfg.identidade?.selo || {}), alturaProporcao: img.naturalHeight / img.naturalWidth },
+            },
+          }));
+        }
+      };
+      img.src = dataUrl;
+    };
+    leitor.readAsDataURL(arquivo);
+    e.target.value = '';
+  }
+
+  function aoRemoverSelo() {
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      identidade: {
+        ...criarIdentidadePadrao(),
+        ...cfg.identidade,
+        selo: { ...(cfg.identidade?.selo || {}), urlImagem: null, alturaProporcao: null, visivel: false },
       },
     }));
   }
@@ -348,7 +409,7 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-4 px-5 py-4 md:overflow-hidden overflow-y-auto">
           {/* MINI-TEMPLATE COMPLETO (leitura) + identidade interativa.
               Reusa a MESMA matemática do EditorCanvas (%, escalaPreview,
-              fontes): fundo real, área do vídeo como referência (sem drag),
+              fontes): fundo real (SEM guia da área do vídeo — canvas limpo),
               textos sup/inf estáticos + logo/identidade editáveis.
               data-escala/data-canvas-largura LIVE para o arraste. */}
           <div className="shrink-0 flex flex-col items-center gap-2 md:sticky md:top-0 md:self-start">
@@ -359,18 +420,10 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
               data-canvas-largura={String(CANVAS_LARGURA)}
               style={{ background: canvas.corFundo || '#ffffff', boxShadow: 'inset 0 0 0 2px rgba(15,23,42,0.15)' }}
             >
-              {/* Área do vídeo — referência visual (sem drag dentro do popup) */}
-              <div
-                className="absolute pointer-events-none"
-                style={{
-                  left: `${((area.x || 0) / CANVAS_LARGURA) * 100}%`,
-                  top: `${((area.y || 0) / 1920) * 100}%`,
-                  width: `${((area.largura || 0) / CANVAS_LARGURA) * 100}%`,
-                  height: `${((area.altura || 0) / 1920) * 100}%`,
-                  border: '1.5px dashed rgba(139,92,246,0.55)',
-                  background: 'rgba(139,92,246,0.06)',
-                }}
-              />
+              {/* Canvas LIMPO: só branco 9:16 — SEM guia da área do vídeo
+                  (o quadro pontilhado de `areaVideo` foi removido deste
+                  editor; a composição do vídeo pertence ao EditorCanvas
+                  principal, nunca à identidade). */}
               {/* Textos sup/inf — leitura (mesma matemática do canvas) */}
               {[textoSup, textoInf].map((t, i) =>
                 t?.visivel !== false && String(t?.conteudo || '').trim() !== '' ? (
@@ -518,16 +571,35 @@ export default function PopupLogo({ config, aoAtualizarConfig, aoCerrar }) {
               aoMudar={(campo, valor) => aoMudarIdentidade('usuario', campo, valor)}
             />
 
-            {/* SEÇÃO: selo azul de verificado */}
+            {/* SEÇÃO: selo azul de verificado (ícone padrão OU PNG do usuário) */}
             <section className="rounded-xl border border-slate-200 p-3.5 space-y-3">
               <div className="flex items-center gap-2">
                 <BadgeCheck className="w-3.5 h-3.5" style={{ color: COR_SELO_AZUL }} />
                 <h3 className="text-xs font-extrabold text-slate-800">Selo azul de verificado</h3>
               </div>
+              <label
+                htmlFor="edl-popup-input-selo"
+                className="edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-bold py-2.5 rounded-lg cursor-pointer"
+                style={{ background: 'var(--edl-grad)', color: '#fff' }}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {identidade.selo.urlImagem ? 'Trocar PNG do selo' : 'Adicionar PNG do selo'}
+              </label>
+              <input id="edl-popup-input-selo" type="file" accept="image/png,image/webp,image/*" className="hidden" onChange={aoEscolherSelo} />
               <DirecionalClaro x={identidade.selo.x ?? 66} y={identidade.selo.y ?? 15.6} aoMudar={(nx, ny) => { aoMudarIdentidade('selo', 'x', nx); aoMudarIdentidade('selo', 'y', ny); }} />
               <DeslizadorClaro rotulo="Tamanho" sufixo="%" valor={Math.round((identidade.selo.largura ?? 3.4) * 10) / 10} min={1} max={12} passo={0.1} aoMudar={(v) => aoMudarIdentidade('selo', 'largura', v)} />
               <DeslizadorClaro rotulo="Opacidade" sufixo="%" valor={Math.round(identidade.selo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarIdentidade('selo', 'opacidade', v)} />
               <AlternarClaro rotulo="Selo visível em todos os vídeos" ativo={!!identidade.selo.visivel} aoMudar={(v) => aoMudarIdentidade('selo', 'visivel', v)} />
+              {identidade.selo.urlImagem && (
+                <button
+                  type="button"
+                  onClick={aoRemoverSelo}
+                  className="edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2 rounded-lg text-red-600 hover:bg-red-50 border border-red-200"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remover PNG do selo
+                </button>
+              )}
             </section>
           </div>
         </div>

@@ -117,7 +117,13 @@ export function criarIdentidadePadrao() {
     nome: elementoIdentidadeTextoPadrao({ y: 15, tamanho: 40, peso: 'extranegrita' }),
     usuario: elementoIdentidadeTextoPadrao({ y: 19.5, tamanho: 26, peso: 'normal', cor: '#5b6472' }),
     // Selo azul: x/y marca o CENTRO, largura em % da largura do canvas.
-    selo: { visivel: false, x: 66, y: 15.6, largura: 3.4, opacidade: 100 },
+    // PNG PRÓPRIO (urlImagem = dataURL importado pelo usuário): sem imagem,
+    // o selo usa o ícone vetorial BadgeCheck como sempre. Opt-in: nasce
+    // desligado e SEM imagem — nada aparece de sessões antigas (regra de
+    // lote limpo). O dataURL sobrevive ao reload (persistido em
+    // `identidade.selo` pelo configParaSalvar) — o mesmo dado segue no JSON
+    // `identidadeSelo` do template (engine compõe o PNG; sem imagem → vetorial).
+    selo: { visivel: false, x: 66, y: 15.6, largura: 3.4, opacidade: 100, urlImagem: null, alturaProporcao: 1 },
   };
 }
 

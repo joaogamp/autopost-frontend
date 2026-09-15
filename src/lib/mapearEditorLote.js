@@ -106,14 +106,21 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
   };
 
   // Selo azul: x/y marca o CENTRO (translate(-50%, -50%) na prévia) e o selo
-  // é QUADRADO (ícone 24×24), então a altura em px é igual à largura.
+  // é QUADRADO (ícone 24×24), então a altura em px é igual à largura. PNG do
+  // usuário (`urlImagem` = dataURL importado): viaja DENTRO do JSON
+  // `identidadeSelo` com a proporção natural — o engine compõe a IMAGEM;
+  // sem `urlImagem` o engine desenha o ícone vetorial (fallback intacto).
   const mapearSeloIdentidade = (s) => {
     if (!s || !s.visivel) return null;
     const larguraPx = Math.max(4, Math.round((s.largura / 100) * canvas.largura));
     return {
+      visivel: true,
       x: Math.round((s.x / 100) * canvas.largura),
       y: Math.round((s.y / 100) * canvas.altura),
       largura: larguraPx,
+      ...(s.urlImagem
+        ? { urlImagem: s.urlImagem, alturaProporcao: Number(s.alturaProporcao) > 0 ? Number(s.alturaProporcao) : 1 }
+        : {}),
       ...(Number(s.opacidade) > 0 && Number(s.opacidade) < 100
         ? { opacidade: Math.round(s.opacidade) }
         : {}),

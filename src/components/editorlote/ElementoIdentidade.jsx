@@ -106,11 +106,22 @@ export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig, somenteLeitura
         zIndex: 17,
       }}
     >
-      <BadgeCheck
-        aria-hidden="true"
-        strokeWidth={2}
-        style={{ width: '100%', height: 'auto', display: 'block', color: COR_SELO_AZUL, fill: COR_SELO_AZUL }}
-      />
+      {/* PNG do usuário (importado no popup) tem prioridade; sem imagem, o
+          ícone vetorial BadgeCheck é o fallback (comportamento anterior). */}
+      {selo.urlImagem ? (
+        <img
+          src={selo.urlImagem}
+          alt="Selo de verificado"
+          draggable={false}
+          style={{ width: '100%', height: 'auto', display: 'block' }}
+        />
+      ) : (
+        <BadgeCheck
+          aria-hidden="true"
+          strokeWidth={2}
+          style={{ width: '100%', height: 'auto', display: 'block', color: COR_SELO_AZUL, fill: COR_SELO_AZUL }}
+        />
+      )}
       {/* Alça: aumenta/diminui o selo (SÓ na célula editável) */}
       {!somenteLeitura && (
         <span
