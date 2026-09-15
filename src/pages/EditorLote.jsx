@@ -5,7 +5,8 @@ import ListaVideos from '../components/editorlote/ListaVideos';
 import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
-import { criarConfigPadrao, criarIdentidadePadrao } from '../lib/configEditorLote';
+import { criarConfigPadrao, criarIdentidadePadrao, normalizarConfigEditor } from '../lib/configEditorLote';
+import { detectarBordasDoVideo } from '../lib/detectorBordas.js';
 import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo, listarFinais } from '../lib/api';
 import {
   configParaTemplatePayload,
@@ -163,45 +164,31 @@ function configParaSalvar(config, logoDataUrl) {
   };
 }
 
-/** Junta a config salva sobre a padrão (tolerante a versões antigas). */
+/** Junta a config salva sobre a padrão (tolerante a versões antigas).
+ * FASE 1: delega para `normalizarConfigEditor` (opt-in estrito) e preserva a
+ * migração da marcação da área (v2). */
 function mesclarConfig(salva) {
   const base = criarConfigPadrao();
-  const padraoIdentidade = criarIdentidadePadrao();
   if (!salva || typeof salva !== 'object') return base;
   // Configs salvas ANTES da renomeação usavam a chave `corte` — migra para o
   // nome unificado `corteBordas` (front + back).
   const { corte, ...salvaSemLegado } = salva;
+  const comCorteLegado = corte && !salva.corteBordas
+    ? { ...salvaSemLegado, corteBordas: { ...(salvaSemLegado.corteBordas || {}), ...corte } }
+    : salvaSemLegado;
+  const cfg = normalizarConfigEditor(comCorteLegado);
   // MIGRAÇÃO marcação da área: o default antigo era `mostrarMarcacao: true`,
   // então configs salvas trazem `true` mesmo sem o usuário ter ligado. Força
   // `false` UMA vez (flag `marcacaoMigradaV2`); depois disso o toggle do
   // usuário volta a persistir normalmente.
   const areaSalva = salva.areaVideo || {};
   const jaMigrada = areaSalva.marcacaoMigradaV2 === true;
-  const marcacaoMigrada = jaMigrada ? areaSalva.mostrarMarcacao : false;
-  return {
-    ...base,
-    ...salvaSemLegado,
-    canvas: { ...base.canvas, ...salva.canvas },
-    areaVideo: { ...base.areaVideo, ...areaSalva, mostrarMarcacao: marcacaoMigrada ?? false, marcacaoMigradaV2: true },
-    logo: { ...base.logo, ...salva.logo },
-    // DOIS textos independentes: `textos.superior` + `textos.inferior`.
-    // Configs antigas tinham um único `texto` — migra pra superior.
-    textos: {
-      superior: { ...base.textos.superior, ...(salva.textos?.superior || salva.texto || {}) },
-      inferior: { ...base.textos.inferior, ...(salva.textos?.inferior || {}) },
-    },
-    corteBordas: { ...base.corteBordas, ...(salva.corteBordas || corte) },
-    // IDENTIDADE DO CANAL (logo + nome + @ + selo azul): mescla os padrões
-    // (configs antigas, sem `identidade`, ganham os valores padrão) — cada
-    // elemento fica INDEPENDENTE e vale pro lote inteiro (config única).
-    identidade: {
-      ...padraoIdentidade,
-      ...salva.identidade,
-      nome: { ...padraoIdentidade.nome, ...salva.identidade?.nome },
-      usuario: { ...padraoIdentidade.usuario, ...salva.identidade?.usuario },
-      selo: { ...padraoIdentidade.selo, ...salva.identidade?.selo },
-    },
+  cfg.areaVideo = {
+    ...cfg.areaVideo,
+    mostrarMarcacao: jaMigrada ? (areaSalva.mostrarMarcacao ?? false) : false,
+    marcacaoMigradaV2: true,
   };
+  return cfg;
 }
 
 // ---------------------------------------------------------------------------
@@ -638,6 +625,43 @@ export default function EditorLote() {
   }, []);
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
+
+  // FASE 2 — ACAO "Corte automatico de bordas": analisa cada video importado
+  // individualmente (6 frames amostrados, sem MP4, sem tocar o original),
+  // guarda o resultado em `overridesPorVideo` e o preview mostra na hora via
+  // clip. Fail-open por video: sem confianca, fica 0/0 (video NORMAL).
+  const [detectandoBordas, setDetectandoBordas] = useState(false);
+  const [progressoBordas, setProgressoBordas] = useState(null);
+  const aoDetectarBordas = useCallback(async () => {
+    if (detectandoBordas) return;
+    const alvos = (itens || []).filter((it) => it && (it.urlFonte || it.url));
+    if (alvos.length === 0) { mostrarToast('Importe videos antes do corte automatico.', 'erro'); return; }
+    setDetectandoBordas(true);
+    try {
+      const saidas = {};
+      for (let i = 0; i < alvos.length; i++) {
+        const it = alvos[i];
+        setProgressoBordas({ atual: i + 1, total: alvos.length, nome: it.nome || `video ${i + 1}` });
+        const src = it.urlFonte || it.url;
+        const r = await detectarBordasDoVideo(src, () => {});
+        if (r && r.confiavel && ((Number(r.superior) || 0) > 0 || (Number(r.inferior) || 0) > 0)) {
+          saidas[it.id] = { superior: r.superior, inferior: r.inferior, origem: 'auto', em: Date.now() };
+        }
+      }
+      const n = Object.keys(saidas).length;
+      if (n > 0) {
+        setConfig((cfg) => ({ ...cfg, overridesPorVideo: { ...(cfg.overridesPorVideo || {}), ...saidas } }));
+        mostrarToast(`${n} video(s) com bordas detectadas — preview atualizado.`);
+      } else {
+        mostrarToast('Nenhuma borda relevante encontrada — videos seguem normais.');
+      }
+    } catch (erro) {
+      mostrarToast(erro?.message || 'Falha na deteccao de bordas.', 'erro');
+    } finally {
+      setDetectandoBordas(false);
+      setProgressoBordas(null);
+    }
+  }, [itens, detectandoBordas, mostrarToast]);
   const aoFocar = useCallback((item) => pool.solicitar(item.id), [pool.solicitar]);
 
   /**
@@ -696,8 +720,10 @@ export default function EditorLote() {
   // FLUXO REAL — template no servidor + fila (Supabase) + worker local
   // -----------------------------------------------------------------------
 
-  /** Salva/atualiza o TEMPLATE no servidor a partir da config compartilhada. */
-  const garantirTemplate = useCallback(async () => {
+  /** Salva/atualiza o TEMPLATE no servidor a partir da config compartilhada.
+   * FASE 3: com `overrideVideo`, gera o template daquele video (global + corte
+   * individual). Sem override, template unico como antes. */
+  const garantirTemplate = useCallback(async (overrideVideo = null) => {
     let configAtual = config;
     // Proporção da logo em falta (ex.: config restaurada do localStorage)?
     // Carrega a imagem agora — o template precisa de largura × altura em px.
@@ -709,13 +735,13 @@ export default function EditorLote() {
       }
     }
 
-    const assinatura = assinarConfig(configAtual);
+    const assinatura = assinarConfig(configAtual, overrideVideo);
     if (templateIdSalvo && assinatura === assinaturaSalva) {
       return { templateId: templateIdSalvo, assinatura };
     }
 
     const template = await salvarTemplateDoEditor({
-      payload: configParaTemplatePayload(configAtual),
+      payload: configParaTemplatePayload(configAtual, overrideVideo),
       arquivoLogo: configAtual.logo.visivel && configAtual.logo.url ? configAtual.logo.arquivo || null : null,
       templateId: templateIdSalvo || null,
     });
@@ -727,7 +753,7 @@ export default function EditorLote() {
       configAtual = { ...configAtual, logo: { ...configAtual.logo, url: urlLogoServidor } };
       setConfig(configAtual);
     }
-    const assinaturaFinal = assinarConfig(configAtual);
+    const assinaturaFinal = assinarConfig(configAtual, overrideVideo);
     setTemplateIdSalvo(template.id);
     setAssinaturaSalva(assinaturaFinal);
     return { templateId: template.id, assinatura: assinaturaFinal };
@@ -870,23 +896,60 @@ export default function EditorLote() {
     }
 
     setEnfileirando(true);
+    const cacheTemplates = new Map();
+    const templateDoVideo = async (it) => {
+      const over = config?.overridesPorVideo?.[it.id] || null;
+      const chave = over ? assinarConfig(config, over) : '__base__';
+      if (cacheTemplates.has(chave)) return cacheTemplates.get(chave);
+      const { templateId: tid } = await garantirTemplate(over);
+      cacheTemplates.set(chave, tid);
+      cacheTemplates.set('__base__', tid);
+      return tid;
+    };
     try {
-      // 1) Config compartilhada vira template REAL no servidor (com a logo).
-      const { templateId } = await garantirTemplate();
+      // 1) Config vira template REAL no servidor. Sem overrides: 1 template
+      //    compartilhado (como antes). Com overrides: 1 template por corte
+      //    distinto (mesmo formato, single-pass, sem mudar worker/FFmpeg).
+      const comOverride = enfileiraveis.filter((it) => config?.overridesPorVideo?.[it.id]);
+      const semOverride = enfileiraveis.filter((it) => !config?.overridesPorVideo?.[it.id]);
+      let templateBase = null;
+      if (semOverride.length > 0 || comOverride.length === 0) {
+        const r = await garantirTemplate(null);
+        templateBase = r.templateId;
+        cacheTemplates.set('__base__', templateBase);
+      }
+      const templatePorVideo = new Map();
+      for (const it of comOverride) {
+        const tid = await templateDoVideo(it);
+        templatePorVideo.set(it.id, tid);
+      }
 
       // 2) Enfileira na fila REAL (Supabase) — a Oracle e o worker local
       //    consomem com reserva atômica. O texto SUPERIOR do lote vai como
       //    tituloIA (DOIS textos: superior + inferior, independentes).
       const textoSup = config.textos?.superior || config.texto;
       const videos = enfileiraveis.map((it) => ({
+        _itemId: it.id,
         bibliotecaId: it.bibliotecaId,
         tituloIA:
           textoSup.visivel && String(textoSup.conteudo || '').trim() !== ''
             ? String(textoSup.conteudo).trim()
             : '',
       }));
-      const resposta = await processarLote(templateId, videos);
-      const ids = resposta.ids || [];
+      // Agrupa INDICES por template (1 chamada por template distinto) e
+      // remonta `ids` na ordem de `enfileiraveis` (mapa filaId correto).
+      const grupos = new Map();
+      videos.forEach((v, idx) => {
+        const tid = templatePorVideo.get(v._itemId) || templateBase;
+        if (!grupos.has(tid)) grupos.set(tid, []);
+        const { _itemId, ...semInterno } = v;
+        grupos.get(tid).push({ idx, corpo: semInterno });
+      });
+      const ids = new Array(videos.length).fill(null);
+      for (const [tid, lista] of grupos) {
+        const resposta = await processarLote(tid, lista.map((e) => e.corpo));
+        (resposta.ids || []).forEach((id, k) => { ids[lista[k].idx] = id; });
+      }
 
       const mapaFila = new Map();
       enfileiraveis.forEach((it, i) => {
@@ -958,7 +1021,7 @@ export default function EditorLote() {
             logo/nome/@/selo) · Texto superior · Texto inferior · Área do vídeo ·
             Corte de bordas · Fundo · Propriedades — config COMPARTILHADA */}
         <aside className="w-[340px] shrink-0 h-full min-h-0 overflow-y-auto border-l border-[color:var(--edl-borda)]">
-          <PainelEditor config={config} aoAtualizarConfig={setConfig} itemSelecionado={itemSelecionado} />
+          <PainelEditor config={config} aoAtualizarConfig={setConfig} itemSelecionado={itemSelecionado} itensLote={itens} aoDetectarBordas={aoDetectarBordas} detectandoBordas={detectandoBordas} progressoBordas={progressoBordas} />
         </aside>
       </div>
 

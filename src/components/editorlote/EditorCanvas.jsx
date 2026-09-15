@@ -6,6 +6,7 @@ import {
   CANVAS_ALTURA,
   familiaDeFonte,
   pesoDeTexto,
+  corteEfetivoDoVideo,
 } from '../../lib/configEditorLote';
 import {
   gerarArrasteDeRuta,
@@ -100,8 +101,8 @@ export default function EditorCanvas({
   const redimensionarAreaDireita = gerarRedimensionarArea('direita', atualizador);
   const redimensionarAreaAbaixo = gerarRedimensionarArea('abaixo', atualizador);
   const redimensionarAreaCanto = gerarRedimensionarArea('canto', atualizador);
-  const corredorSuperior = gerarArrastarCorteSuperior(atualizador);
-  const corredorInferior = gerarArrastarCorteInferior(atualizador);
+  const corredorSuperior = gerarArrastarCorteSuperior(atualizador, itemSelecionado?.id || null);
+  const corredorInferior = gerarArrastarCorteInferior(atualizador, itemSelecionado?.id || null);
 
   // Compatibilidade com configs legadas (antes de `textos` superior/inferior).
   const textos = config.textos && (config.textos.superior || config.textos.inferior)
@@ -114,10 +115,14 @@ export default function EditorCanvas({
   const area = config.areaVideo;
   const logo = config.logo || {};
   const identidade = config.identidade || null;
-  const corte = config.corteBordas || {};
-  const corteAtivo = !!corte.ativo;
+  const corte = corteEfetivoDoVideo(config, itemSelecionado?.id);
+  const corteGlobal = config.corteBordas || {};
+  const corteAtivo = !!corte.ativo || !!(itemSelecionado?.id && config?.overridesPorVideo?.[itemSelecionado.id]);
   const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.superior) || 0));
   const corteInf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.inferior) || 0));
+  const corteMostraClip = corteSup > 0 || corteInf > 0;
+  const corteSupEfetivo = corteSup;
+  const corteInfEfetivo = corteInf;
   // Linha inferior vive em 100%−inf. Evita que cruce la superior si el usuario
   // força valores extremos (superior + inferior ≥ 100) — los valores siguen
   // sendo independentes en la config.
@@ -181,8 +186,14 @@ export default function EditorCanvas({
             GUIAS de ediçom: a prévia continua mostrando o VÍDEO ORIGINAL
             inteiro — o corte (manual sup/inf e/ou automático) é aplicado
             SOMENTE no processamento final. */}
-        {corteAtivo && (
+        {(corteAtivo || podeEditar) && (
           <>
+            {(corteSupEfetivo > 0 || corteInfEfetivo > 0) && (
+              <div aria-hidden className="absolute left-0 right-0 top-0 z-10 pointer-events-none" style={{ height: `${corteSupEfetivo}%`, background: 'rgba(0,0,0,0.45)' }} />
+            )}
+            {(corteSupEfetivo > 0 || corteInfEfetivo > 0) && (
+              <div aria-hidden className="absolute left-0 right-0 bottom-0 z-10 pointer-events-none" style={{ height: `${corteInfEfetivo}%`, background: 'rgba(0,0,0,0.45)' }} />
+            )}
             {/* Linha superior de corte */}
             <div
               role={podeEditar ? 'slider' : undefined}
@@ -227,24 +238,18 @@ export default function EditorCanvas({
               )}
             </div>
 
-            {/* SEM faixas de cobertura na prévia: o corte NUNCA é aplicado
-                visualmente sobre o vídeo original (a prévia representa o vídeo
-                baixado/importado NORMAL). O corte — manual (sup/inf) e/ou o
-                automático de bordas — entra SOMENTE no processamento final
-                (FFmpeg/worker). As linhas pontilhadas acima continuam como
-                guias de ediçom. */}
+            {/* FASE 2: o corte EFETIVO (global + override do video) APARECE
+                na previa via clip + sombras (feedback imediato do arraste e da
+                deteccao). O arquivo original segue intacto; o mesmo % vai ao
+                render final (Fase 3). */}
           </>
         )}
 
-        {/* VÍDEO ORIGINAL — PRÉVIA NORMAL (o vídeo que o usuário baixou/importou).
-            A camada ocupa o CANVAS INTEIRO 9:16 com `object-fit: contain`: o
-            quadro completo do vídeo, sem crop, sem escala prévia e sem alterar
-            o arquivo original. A área de composiçom (`areaVideo`) e o corte
-            automático de bordas NÃO são aplicados na prévia — só no
-            processamento final. A camada é `pointer-events-none` (o player
-            reativa os eventos nele mesmo) para o clique fora do player cair no
-            guia da área. */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+        {/* VÍDEO (original + edicoes da previa): sem corte mostra o quadro
+            completo (`contain`); com corte efetivo, a camada leva `clip-path`
+            com o mesmo % do render. Arquivo original intacto; `areaVideo` segue
+            como guia (so o FINAL compoe). */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center" style={corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
           {podeEditar && urlVideoAtiva ? (
             <ControlesVideo
               key={`${urlVideoAtiva}|${claveReproductor}`}

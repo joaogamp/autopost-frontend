@@ -243,7 +243,7 @@ function TextoBloco({ chave, t, aoMudar }) {
   );
 }
 
-export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado: _itemSelecionado }) {
+export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado: _itemSelecionado, itensLote = [], aoDetectarBordas, detectandoBordas = false, progressoBordas = null }) {
   // Ferramenta aberta — UMA por vez (a direita contém somente as ferramentas).
   const [ferramenta, setFerramenta] = useState('logo');
   // Popup GRANDE da identidade (logo/nome/@/selo, fundo branco, drag/resize).
@@ -257,8 +257,8 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
     aoAtualizarConfig((cfg) => ({
       ...cfg,
       textos: {
-        ...(cfg.textos || { superior: textoPadrao(), inferior: textoPadrao() }),
-        [chave]: { ...(cfg.textos?.[chave] || textoPadrao()), [campo]: valor },
+        ...(cfg.textos || { superior: textoPadrao('superior'), inferior: textoPadrao('inferior') }),
+        [chave]: { ...(cfg.textos?.[chave] || textoPadrao(chave)), [campo]: valor, ...((campo==='conteudo' && String(valor||'').trim()!=='')?{visivel:true}:null) },
       },
     }));
   const aoMudarCanvas = (campo, valor) =>
@@ -521,17 +521,45 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
         </div>
       )}
 
-      {/* FERRAMENTA: CORTE AUTOMÁTICO DE BORDAS — roda SOMENTE no
-          processamento final (o detector amostra frames, acha a região útil e
-          aplica o crop ANTES do scale/crop/pad). A PRÉVIA do editor NÃO mostra
-          o auto crop: mostra sempre o VÍDEO ORIGINAL normal. Superior/inferior
-          seguem INDEPENDENTES (linhas tracejadas no canvas = guias de ediçom,
-          nunca um corte aplicado na prévia). */}
+      {/* FERRAMENTA: CORTE AUTOMATICO DE BORDAS — BOTAO DE ACAO (Fase 2).
+          Ao clicar, cada video importado e analisado individualmente
+          (amostra 6 frames, sem MP4, sem tocar o original); o resultado vai
+          para `overridesPorVideo` e aparece no preview na hora via clip.
+          Sliders = ajuste fino global. */}
       {ferramenta === 'corte' && (
         <div className="px-4 py-3.5 space-y-3.5">
           <div className="edl-superficie rounded-lg p-3 space-y-3">
+            <button
+              type="button"
+              onClick={aoDetectarBordas}
+              disabled={detectandoBordas || itensLote.length === 0}
+              className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold py-2.5 rounded-lg disabled:opacity-60"
+            >
+              <Scan className="w-3.5 h-3.5" />
+              {detectandoBordas ? 'Analisando bordas...' : 'Corte automatico de bordas'}
+            </button>
+            {detectandoBordas && progressoBordas && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-bold" style={{ color: 'var(--edl-texto-dim)' }}>Analisando {progressoBordas.atual}/{progressoBordas.total}</span>
+                  <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--edl-texto-mut)' }}>{progressoBordas.nome || ''}</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                  <div className="h-full rounded-full" style={{ width: `${Math.round(((progressoBordas.atual || 0) / Math.max(1, progressoBordas.total || 1)) * 100)}%`, background: 'var(--edl-grad)' }} />
+                </div>
+              </div>
+            )}
+            {Object.keys(config.overridesPorVideo || {}).length > 0 && (
+              <button
+                type="button"
+                onClick={() => aoAtualizarConfig((cfg) => ({ ...cfg, overridesPorVideo: {} }))}
+                className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[10px] font-bold py-2 rounded-lg"
+              >
+                Limpar cortes automaticos ({Object.keys(config.overridesPorVideo || {}).length})
+              </button>
+            )}
             <Alternar
-              rotulo="Corte automático de bordas"
+              rotulo="Corte manual (ajuste fino global)"
               ativo={!!config.corteBordas?.ativo}
               aoMudar={(v) => aoMudarCorte('ativo', v)}
             />
@@ -552,17 +580,14 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
               aoMudar={(v) => aoMudarCorte('inferior', v)}
             />
             <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-              Aplicado SOMENTE no processamento final: LIGADO, o detector
-              analisa os frames amostrados, encontra a região útil e aplica o
-              crop antes do encaixe e dos overlays; DESLIGADO, o vídeo original
-              segue normal. A prévia do Editor mostra sempre o vídeo original,
-              sem crop. Superior/inferior são independentes — arraste cada
-              linha pontilhada no canvas (guia de ediçom).
+              O botao analisa cada video (6 frames amostrados) e aplica o
+              resultado no preview na hora; o arquivo original segue intacto.
+              Sem confianca, o video fica sem corte. Arraste as linhas no
+              canvas para ajuste fino individual.
             </p>
           </div>
         </div>
       )}
-
       {/* FERRAMENTA: FUNDO — cor de fundo do canvas (vai pro template) */}
       {ferramenta === 'fundo' && (
         <div className="px-4 py-3.5 space-y-3.5">

@@ -318,7 +318,7 @@ export function gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig, minPx = 
 
 /** Handler de arrastre da linha de corte SUPERIOR (`data-posY` = % desde o
  * topo). Mueve solo `corteBordas.superior` (0..CORTE_MAXIMO). */
-export function gerarArrastarCorteSuperior(aoAtualizarConfig) {
+export function gerarArrastarCorteSuperior(aoAtualizarConfig, videoId = null) {
   return function aoPointerDown(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -340,6 +340,7 @@ export function gerarArrastarCorteSuperior(aoAtualizarConfig) {
         // Independiente: solo toca `superior` — el valor de `inferior` queda
         // EXACTAMENTE como estaba.
         corteBordas: { ...cfg.corteBordas, superior: Math.min(CORTE_MAXIMO, Math.max(0, pct)) },
+        ...(videoId ? { overridesPorVideo: { ...(cfg.overridesPorVideo || {}), [videoId]: { superior: Math.min(CORTE_MAXIMO, Math.max(0, pct)), inferior: Number(cfg.overridesPorVideo?.[videoId]?.inferior ?? cfg.corteBordas?.inferior ?? 0), origem: 'manual', em: Date.now() } } } : null),
       }));
     }
     function aoSoltar() {
@@ -354,7 +355,7 @@ export function gerarArrastarCorteSuperior(aoAtualizarConfig) {
 /** Handler de arrastre da linha de corte INFERIOR. A linha vive em
  * `top: (100 − inferior)%`; `data-posY` = essa posição. Arrastrar para CIMA
  * aumenta `corteBordas.inferior` (independiente de `superior`). */
-export function gerarArrastarCorteInferior(aoAtualizarConfig) {
+export function gerarArrastarCorteInferior(aoAtualizarConfig, videoId = null) {
   return function aoPointerDown(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -376,6 +377,7 @@ export function gerarArrastarCorteInferior(aoAtualizarConfig) {
         ...cfg,
         // Independiente: solo toca `inferior` — `superior` não é alterado.
         corteBordas: { ...cfg.corteBordas, inferior: inf },
+        ...(videoId ? { overridesPorVideo: { ...(cfg.overridesPorVideo || {}), [videoId]: { inferior: inf, superior: Number(cfg.overridesPorVideo?.[videoId]?.superior ?? cfg.corteBordas?.superior ?? 0), origem: 'manual', em: Date.now() } } } : null),
       }));
     }
     function aoSoltar() {

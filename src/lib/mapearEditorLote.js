@@ -9,8 +9,11 @@ import { BASE_URL } from './api';
 
 export const NOME_TEMPLATE_LOTE = 'Editor em Lote · config compartilhada';
 
-export function configParaTemplatePayload(config) {
-  const { canvas, areaVideo, logo, corteBordas } = config;
+export function configParaTemplatePayload(config, overrideVideo = null) {
+  const { canvas, areaVideo, logo } = config;
+  const corteBordas = overrideVideo
+    ? { ativo: true, superior: overrideVideo.superior ?? config.corteBordas?.superior ?? 0, inferior: overrideVideo.inferior ?? config.corteBordas?.inferior ?? 0 }
+    : config.corteBordas;
   // Compatibilidade: `textos` (novo, dois blocos) com fallback a `texto`
   // (legado de configs salvas antes da división superior/inferior).
   const textos = config.textos && (config.textos.superior || config.textos.inferior)
@@ -136,7 +139,7 @@ export function configParaTemplatePayload(config) {
       // vídeo original passa NORMAL, sem nenhuma detecção. O comportamento
       // anterior do corte de bordas (faixas sup/inf cobertas com o fundo) é
       // PRESERVADO — os dois mecanismos coexistem no mesmo toggle.
-      detectarContenido: !!corteBordas?.ativo,
+      detectarContenido: !!(corteBordas?.ativo || overrideVideo),
     },
     // Corte de bordas compartilhado (single-pass no FFmpeg). Padrão guardado
     // também quando inactivo pra que o template no servidor nunca fique
@@ -162,8 +165,8 @@ export function configParaTemplatePayload(config) {
 }
 
 /** Assinatura estável da config (evita re-salvar o template sem mudança). */
-export function assinarConfig(config) {
-  return JSON.stringify(configParaTemplatePayload(config)) + (config.logo.arquivo ? '|logo-arquivo' : '');
+export function assinarConfig(config, overrideVideo = null) {
+  return JSON.stringify(configParaTemplatePayload(config, overrideVideo)) + (config.logo.arquivo ? '|logo-arquivo' : '');
 }
 
 /**
