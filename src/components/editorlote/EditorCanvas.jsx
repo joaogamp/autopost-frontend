@@ -7,6 +7,11 @@ import {
   familiaDeFonte,
   pesoDeTexto,
   corteEfetivoDoVideo,
+  areaVideoNormalizada,
+  caixaEnquadramentoVideo,
+  enquadramentoVideoEditado,
+  enquadramentoVideoOriginal,
+  deslocamentoSobZoom,
 } from '../../lib/configEditorLote';
 import {
   gerarArrasteDeRuta,
@@ -16,6 +21,7 @@ import {
   gerarRedimensionarTextoLargura,
   gerarArrastarCorteSuperior,
   gerarArrastarCorteInferior,
+  gerarArrastarEnquadramentoVideo,
 } from './arraste';
 import ControlesVideo from './ControlesVideo';
 import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdentidade';
@@ -32,18 +38,20 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
  *   aparecem iguais), mas sem arrastes/manijas/áudio — SOLO thumbnail
  *   estática (parada), nunca un <video> con autoplay/loop en background.
  *
- * PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para o corte):
- * - A PRÉVIA mostra o VÍDEO ORIGINAL NORMAL, ocupando o canvas inteiro com
- *   `object-fit: contain` (quadro completo do que foi baixado/importado);
- * - `areaVideo` (área de composiçom) NUNCA recorta a prévia: aqui ela é só um
- *   GUIA tracejado de onde o vídeo entra no FINAL;
+ * PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para o corte E para o
+ * enquadramento do vídeo):
+ * - A PRÉVIA desenha o vídeo na ÁREA de composição com a MESMA geometria do
+ *   render (`caixaEnquadramentoVideo`): quadro = área × zoom, posicionado por
+ *   deslocamentoX/Y e com o MESMO `fit` (cobrir/ajustar) do template — o
+ *   usuário amplia/reduz e move o vídeo com o MOUSE (arrastar + roda), e o
+ *   vídeo final sai EXATAMENTE igual (compor.js materializa os mesmos valores);
  * - O CORTE (manual ou o resultado SALVO do "Corte automático de bordas")
  *   aparece na prévia como recorte visual (clip-path) usando EXATAMENTE os
  *   mesmos % (`corteEfetivoDoVideo`) que viajam no template — e o FFmpeg
  *   materializa com o MESMO valor (drawbox single-pass). NENHUMA detecção
  *   acontece no processamento: o render nunca re-detecta nem re-enquadra;
  * - logo, textos e identidade continuam sendo renderizados por cima do vídeo
- *   original (posiçom/tamanho/proporçom preservados; editáveis normalmente).
+ *   (posiçom/tamanho/proporçom preservados; editáveis normalmente).
  */
 
 /** Altura MÁXIMA padrão do preview 9:16 na TELA (px). Pode ser sobrescrita
@@ -51,10 +59,16 @@ import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdent
  * nos modos 2X/3X para caberem lado a lado). */
 const ALTURA_MAXIMA_PADRAO = 500;
 
-/** Encaixe da PRÉVIA: `contain` = vídeo ORIGINAL inteiro, sem cortes — o
- * usuário vê exatamente o que baixou (o `fit` do template é aplicado só no
- * processamento final, dentro da área de composiçom). */
-const ENCAIXE_PREVIA = 'contain';
+/** (Removido) A prévia NÃO usa mais um encaixe fixo 'contain' do canvas
+ * inteiro: ela desenha o vídeo DENTRO da área de composição com o MESMO
+ * `fit` (`area.fit` = 'cobrir'|'ajustar') e o MESMO zoom/deslocamento que o
+ * render final — prévia = render, por construção. */
+
+/** Leitura tolerante de número vindo de `dataset` (0 é válido — nunca `||`). */
+function numeroDoDataset(valor, padrao) {
+  const n = parseFloat(valor);
+  return Number.isFinite(n) ? n : padrao;
+}
 
 
 export default function EditorCanvas({
@@ -107,6 +121,19 @@ export default function EditorCanvas({
   const corredorSuperior = gerarArrastarCorteSuperior(atualizador, itemSelecionado?.id || null);
   const corredorInferior = gerarArrastarCorteInferior(atualizador, itemSelecionado?.id || null);
 
+  // ENQUADRAMENTO DO VÍDEO (zoom + mover — SOMENTE MOUSE, direto no preview).
+  // `dimsVideoRef`: dimensões REAIS do vídeo em exibição (reportadas pelo
+  // ControlesVideo no onLoadedMetadata) — usadas para o arraste 1:1 e o zoom
+  // sob o cursor. Ref (não estado): atualizar não re-renderiza.
+  const dimsVideoRef = useRef(null);
+  const camadaVideoRef = useRef(null);
+  const dicaTimerRef = useRef(null);
+  // Dica DISCRETA durante a interação (some sozinha — nada de controles X/Y,
+  // sliders ou caixa fixa: só o vídeo e, momentaneamente, um texto pequeno).
+  const [dicaEnquadramento, setDicaEnquadramento] = useState(null);
+  const [arrastandoVideo, setArrastandoVideo] = useState(false);
+
+
   // Compatibilidade com configs legadas (antes de `textos` superior/inferior).
   const textos = config.textos && (config.textos.superior || config.textos.inferior)
     ? config.textos
@@ -116,6 +143,85 @@ export default function EditorCanvas({
 
   const corFundo = config.canvas.corFundo;
   const area = config.areaVideo;
+  const areaN = areaVideoNormalizada(area);
+  // Geometria do enquadramento — MESMA matemática do render (compor.js):
+  // quadro = área × zoom, posicionado pela folga com deslocamentoX/Y.
+  const caixa = caixaEnquadramentoVideo(area);
+  const enquadramentoEditado = enquadramentoVideoEditado(area);
+  // Dimensões reais do vídeo (reportadas pelo <video> no onLoadedMetadata).
+  const aoDimensoesVideo = useCallback((d) => {
+    if (d && Number(d.largura) > 0 && Number(d.altura) > 0) dimsVideoRef.current = d;
+  }, []);
+
+  // ---------- ENQUADRAMENTO: handlers de MOUSE (arrastar + zoom na roda) ----
+  /** Dica discreta que desaparece sozinha (~900 ms) após a interação. */
+  const mostrarDicaEnquadramento = useCallback((texto) => {
+    setDicaEnquadramento(texto);
+    if (dicaTimerRef.current) clearTimeout(dicaTimerRef.current);
+    dicaTimerRef.current = setTimeout(() => setDicaEnquadramento(null), 900);
+  }, []);
+  useEffect(() => () => { if (dicaTimerRef.current) clearTimeout(dicaTimerRef.current); }, []);
+
+  /** Fase do vídeo em exibição (dims reais + fit do template) para os cálculos. */
+  const obterQuadro = useCallback(() => ({
+    dimsVideo: dimsVideoRef.current,
+    fit: area?.fit,
+  }), [area?.fit]);
+
+  /** Arrastar o VÍDEO: gerado com a MESMA config compartilhada do lote. */
+  const arrastarEnquadramento = gerarArrastarEnquadramentoVideo(
+    atualizador,
+    obterQuadro,
+    (i) => { setArrastandoVideo(!!i?.ativo); mostrarDicaEnquadramento('Movendo o vídeo…'); },
+    () => setArrastandoVideo(false),
+  );
+
+  /** RESET: volta tamanho e posição originais (sem controles X/Y). */
+  const redefinirEnquadramento = useCallback(() => {
+    atualizador((cfg) => ({
+      ...cfg,
+      areaVideo: { ...(cfg.areaVideo || {}), ...enquadramentoVideoOriginal() },
+    }));
+    mostrarDicaEnquadramento('Enquadramento redefinido');
+  }, [atualizador, mostrarDicaEnquadramento]);
+
+  // ZOOM NA RODA (sobre a camada do vídeo): mesma matemática do render —
+  // `deslocamentoSobZoom` mantém o ponto sob o cursor fixo (sem salto).
+  useEffect(() => {
+    if (!podeEditar || !urlVideoAtiva) return;
+    const el = camadaVideoRef.current;
+    if (!el) return;
+    function aoRoda(e) {
+      e.preventDefault();
+      const canvasEl = el.closest('[data-escala]') || el.parentElement;
+      const escalaPx = numeroDoDataset(canvasEl?.dataset?.escala, 1) || 1;
+      const rect = el.getBoundingClientRect();
+      // Posição do cursor em px do CANVAS, relativa à área de composição —
+      // independe do tamanho da janela/zoom do navegador (responsividade).
+      const mx = (e.clientX - rect.left) / escalaPx;
+      const my = (e.clientY - rect.top) / escalaPx;
+      const sentido = e.deltaY > 0 ? -1 : 1;
+      const passo = Math.max(0.05, Math.min(0.25, 0.12 * (areaN?.zoom || 1)));
+      const novoZoom = (areaN?.zoom || 1) + sentido * passo;
+      atualizador((cfg) => {
+        const a = areaVideoNormalizada(cfg.areaVideo);
+        const novo = deslocamentoSobZoom({
+          area: a,
+          dimsVideo: dimsVideoRef.current,
+          fit: a.fit,
+          novoZoom,
+          mx,
+          my,
+        });
+        return { ...cfg, areaVideo: { ...(cfg.areaVideo || {}), ...novo } };
+      });
+      mostrarDicaEnquadramento(`Zoom: ${Math.round(novoZoom * 100)}%`);
+    }
+    el.addEventListener('wheel', aoRoda, { passive: false });
+    return () => el.removeEventListener('wheel', aoRoda);
+  }, [podeEditar, urlVideoAtiva, atualizador, areaN?.zoom, areaN, mostrarDicaEnquadramento]);
+  // --------------------------------------------------------------------------
+
   const logo = config.logo || {};
   const identidade = config.identidade || null;
   const corte = corteEfetivoDoVideo(config, itemSelecionado?.id);
@@ -135,9 +241,10 @@ export default function EditorCanvas({
   // sendo independentes en la config.
   const posLinhaInferior = Math.max(corteSup + 1, 100 - corteInf);
   const item = itemSelecionado;
-  // NOTA: `area.fit` (cobrir/ajustar) é usado SOMENTE no vídeo FINAL (vai no
-  // template → scale/crop/pad do FFmpeg). A PRÉVIA sempre mostra o vídeo
-  // ORIGINAL inteiro (`ENCAIXE_PREVIA = 'contain'`).
+  // NOTA: `area.fit` (cobrir/ajustar) é usado na prévia E no vídeo final —
+  // o mesmo valor viaja no template (scale/crop/pad do FFmpeg). O enquadramento
+  // do usuário (zoom + deslocamentoX/Y, editado com o MOUSE) também é o mesmo
+  // dos dois lados: a prévia desenha o quadro com `caixaEnquadramentoVideo`.
 
   // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
@@ -252,32 +359,101 @@ export default function EditorCanvas({
             completo (`contain`); com corte efetivo, a camada leva `clip-path`
             com o mesmo % do render. Arquivo original intacto; `areaVideo` segue
             como guia (so o FINAL compoe). */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center" style={corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
-          {podeEditar && urlVideoAtiva ? (
-            <ControlesVideo
-              key={`${urlVideoAtiva}|${claveReproductor}`}
-              src={urlVideoAtiva}
-              encaixe={ENCAIXE_PREVIA}
-            />
-          ) : item && item.thumbnail ? (
-            <img
-              src={item.thumbnail}
-              alt={item.nome || 'Video'}
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              className="w-full h-full pointer-events-none"
-              style={{ objectFit: ENCAIXE_PREVIA }}
-            />
-          ) : item && (
-            <div className="flex flex-col items-center gap-1 pointer-events-none">
-              <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
-              <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
-                VÍDEO ORIGINAL
-              </span>
+        <div className="absolute inset-0" style={corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
+          {/* CAMADA DO VÍDEO — ocupa a ÁREA de composição e desenha o vídeo
+              EXATAMENTE como no vídeo final: quadro = área × zoom, posicionado
+              por deslocamentoX/Y e com o MESMO `fit` do template. SEM caixa
+              fixa, SEM moldura, SEM controles X/Y: o usuário arrasta o próprio
+              vídeo e usa a RODA DO MOUSE para ampliar/reduzir (zoom sob o
+              cursor). Nas células não selecionadas: mesma geometria, mas
+              pointer-events-none (só visualização). */}
+          <div
+            ref={camadaVideoRef}
+            role={podeEditar && urlVideoAtiva ? 'button' : undefined}
+            tabIndex={podeEditar && urlVideoAtiva ? 0 : undefined}
+            aria-label="Mover o vídeo (arraste com o mouse) e ampliar/reduzir (roda do mouse)"
+            data-enq-zoom={String(areaN.zoom)}
+            data-enq-x={String(areaN.deslocamentoX)}
+            data-enq-y={String(areaN.deslocamentoY)}
+            data-area-largura={String(areaN.largura)}
+            data-area-altura={String(areaN.altura)}
+            data-area-fit={area.fit}
+            onPointerDown={podeEditar && urlVideoAtiva ? arrastarEnquadramento : undefined}
+            className={`absolute overflow-hidden ${podeEditar && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'}`}
+            style={{
+              left: area.x * escala,
+              top: area.y * escala,
+              width: Math.max(2, area.largura) * escala,
+              height: Math.max(2, area.altura) * escala,
+              touchAction: 'none',
+              userSelect: 'none',
+            }}
+          >
+            {/* Conteúdo escalado (quadro) dentro da área — MESMA geometria do
+                FFmpeg: o render materializa este exato quadro (scale/crop/pad). */}
+            <div
+              className="absolute"
+              style={{
+                left: caixa.x * escala,
+                top: caixa.y * escala,
+                width: caixa.largura * escala,
+                height: caixa.altura * escala,
+              }}
+            >
+              {podeEditar && urlVideoAtiva ? (
+                <ControlesVideo
+                  key={`${urlVideoAtiva}|${claveReproductor}`}
+                  src={urlVideoAtiva}
+                  encaixe={area.fit}
+                  onDimensoes={aoDimensoesVideo}
+                />
+              ) : item && item.thumbnail ? (
+                <img
+                  src={item.thumbnail}
+                  alt={item.nome || 'Video'}
+                  loading="lazy"
+                  decoding="async"
+                  draggable={false}
+                  className="w-full h-full pointer-events-none"
+                  style={{ objectFit: area.fit }}
+                />
+              ) : item && (
+                <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
+                  <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
+                  <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
+                    VÍDEO ORIGINAL
+                  </span>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Dica DISCRETA durante a interação — desaparece sozinha. */}
+            {dicaEnquadramento && (
+              <span
+                className="edl-selo-base absolute z-30 text-[9px] font-black px-1.5 py-0.5 rounded pointer-events-none"
+                style={{ top: 6, left: '50%', transform: 'translateX(-50%)' }}
+              >
+                {dicaEnquadramento}
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* REDEFINIR — discreto, aparece SÓ quando o usuário mexeu no
+            enquadramento. Volta tamanho e posição originais (zoom 1, centro). */}
+        {podeEditar && urlVideoAtiva && enquadramentoEditado && (
+          <button
+            type="button"
+            onClick={redefinirEnquadramento}
+            onPointerDown={(e) => e.stopPropagation()}
+            title="Voltar o vídeo ao tamanho e posição originais"
+            aria-label="Redefinir enquadramento do vídeo"
+            className="edl-selo-base edl-ring-foco absolute z-40 h-6 px-2 rounded-md text-[9px] font-black flex items-center gap-1"
+            style={{ top: 6, right: base ? 40 : 6, cursor: 'pointer' }}
+          >
+            ↺ Redefinir
+          </button>
+        )}
 
         {/* VÍDEO BASE — selo discreto + LIXEIRA (só no card do vídeo base).
             A lixeira remove o vídeo base da lista do Editor (e do localStorage):

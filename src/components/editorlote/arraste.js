@@ -10,7 +10,7 @@
  * NUNCA altera o outro.
  */
 
-import { CORTE_MAXIMO, CANVAS_LARGURA } from '../../lib/configEditorLote';
+import { CORTE_MAXIMO, CANVAS_LARGURA, deslocamentoPorArraste } from '../../lib/configEditorLote';
 
 /** Aplica `cambios` em uma ruta anidada da config (1 ou 2 niveles). */
 function atualizarRuta(config, ruta, cambios) {
@@ -396,6 +396,83 @@ function percentFromDelta(alturaBase, deltaPx) {
 
 function clampPct(v) {
   return Math.min(100, Math.max(0, v));
+}
+
+/* ---------------------------------------------------------------------------
+ * ENQUADRAMENTO DO VÍDEO — mover o vídeo com o mouse, direto no preview.
+ * ------------------------------------------------------------------------- */
+
+function numeroOu(valor, padrao) {
+  const n = parseFloat(valor);
+  return Number.isFinite(n) ? n : padrao;
+}
+
+/**
+ * CLIQUE-E-ARRASTE NO VÍDEO (preview): o vídeo acompanha o ponteiro 1:1
+ * (px do canvas), sem salto e sem inversão. O delta é convertido na MESMA
+ * representação usada pelo render (`deslocamentoX/Y`), pela função pura
+ * `deslocamentoPorArraste` — prévia e vídeo final sempres coincidem.
+ *
+ * `obterQuadro()` devolve { dimsVideo, fit } do vídeo em exibição (dimensões
+ * reais do vídeo, para o 1:1 ser exato). Os valores de partida são lidos dos
+ * atributos `data-enq-*` do próprio elemento (sempre atuais — nunca fica com
+ * closure velha no meio do arraste). Os controles do player
+ * (`[data-edl-controles]`) não arrastam: play/seek/volume seguem funcionando.
+ */
+export function gerarArrastarEnquadramentoVideo(aoAtualizarConfig, obterQuadro = null, aoInteragir = null, aoFinalizar = null) {
+  return function aoPointerDown(e) {
+    if (!aoAtualizarConfig) return;
+    const alvo = e.target;
+    if (typeof alvo?.closest === 'function' && alvo.closest('[data-edl-controles]')) return;
+    if (typeof e.button === 'number' && e.button !== 0) return;
+    e.preventDefault();
+
+    const el = e.currentTarget;
+    const canvasEl = encontrarCanvas(el) || el.parentElement;
+    const escala = numeroOu(canvasEl?.dataset?.escala, 1) || 1;
+    const quadro = (typeof obterQuadro === 'function' ? obterQuadro() : null) || {};
+    const inicial = {
+      zoom: numeroOu(el.dataset.enqZoom, 1),
+      deslocamentoX: numeroOu(el.dataset.enqX, 50),
+      deslocamentoY: numeroOu(el.dataset.enqY, 50),
+      largura: numeroOu(el.dataset.areaLargura, 0),
+      altura: numeroOu(el.dataset.areaAltura, 0),
+      fit: el.dataset.areaFit === 'ajustar' ? 'ajustar' : 'cobrir',
+    };
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    if (typeof aoInteragir === 'function') aoInteragir({ ativo: true, zoom: inicial.zoom });
+
+    function aoMover(ev) {
+      // Px do CANVAS (não da tela) — a prévia pode estar escalada/responsiva.
+      const dx = (ev.clientX - startX) / escala;
+      const dy = (ev.clientY - startY) / escala;
+      aoAtualizarConfig((cfg) => {
+        const areaAtual = { ...(cfg.areaVideo || {}), ...inicial };
+        const novo = deslocamentoPorArraste({
+          area: areaAtual,
+          dimsVideo: quadro.dimsVideo,
+          fit: inicial.fit,
+          deltaX: dx,
+          deltaY: dy,
+        });
+        return { ...cfg, areaVideo: { ...(cfg.areaVideo || {}), ...novo } };
+      });
+      if (typeof aoInteragir === 'function') aoInteragir({ ativo: true, zoom: inicial.zoom });
+    }
+
+    function aoSoltar() {
+      window.removeEventListener('pointermove', aoMover);
+      window.removeEventListener('pointerup', aoSoltar);
+      window.removeEventListener('pointercancel', aoSoltar);
+      if (typeof aoFinalizar === 'function') aoFinalizar();
+    }
+
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+    window.addEventListener('pointercancel', aoSoltar);
+  };
 }
 
 /* ---------------------------------------------------------------------------

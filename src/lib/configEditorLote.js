@@ -45,6 +45,159 @@ export const ROTULOS_CORES_FUNDO = {
   '#fafafa': 'Cinza claríssimo (quase branco)',
 };
 
+/* ---------------------------------------------------------------------------
+ * ENQUADRAMENTO DO VÍDEO (zoom + mover) — SOMENTE MOUSE, direto no preview.
+ *
+ * O vídeo do lote é composto DENTRO da área do template (`areaVideo`, em px do
+ * canvas). O enquadramento é o mesmo objeto compartilhado — NÃO existe segundo
+ * sistema de composição:
+ *
+ *   zoom          → escala do vídeo dentro da área (1 = enquadramento original;
+ *                   > 1 amplia; < 1 diminui, revelando o fundo do canvas);
+ *   deslocamentoX → posição horizontal do vídeo dentro da área, em % da
+ *                   "folga" disponível (0 = encostado à esquerda, 50 = centro,
+ *                   100 = encostado à direita);
+ *   deslocamentoY → idem, vertical.
+ *
+ * A representação é RELATIVA (%, não px de tela): o mesmo valor vale para
+ * todos os vídeos do lote, em qualquer resolução/proporção, e o FFmpeg
+ * materializa exatamente o mesmo enquadramento — prévia = render.
+ * ------------------------------------------------------------------------- */
+export const ZOOM_VIDEO_MIN = 0.5;
+export const ZOOM_VIDEO_MAX = 4;
+export const ENQUADRAMENTO_VIDEO_PADRAO = Object.freeze({ zoom: 1, deslocamentoX: 50, deslocamentoY: 50 });
+
+/** Zoom válido (1 = original). */
+export function normalizarZoomVideo(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n) || n <= 0) return ENQUADRAMENTO_VIDEO_PADRAO.zoom;
+  const limitado = Math.min(ZOOM_VIDEO_MAX, Math.max(ZOOM_VIDEO_MIN, n));
+  return Math.round(limitado * 100) / 100;
+}
+
+/** Deslocamento válido (0..100; 50 = centro). */
+export function normalizarDeslocamentoVideo(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return 50;
+  return Math.round(Math.min(100, Math.max(0, n)) * 10) / 10;
+}
+
+/** `areaVideo` com o enquadramento normalizado (tolerante a configs antigas). */
+export function areaVideoNormalizada(area) {
+  const a = area && typeof area === 'object' ? area : {};
+  return {
+    ...a,
+    zoom: normalizarZoomVideo(a.zoom),
+    deslocamentoX: normalizarDeslocamentoVideo(a.deslocamentoX ?? ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX),
+    deslocamentoY: normalizarDeslocamentoVideo(a.deslocamentoY ?? ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY),
+  };
+}
+
+/** O usuário mexeu no enquadramento? (zoom/mover diferentes do original). */
+export function enquadramentoVideoEditado(area) {
+  const a = areaVideoNormalizada(area);
+  return a.zoom !== ENQUADRAMENTO_VIDEO_PADRAO.zoom
+    || a.deslocamentoX !== ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX
+    || a.deslocamentoY !== ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY;
+}
+
+/** Volta o enquadramento ao original (tamanho e posição do vídeo). */
+export function enquadramentoVideoOriginal() {
+  return { ...ENQUADRAMENTO_VIDEO_PADRAO };
+}
+
+/**
+ * CAIXA DO QUADRO ESCALADO (px do canvas) + posição dela dentro da área de
+ * composição. É a MESMA geometria usada pela prévia (CSS) e pelo FFmpeg
+ * (scale/crop/pad) — por isso prévia e render coincidem.
+ *
+ * O quadro tem o tamanho da área multiplicado pelo zoom (mesma proporção da
+ * área) e é posicionado na "folga" por `deslocamentoX/Y`:
+ *   z > 1 → quadro MAIOR que a área (o excedente é recortado pela área);
+ *   z < 1 → quadro MENOR que a área (o fundo aparece ao redor do vídeo).
+ */
+export function caixaEnquadramentoVideo(area) {
+  const a = areaVideoNormalizada(area);
+  const larguraArea = Math.max(2, Math.round(Number(a.largura) || 0));
+  const alturaArea = Math.max(2, Math.round(Number(a.altura) || 0));
+  // Dimensões PARES: mesma paridade exigida pelo yuv420p do encoder final.
+  const largura = Math.max(2, Math.round((larguraArea * a.zoom) / 2) * 2);
+  const altura = Math.max(2, Math.round((alturaArea * a.zoom) / 2) * 2);
+  return {
+    largura,
+    altura,
+    x: ((larguraArea - largura) * a.deslocamentoX) / 100,
+    y: ((alturaArea - altura) * a.deslocamentoY) / 100,
+  };
+}
+
+/**
+ * Dimensões do QUADRO DE CONTEÚDO (fonte escalada, em px do canvas) já com o
+ * zoom. `fit` é o mesmo do template: 'cobrir' (cover) | 'ajustar' (contain).
+ * Usado pelos cálculos de mouse (1:1 e zoom sob o cursor) — a prévia não
+ * precisa disso (o navegador faz o cover/contain).
+ */
+export function dimensoesQuadroDeConteudo({ area, dimsVideo, fit } = {}) {
+  const a = areaVideoNormalizada(area);
+  const W = Math.max(2, Number(a.largura) || 0);
+  const H = Math.max(2, Number(a.altura) || 0);
+  const sw = Math.max(1, Number(dimsVideo?.largura) || 0) || CANVAS_LARGURA;
+  const sh = Math.max(1, Number(dimsVideo?.altura) || 0) || CANVAS_ALTURA;
+  const escala = String(fit || 'cobrir') === 'ajustar'
+    ? Math.min(W / sw, H / sh)
+    : Math.max(W / sw, H / sh);
+  return { largura: sw * escala * a.zoom, altura: sh * escala * a.zoom };
+}
+
+/**
+ * ZOOM SOB O CURSOR (roda do mouse): mantém sob o ponteiro o MESMO ponto do
+ * vídeo após a mudança de zoom — sem salto e sem deslocamento invertido.
+ * `mx`/`my` = posição do cursor em px do canvas, relativa à área de composição.
+ */
+export function deslocamentoSobZoom({ area, dimsVideo, fit, novoZoom, mx = 0, my = 0 } = {}) {
+  const a = areaVideoNormalizada(area);
+  const W = Math.max(2, Number(a.largura) || 0);
+  const H = Math.max(2, Number(a.altura) || 0);
+  const atual = dimensoesQuadroDeConteudo({ area: a, dimsVideo, fit });
+  const alvo = normalizarZoomVideo(novoZoom);
+  const novo = dimensoesQuadroDeConteudo({ area: { ...a, zoom: alvo }, dimsVideo, fit });
+  // Posição atual da borda esquerda/topo do conteúdo dentro da área.
+  const esquerda = (W - atual.largura) * (a.deslocamentoX / 100);
+  const topo = (H - atual.altura) * (a.deslocamentoY / 100);
+  // Após o zoom, o conteúdo é reescalado a partir do ponto sob o cursor.
+  const fatorX = atual.largura > 0 ? novo.largura / atual.largura : 1;
+  const fatorY = atual.altura > 0 ? novo.altura / atual.altura : 1;
+  const esquerdaNova = mx - (mx - esquerda) * fatorX;
+  const topoNovo = my - (my - topo) * fatorY;
+  const folgaX = W - novo.largura;
+  const folgaY = H - novo.altura;
+  return {
+    zoom: alvo,
+    deslocamentoX: normalizarDeslocamentoVideo(folgaX === 0 ? 50 : (esquerdaNova / folgaX) * 100),
+    deslocamentoY: normalizarDeslocamentoVideo(folgaY === 0 ? 50 : (topoNovo / folgaY) * 100),
+  };
+}
+
+/**
+ * ARRASTE DO VÍDEO (mouse) — o vídeo acompanha o ponteiro 1:1, em px do
+ * canvas, sem salto e sem inversão: `deltaX/deltaY` são os px do canvas que o
+ * ponteiro andou desde o início do arraste. A posição é convertida na MESMA
+ * representação relativa usada pelo render (`deslocamentoX/Y` em %).
+ */
+export function deslocamentoPorArraste({ area, dimsVideo, fit, deltaX = 0, deltaY = 0 } = {}) {
+  const a = areaVideoNormalizada(area);
+  const W = Math.max(2, Number(a.largura) || 0);
+  const H = Math.max(2, Number(a.altura) || 0);
+  const quadro = dimensoesQuadroDeConteudo({ area: a, dimsVideo, fit });
+  const folgaX = W - quadro.largura;
+  const folgaY = H - quadro.altura;
+  return {
+    zoom: a.zoom,
+    deslocamentoX: normalizarDeslocamentoVideo(folgaX === 0 ? a.deslocamentoX : a.deslocamentoX + (deltaX * 100) / folgaX),
+    deslocamentoY: normalizarDeslocamentoVideo(folgaY === 0 ? a.deslocamentoY : a.deslocamentoY + (deltaY * 100) / folgaY),
+  };
+}
+
 /** Fontes do texto do lote (famílias web-safe — a prévia usa 1:1). */
 export const FONTES_TEXTO = [
   { id: 'Arial', rotulo: 'Arial', familia: 'Arial, Helvetica, sans-serif' },
@@ -190,7 +343,7 @@ export function normalizarConfigEditor(salva) {
     loteId: salva?.loteId || base.loteId || null,
     loteCriadoEm: salva?.loteCriadoEm || null,
     canvas: { ...base.canvas, ...(salva?.canvas || {}) },
-    areaVideo: { ...base.areaVideo, ...(salva?.areaVideo || {}) },
+    areaVideo: areaVideoNormalizada({ ...base.areaVideo, ...(salva?.areaVideo || {}) }),
     corteBordas: { ...base.corteBordas, ...(salva?.corteBordas || {}) },
     overridesPorVideo: { ...(salva?.overridesPorVideo || {}) },
     logo: { ...base.logo, ...(salva?.logo || {}) },
@@ -249,6 +402,8 @@ export function loteTemEdicoesAtivas(cfg) {
   const corte = cfg.corteBordas || {};
   if (corte.ativo || Number(corte.superior) > 0 || Number(corte.inferior) > 0) return true;
   if (Object.keys(cfg.overridesPorVideo || {}).length > 0) return true;
+  // Enquadramento do vídeo (zoom/mover no preview) também é edição minha.
+  if (enquadramentoVideoEditado(cfg.areaVideo)) return true;
   return false;
 }
 
@@ -287,6 +442,10 @@ export function criarConfigPadrao() {
       largura: 900,
       altura: 1000,
       fit: 'cobrir',
+      // ENQUADRAMENTO DO VÍDEO (mouse): zoom + posição dentro da área, em %
+      // (50 = centro). Mesma estrutura compartilhada do lote → prévia e render
+      // usam exatamente estes valores (nada de coordenadas de tela).
+      ...ENQUADRAMENTO_VIDEO_PADRAO,
       // DESLIGADO por padrão: o vídeo importado aparece NORMAL, sem véu
       // azul/roxo. A ferramenta continua existindo (arrastar/redimensionar
       // funciona); só o guia visual nasce oculto. Não vai ao backend.

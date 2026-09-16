@@ -22,7 +22,7 @@ function formatoTiempo(segs) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function ControlesVideo({ src, encaixe }) {
+export default function ControlesVideo({ src, encaixe, estiloVideo = null, posicaoObjeto = null, onDimensoes = null }) {
   const videoRef = useRef(null);
   const [reproduciendo, setReproduciendo] = useState(false);
   const [duracion, setDuracion] = useState(0);
@@ -109,10 +109,15 @@ export default function ControlesVideo({ src, encaixe }) {
         playsInline
         preload="auto"
         className="w-full h-full"
-        style={{ objectFit: encaixe }}
+        style={{ objectFit: encaixe, ...(posicaoObjeto ? { objectPosition: posicaoObjeto } : null), ...(estiloVideo || null) }}
         onLoadedMetadata={(e) => {
           const d = e.currentTarget.duration;
           if (Number.isFinite(d)) setDuracion(d);
+          // Dimensões REAIS do vídeo (largura/altura da fonte): o arraste e o
+          // zoom do enquadramento usam para acompanhar o mouse 1:1.
+          if (typeof onDimensoes === 'function') {
+            onDimensoes({ largura: e.currentTarget.videoWidth, altura: e.currentTarget.videoHeight });
+          }
         }}
         onTimeUpdate={(e) => setProgreso(e.currentTarget.currentTime || 0)}
         onPlay={() => setReproduciendo(true)}
@@ -130,6 +135,7 @@ export default function ControlesVideo({ src, encaixe }) {
           escurecendo a região junto às linhas de corte. Os botões/chips
           mantêm os seus próprios fundos (bg-black/45). */}
       <div
+        data-edl-controles="true"
         className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-2 px-2 py-1.5 text-white"
         style={{ background: 'transparent' }}
       >

@@ -1,4 +1,5 @@
 import { BASE_URL } from './api.js';
+import { areaVideoNormalizada } from './configEditorLote.js';
 
 /**
  * EDITOR EM LOTE — conversão da config COMPARTILHADA (%) para o payload do
@@ -11,6 +12,9 @@ export const NOME_TEMPLATE_LOTE = 'Editor em Lote · config compartilhada';
 
 export function configParaTemplatePayload(config, overrideVideo = null) {
   const { canvas, areaVideo, logo } = config;
+  // Enquadramento do vídeo normalizado (zoom 1 = original; 50 = centro) — o
+  // MESMO valor que a prévia usa, dentro da estrutura `areaVideo` existente.
+  const enq = areaVideoNormalizada(areaVideo);
   const corteBordas = overrideVideo
     ? { ativo: true, superior: overrideVideo.superior ?? config.corteBordas?.superior ?? 0, inferior: overrideVideo.inferior ?? config.corteBordas?.inferior ?? 0 }
     : config.corteBordas;
@@ -138,6 +142,15 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
       largura: areaVideo.largura,
       altura: areaVideo.altura,
       fit: areaVideo.fit === 'ajustar' ? 'ajustar' : 'cobrir',
+      // ENQUADRAMENTO DO VÍDEO (mouse: zoom + mover) — valores RELATIVOS (%),
+      // os mesmos da prévia. Viajam no MESMO `areaVideo` do template (não há
+      // segundo sistema de composição) e o pipeline/FFmpeg materializa:
+      //   zoom          → escala do vídeo dentro da área (1 = original);
+      //   deslocamentoX → posição horizontal dentro da área (0..100, 50 = centro);
+      //   deslocamentoY → idem, vertical.
+      zoom: enq.zoom,
+      deslocamentoX: enq.deslocamentoX,
+      deslocamentoY: enq.deslocamentoY,
       // CORREÇÃO 1/2 (REGRA DEFINITIVA do corte automático — auditoria): a
       // detecção da região útil acontece UMA ÚNICA vez, no botão "Corte
       // automático de bordas" do Editor (detectorBordas.js). O resultado é
@@ -199,6 +212,8 @@ export function firmaComposicion(config) {
     'c2',
     canvas.corFundo,
     areaVideo.x, areaVideo.y, areaVideo.largura, areaVideo.altura, areaVideo.fit, areaVideo.mostrarMarcacao,
+    // Enquadramento do vídeo (mouse): re-renderiza a célula quando muda.
+    'enq:' + Math.round(Number(areaVideo.zoom || 1) * 100) + '/' + Math.round(Number(areaVideo.deslocamentoX ?? 50)) + '/' + Math.round(Number(areaVideo.deslocamentoY ?? 50)),
     corteBordas?.ativo ? 1 : 0, Math.round(corteBordas?.superior || 0), Math.round(corteBordas?.inferior || 0),
     logo.visivel ? 1 : 0, Math.round(logo.x), Math.round(logo.y), Math.round(logo.largura),
     Math.round(logo.opacidade || 100), logo.url ? 't' : 'f',
