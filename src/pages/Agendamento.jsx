@@ -305,6 +305,11 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
         itens,
         redes: previa.resumo?.redes || lote.redes,
         idempotencyKey: chaveIdemRef.current,
+        contexto: {
+          horarios: lote.horarios,
+          videosPorDia: lote.videosPorDia,
+          dataInicio: previa.resumo?.dataInicio || lote.dataInicio,
+        },
       });
 
       // Guarda a configuração usada (mesma estrutura da regra já existente),

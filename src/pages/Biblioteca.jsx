@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listarFinais, listarAgendamentos, urlArquivo } from '../lib/api';
+import { listarFinais, listarAgendamentos, excluirFinal, urlArquivo } from '../lib/api';
 import { statusUi, CICLO } from '../lib/status';
 import { formatarData } from '../lib/fuso';
 import StatusDot from '../components/StatusDot';
 import RedeIcon from '../components/RedeIcon';
-import { Archive, CalendarClock, ChevronDown, Loader2, Play, RefreshCw, X } from 'lucide-react';
+import { Archive, CalendarClock, ChevronDown, Loader2, Play, RefreshCw, Trash2, X } from 'lucide-react';
+
+/** Estados da Biblioteca com botão de excluir (PROGRAMADO orienta cancelar). */
+const EXCLUIVEL_BIBLIOTECA = new Set(['pronto', 'erro']);
 
 const INTERVALO_MS = 30 * 1000; // polling existente mantido (1 único timer)
 
@@ -57,6 +60,24 @@ export default function Biblioteca({ aoAgendar }) {
   const [filtro, setFiltro] = useState('todos');
   const [preview, setPreview] = useState(null);
   const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [excluindo, setExcluindo] = useState(null); // item { final, estado } em confirmação
+  const [excluindoAgora, setExcluindoAgora] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState('');
+
+  async function confirmarExcluirFinal() {
+    if (!excluindo || excluindoAgora) return;
+    setExcluindoAgora(true);
+    setErroExcluir('');
+    try {
+      await excluirFinal(excluindo.final.id);
+      setExcluindo(null);
+      await carregar();
+    } catch (e) {
+      setErroExcluir(e?.message || 'Não foi possível excluir o vídeo.');
+    } finally {
+      setExcluindoAgora(false);
+    }
+  }
 
   const carregar = useCallback(async () => {
     try {
@@ -175,7 +196,7 @@ export default function Biblioteca({ aoAgendar }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {visiveis.map((item) => (
-            <CartaoVideo key={item.final.id} item={item} aoAgendar={aoAgendar} aoPreview={setPreview} />
+            <CartaoVideo key={item.final.id} item={item} aoAgendar={aoAgendar} aoPreview={setPreview} aoExcluir={(it) => { setExcluindo(it); setErroExcluir(''); }} />
           ))}
         </div>
       )}
@@ -224,6 +245,51 @@ export default function Biblioteca({ aoAgendar }) {
           )}
         </div>
       )}
+
+      {/* Confirmação de exclusão de FINAL (PRONTO/ERRO) */}
+      {excluindo ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => { if (!excluindoAgora) setExcluindo(null); }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-line bg-surface p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-sm font-bold text-text">Excluir vídeo?</h3>
+              <button
+                onClick={() => { if (!excluindoAgora) setExcluindo(null); }}
+                className="p-1.5 rounded-lg text-text-dim hover:text-text hover:bg-surface-hover transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-text-muted font-medium">
+              {`"${excluindo.final.nomeFinal || 'Vídeo'}" será excluído da Biblioteca (estado ${excluindo.estado}). O arquivo final, a thumbnail e a pasta temporária serão removidos. Agendamentos de erro vinculados saem junto; programado/publicando/publicado bloqueiam.`}
+            </p>
+            {erroExcluir ? (
+              <p className="mt-2 text-xs font-bold text-rose-300">{erroExcluir}</p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { if (!excluindoAgora) setExcluindo(null); }}
+                disabled={excluindoAgora}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold border border-line text-text-dim hover:text-text transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarExcluirFinal}
+                disabled={excluindoAgora}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-colors disabled:opacity-50"
+              >
+                {excluindoAgora ? 'Excluindo…' : 'Excluir vídeo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Prévia do vídeo final */}
       {preview && (
@@ -285,8 +351,8 @@ function CicloVida({ estado }) {
   );
 }
 
-/** Cartão de vídeo com o ciclo de vida e a ação "Agendar" (só para PRONTO). */
-function CartaoVideo({ item, aoAgendar, aoPreview }) {
+/** Cartão de vídeo com o ciclo de vida e as ações (Agendar/Excluir). */
+function CartaoVideo({ item, aoAgendar, aoPreview, aoExcluir }) {
   const { final: f, estado, ag } = item;
   const thumb = f.thumbnailFinal ? urlArquivo(f.thumbnailFinal) : null;
   const video = f.urlFinal ? urlArquivo(f.urlFinal) : null;
@@ -340,7 +406,7 @@ function CartaoVideo({ item, aoAgendar, aoPreview }) {
 
         <CicloVida estado={estado} />
 
-        <div className="mt-auto pt-2">
+        <div className="mt-auto pt-2 flex flex-col gap-1.5">
           {estado === 'pronto' ? (
             <button
               onClick={() => aoAgendar?.(f.id)}
@@ -349,11 +415,29 @@ function CartaoVideo({ item, aoAgendar, aoPreview }) {
               <CalendarClock className="w-3.5 h-3.5" />
               Agendar
             </button>
+          ) : estado === 'programado' ? (
+            <p className="text-[10px] text-text-muted font-medium text-center py-1">
+              Cancele na tela Agendamento antes de excluir
+            </p>
+          ) : estado === 'erro' ? (
+            <p className="text-[10px] text-text-muted font-medium text-center py-1">
+              Falhou — exclua ou reagende no Agendamento
+            </p>
           ) : (
             <p className="text-[10px] text-text-muted font-medium text-center py-1">
               Gerenciar na tela Agendamento
             </p>
           )}
+          {EXCLUIVEL_BIBLIOTECA.has(estado) ? (
+            <button
+              onClick={() => aoExcluir?.(item)}
+              title={`Excluir "${f.nomeFinal || 'Vídeo'}" (remove o arquivo final)`}
+              className="w-full inline-flex items-center justify-center gap-1.5 border border-line text-text-muted hover:text-rose-300 hover:border-rose-500/40 hover:bg-rose-500/10 py-2 rounded-xl text-[11px] font-bold transition-all"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

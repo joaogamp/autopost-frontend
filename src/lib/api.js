@@ -127,6 +127,30 @@ export async function cancelarAgendamento(id) {
 }
 
 /**
+ * EXCLUI um FINAL (PRONTO ou ERRO) — DELETE /api/finais/:id.
+ * PROGRAMADO/PUBLICANDO/PUBLICADO retornam 409 com mensagem orientativa.
+ * Idempotente: repetir devolve { ok:true, jaExistia:true }.
+ */
+export async function excluirFinal(id) {
+  const r = await fetch(`${BASE_URL}/api/finais/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao excluir vídeo: ${r.status}`);
+  return corpo;
+}
+
+/**
+ * REMOVE um item da fila — DELETE /api/fila/:id.
+ * aguardando/concluido/erro: remove; processando: 409.
+ * Idempotente: repetir devolve { ok:true, jaExistia:true }.
+ */
+export async function excluirItemFila(id) {
+  const r = await fetch(`${BASE_URL}/api/fila/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao excluir item da fila: ${r.status}`);
+  return corpo;
+}
+
+/**
  * PRÉVIA do agendamento em lote (POST /api/agendamentos/lote com dryRun:true).
  * NÃO grava nada — o backend monta o plano e devolve `{ resumo, plano }`.
  * Body: { horarios, videosPorDia, dataInicio, redes, finalIds? }
@@ -146,12 +170,15 @@ export async function previaAgendamentoLote(config) {
  * SALVA o agendamento em lote enviando EXATAMENTE os `itens` da prévia
  * (mesmo finalId, mesma data, mesmo horário) — o que foi conferido na tela é
  * o que é gravado. `idempotencyKey` impede duplicação em duplo clique/retry.
+ * `contexto` (horarios/videosPorDia/dataInicio da prévia) é reenviado para
+ * que o `resumo` da resposta do save use o MESMO contexto da prévia; a
+ * gravação em si usa só `itens` (nunca recalcula datas/horários).
  */
-export async function salvarAgendamentoLote({ itens, redes, idempotencyKey }) {
+export async function salvarAgendamentoLote({ itens, redes, idempotencyKey, contexto }) {
   const r = await fetch(`${BASE_URL}/api/agendamentos/lote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ itens, redes, idempotencyKey }),
+    body: JSON.stringify({ itens, redes, idempotencyKey, ...(contexto || {}) }),
   });
   const corpo = await r.json().catch(() => ({}));
   if (!r.ok) {
