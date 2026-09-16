@@ -4,7 +4,7 @@ import { statusUi, CICLO } from '../lib/status';
 import { formatarData } from '../lib/fuso';
 import StatusDot from '../components/StatusDot';
 import RedeIcon from '../components/RedeIcon';
-import { CalendarClock, Loader2, Play, RefreshCw, X } from 'lucide-react';
+import { Archive, CalendarClock, ChevronDown, Loader2, Play, RefreshCw, X } from 'lucide-react';
 
 const INTERVALO_MS = 30 * 1000; // polling existente mantido (1 único timer)
 
@@ -13,7 +13,6 @@ const FILTROS = [
   ['pronto', 'Pronto'],
   ['programado', 'Programado'],
   ['publicando', 'Publicando'],
-  ['publicado', 'Publicado'],
   ['erro', 'Erro'],
 ];
 
@@ -24,6 +23,12 @@ const PRIORIDADE = { publicando: 4, erro: 3, agendado: 2, publicado: 1, cancelad
  * agendamentos). Fontes: FINAIS concluídos + AGENDAMENTOS.
  * Estados derivados na UI: PRONTO → PROGRAMADO → PUBLICANDO → PUBLICADO
  * (ERRO e CANCELADO como estados alternativos).
+ *
+ * LISTAGEM OPERACIONAL: quando o vídeo chega a PUBLICADO ele SAI da grade
+ * operacional (ver `listarFinais(..., { operacionais: true })`, filtrado no
+ * BACKEND) e passa a aparecer apenas no histórico de publicados abaixo —
+ * nada é apagado do servidor.
+ *
  * A gestão (criar/editar/cancelar) fica na tela AGENDAMENTO; daqui o usuário
  * só envia um vídeo PRONTO para o Agendamento ("Agendar" já pré-seleciona).
  */
@@ -44,17 +49,26 @@ function estadoDoFinal(f, ags) {
 }
 
 export default function Biblioteca({ aoAgendar }) {
-  const [finais, setFinais] = useState([]);
+  const [finais, setFinais] = useState([]); // LISTAGEM OPERACIONAL (sem publicados)
+  const [finaisTodos, setFinaisTodos] = useState([]); // para o histórico
   const [ags, setAgs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [filtro, setFiltro] = useState('todos');
   const [preview, setPreview] = useState(null);
+  const [historicoAberto, setHistoricoAberto] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
-      const [f, a] = await Promise.all([listarFinais(), listarAgendamentos()]);
+      // `operacionais: true` deixa o BACKEND fora os vídeos já PUBLICADOS —
+      // eles continuam no servidor, só saem desta listagem.
+      const [f, todos, a] = await Promise.all([
+        listarFinais(null, { operacionais: true }),
+        listarFinais(),
+        listarAgendamentos(),
+      ]);
       setFinais(Array.isArray(f) ? f : []);
+      setFinaisTodos(Array.isArray(todos) ? todos : []);
       setAgs(Array.isArray(a) ? a : []);
       setErro('');
     } catch (e) {
@@ -74,8 +88,21 @@ export default function Biblioteca({ aoAgendar }) {
     () =>
       finais
         .filter((f) => f.status === 'concluido')
-        .map((f) => ({ final: f, ...estadoDoFinal(f, ags) })),
+        .map((f) => ({ final: f, ...estadoDoFinal(f, ags) }))
+        // Rede de segurança (a filtragem real é do backend): PUBLICADO nunca
+        // aparece na grade operacional.
+        .filter((it) => it.estado !== 'publicado'),
     [finais, ags]
+  );
+
+  /** HISTÓRICO — vídeos que já saíram da listagem operacional (PUBLICADOS). */
+  const publicados = useMemo(
+    () =>
+      finaisTodos
+        .filter((f) => f.status === 'concluido')
+        .map((f) => ({ final: f, ...estadoDoFinal(f, ags) }))
+        .filter((it) => it.estado === 'publicado'),
+    [finaisTodos, ags]
   );
 
   const contagem = useMemo(() => {
@@ -95,6 +122,7 @@ export default function Biblioteca({ aoAgendar }) {
           <h2 className="font-display text-2xl font-extrabold text-text tracking-tight">Biblioteca</h2>
           <p className="text-xs text-text-muted font-medium mt-0.5">
             Ciclo de vida dos vídeos: PRONTO → PROGRAMADO → PUBLICANDO → PUBLICADO
+            <span className="text-text-dim"> · publicados saem desta lista</span>
           </p>
         </div>
         <button
@@ -151,6 +179,52 @@ export default function Biblioteca({ aoAgendar }) {
           ))}
         </div>
       )}
+      {/* HISTÓRICO DE PUBLICADOS — vídeos que saíram da listagem operacional.
+          Nada foi apagado: o arquivo e o registro continuam no servidor. */}
+      {publicados.length > 0 && (
+        <div className="mt-8">
+          <button
+            type="button"
+            onClick={() => setHistoricoAberto((v) => !v)}
+            className="w-full flex items-center justify-between glass-panel rounded-2xl border border-line px-5 py-3 bg-surface hover:border-line-light transition-colors"
+          >
+            <span className="flex items-center gap-2 text-xs font-bold text-text-dim">
+              <Archive className="w-3.5 h-3.5 text-rosa" />
+              Histórico de publicados
+              <span className="text-[10px] font-mono text-text-muted">· {publicados.length}</span>
+            </span>
+            <ChevronDown className={`w-4 h-4 text-text-muted transition-transform ${historicoAberto ? 'rotate-180' : ''}`} />
+          </button>
+
+          {historicoAberto && (
+            <div className="mt-3 glass-panel rounded-2xl border border-line overflow-hidden bg-surface divide-y divide-line">
+              {publicados.map((it) => (
+                <div key={it.final.id} className="flex items-center gap-3 p-3">
+                  <span className="w-9 h-12 rounded-lg overflow-hidden shrink-0 border border-line bg-slate-900 flex items-center justify-center">
+                    {it.final.thumbnailFinal ? (
+                      <img src={urlArquivo(it.final.thumbnailFinal)} className="w-full h-full object-cover" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 text-text-muted" />
+                    )}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-text truncate" title={it.final.nomeFinal}>
+                      {it.final.nomeFinal || 'Vídeo'}
+                    </p>
+                    <p className="text-[10px] text-text-muted font-medium truncate">
+                      {it.ag
+                        ? `Publicado em ${formatarData(it.ag.data)} • ${it.ag.horario}`
+                        : 'Publicado'}
+                    </p>
+                  </div>
+                  <StatusDot status="publicado" comRotulo />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Prévia do vídeo final */}
       {preview && (
         <div

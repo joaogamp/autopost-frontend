@@ -19,11 +19,12 @@ export async function buscarFinal(id) {
   return r.json();
 }
 
-export async function listarFinais(originalId) {
-  const url = originalId
-    ? `${BASE_URL}/api/finais?originalId=${encodeURIComponent(originalId)}`
-    : `${BASE_URL}/api/finais`;
-  const r = await fetch(url);
+export async function listarFinais(originalId, { operacionais = false } = {}) {
+  const params = new URLSearchParams();
+  if (originalId) params.set('originalId', originalId);
+  if (operacionais) params.set('operacionais', '1');
+  const query = params.toString();
+  const r = await fetch(`${BASE_URL}/api/finais${query ? `?${query}` : ''}`);
   if (!r.ok) throw new Error(`Erro ao buscar finais: ${r.status}`);
   return r.json();
 }
@@ -119,7 +120,47 @@ export async function criarAgendamento(dados) {
 
 export async function cancelarAgendamento(id) {
   const r = await fetch(`${BASE_URL}/api/agendamentos/${encodeURIComponent(id)}`, { method: 'DELETE' });
-  if (!r.ok) throw new Error(`Erro ao cancelar agendamento: ${r.status}`);
+  if (!r.ok) {
+    const corpo = await r.json().catch(() => ({}));
+    throw new Error(corpo.erro || `Erro ao cancelar agendamento: ${r.status}`);
+  }
+}
+
+/**
+ * PRÉVIA do agendamento em lote (POST /api/agendamentos/lote com dryRun:true).
+ * NÃO grava nada — o backend monta o plano e devolve `{ resumo, plano }`.
+ * Body: { horarios, videosPorDia, dataInicio, redes, finalIds? }
+ */
+export async function previaAgendamentoLote(config) {
+  const r = await fetch(`${BASE_URL}/api/agendamentos/lote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...config, dryRun: true }),
+  });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao montar a prévia: ${r.status}`);
+  return corpo;
+}
+
+/**
+ * SALVA o agendamento em lote enviando EXATAMENTE os `itens` da prévia
+ * (mesmo finalId, mesma data, mesmo horário) — o que foi conferido na tela é
+ * o que é gravado. `idempotencyKey` impede duplicação em duplo clique/retry.
+ */
+export async function salvarAgendamentoLote({ itens, redes, idempotencyKey }) {
+  const r = await fetch(`${BASE_URL}/api/agendamentos/lote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ itens, redes, idempotencyKey }),
+  });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const detalhes = Array.isArray(corpo.conflitos)
+      ? ` (${corpo.conflitos.slice(0, 3).map((c) => c.motivo).join('; ')})`
+      : '';
+    throw new Error((corpo.erro || `Erro ao salvar o agendamento: ${r.status}`) + detalhes);
+  }
+  return corpo;
 }
 
 /**

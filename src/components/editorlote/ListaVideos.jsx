@@ -16,7 +16,27 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  * Editor — remoção LOCAL (estado + localStorage); o arquivo original NUNCA é
  * apagado (Biblioteca/Oracle/fila intactos) e os demais vídeos não são
  * afetados. Componente MEMOIZADO.
+ *
+ * BARRA DE PROGRESSO INDIVIDUAL (REAL — GET /api/fila):
+ * cada linha mostra, ABAIXO do nome/status, a barra do PRÓPRIO item usando
+ * `item.status` + `item.percentual` do polling do EditorLote (props, sem
+ * polling próprio/duplicado). Sem animação falsa 0→100.
  */
+function corDaBarra(status) {
+  if (status === 'concluido') return 'linear-gradient(90deg,#22c55e,#4ade80)';
+  if (status === 'erro') return 'linear-gradient(90deg,#ef4444,#f87171)';
+  if (status === 'aguardando') return 'linear-gradient(90deg,#f59e0b,#fbbf24)';
+  return 'linear-gradient(90deg,var(--edl-rosa),var(--edl-roxo))';
+}
+
+function textoProgresso(item, percentual) {
+  if (item.status === 'concluido') return '✓ Concluído · 100%';
+  if (item.status === 'erro') return 'Erro no processamento';
+  if (item.status === 'processando') return `Processando · ${percentual}%`;
+  if (item.status === 'aguardando') return 'Na fila · 0%';
+  return null;
+}
+
 function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar, aoRemover }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col min-w-0 bg-[color:var(--edl-painel)]">
@@ -49,6 +69,9 @@ function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar, aoRemover })
             {itens.map((item, indice) => {
               const nome = item.nome || rotuloDeVideo(indice);
               const selecionado = item.id === idSelecionado;
+              const emFila = item.status === 'aguardando' || item.status === 'processando' || item.status === 'concluido' || item.status === 'erro';
+              const percentual = Math.max(0, Math.min(100, Number(item.percentual) || 0));
+              const legenda = textoProgresso(item, percentual);
               // A lixeira é IRMÃ do botão da linha (não aninhada — HTML válido):
               // clicar nela remove SÓ este vídeo do Editor.
               return (
@@ -78,6 +101,21 @@ function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar, aoRemover })
                         {item.duracao ? `${item.duracao} · ` : ''}
                         {item.status === 'concluido' ? '✓ Pronto' : item.status === 'processando' ? 'Processando' : item.status === 'aguardando' ? 'Na fila' : item.status === 'erro' ? 'Erro' : 'Importado'}
                       </span>
+                      {emFila && (
+                        <span className="block mt-1" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percentual} aria-label={`Progresso de ${nome}: ${legenda}`}>
+                          <span className="block h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                            <span className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${percentual}%`, background: corDaBarra(item.status) }} />
+                          </span>
+                          <span className="block text-[9px] font-bold mt-0.5 tabular-nums" style={{ color: 'var(--edl-texto-dim)' }}>
+                            {legenda}
+                          </span>
+                        </span>
+                      )}
+                      {item.status === 'erro' && item.erroMensagem && (
+                        <span className="block text-[9px] font-semibold mt-0.5 truncate" style={{ color: '#f87171' }}>
+                          {item.erroMensagem}
+                        </span>
+                      )}
                     </span>
                     {selecionado && (
                       <span
