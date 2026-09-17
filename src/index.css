@@ -353,3 +353,28 @@ select option {
   color: var(--edl-texto);
 }
 
+/* SELEÇÃO DE ELEMENTO (Camadas ⇄ Preview): anel tracejado rosa SÓ no
+   elemento selecionado — some ao clicar fora (deseleção), sem caixas
+   permanentes. outline não altera layout. */
+.edl-elemento-selecionado {
+  outline: 2px dashed var(--edl-rosa);
+  outline-offset: 3px;
+}
+
+
+/* Três colunas sem prender a rolagem do documento. Em telas estreitas o
+   preview ocupa a primeira linha; ferramentas e camadas ficam abaixo. */
+.edl-layout { grid-template-columns: 250px minmax(0, 1fr) 240px; }
+.edl-preview-central { position: sticky; top: 64px; }
+.edl-painel-esquerdo, .edl-painel-camadas { min-height: 480px; }
+@media (max-width: 1000px) {
+  .edl-layout { grid-template-columns: 210px minmax(0, 1fr) 190px; }
+}
+@media (max-width: 760px) {
+  .edl-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .edl-preview-central { grid-column: 1 / -1; grid-row: 1; position: sticky; top: 56px; z-index: 20; background: var(--edl-painel); }
+  .edl-preview-central canvas, .edl-preview-central video { max-width: 100%; }
+  .edl-painel-esquerdo { grid-column: 1; grid-row: 2; }
+  .edl-painel-camadas { grid-column: 2; grid-row: 2; }
+}
+

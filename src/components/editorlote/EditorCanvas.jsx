@@ -25,6 +25,7 @@ import {
 } from './arraste';
 import ControlesVideo from './ControlesVideo';
 import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdentidade';
+import ElementoImagem from './ElementoImagem';
 
 /**
  * EDITOR EM LOTE — canvas de edición (EditorCanvas).
@@ -96,6 +97,11 @@ export default function EditorCanvas({
   // Remove o VÍDEO BASE deste card (removçom LOCAL: sai da lista do Editor e do
   // localStorage; o arquivo original continua na Biblioteca — sem DELETE).
   aoRemoverBase,
+  // SELEÇÃO DE ELEMENTOS (Camadas ⇄ Preview): id do elemento selecionado
+  // ('logo', 'textoSuperior', 'video', 'area', 'corte', 'selo', 'imagem:<id>'…)
+  // e callback pra selecionar/desselecionar. SÓ a célula editável seleciona.
+  elementoSelecionado = null,
+  aoSelecionarElemento,
 }) {
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
@@ -120,6 +126,14 @@ export default function EditorCanvas({
   const redimensionarAreaCanto = gerarRedimensionarArea('canto', atualizador);
   const corredorSuperior = gerarArrastarCorteSuperior(atualizador, itemSelecionado?.id || null);
   const corredorInferior = gerarArrastarCorteInferior(atualizador, itemSelecionado?.id || null);
+
+  // SELEÇÃO — clicar num elemento do preview seleciona a camada dele (Painel
+  // de Camadas + painel de configuração sincronizam). Clicar no FUNDO do
+  // canvas (fora de qualquer [data-elemento]) deseleciona. Sem X/Y: seleção,
+  // movimento e redimensionamento acontecem 100% no preview com o mouse.
+  const selecionar = (id) => {
+    if (podeEditar && typeof aoSelecionarElemento === 'function') aoSelecionarElemento(id);
+  };
 
   // ENQUADRAMENTO DO VÍDEO (zoom + mover — SOMENTE MOUSE, direto no preview).
   // `dimsVideoRef`: dimensões REAIS do vídeo em exibição (reportadas pelo
@@ -284,10 +298,20 @@ export default function EditorCanvas({
           : 'flex-1 min-w-0 flex flex-col items-center justify-center relative overflow-hidden px-2 pt-2 pb-1'
       }
     >
-      {/* Canvas 9:16 (fundo = corFundo que vai pro template) */}
+      {/* Canvas 9:16 (fundo = corFundo que vai pro template). Clicar fora de
+          qualquer elemento ([data-elemento]) deseleciona — sem caixas de
+          seleção permanentes poluindo a interface. */}
       <div
         ref={canvasRef}
         className="edl-canvas-branco relative overflow-hidden"
+        onPointerDown={(e) => {
+          if (podeEditar && typeof aoSelecionarElemento === 'function') {
+            const alvo = e.target;
+            if (!(typeof alvo?.closest === 'function' && alvo.closest('[data-elemento]'))) {
+              aoSelecionarElemento(null);
+            }
+          }
+        }}
         style={{
           width: Math.round(CANVAS_LARGURA * escala),
           height: Math.round(CANVAS_ALTURA * escala),
@@ -311,8 +335,9 @@ export default function EditorCanvas({
               aria-valuemax={CORTE_MAXIMO}
               aria-valuenow={Math.round(corteSup)}
               aria-valuetext={`${Math.round(corteSup)}% da altura`}
-              data-posY={String(corteSup)}
-              onPointerDown={podeEditar ? corredorSuperior : undefined}
+              data-elemento="corte"
+              data-posy={String(corteSup)}
+              onPointerDown={podeEditar ? (e) => { selecionar('corte'); corredorSuperior(e); } : undefined}
               className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none ${podeEditar ? 'cursor-row-resize' : 'pointer-events-none'}`}
               style={{
                 top: `${corteSup}%`,
@@ -333,8 +358,9 @@ export default function EditorCanvas({
               aria-valuemax={100}
               aria-valuenow={Math.round(posLinhaInferior)}
               aria-valuetext={`${Math.round(posLinhaInferior)}% da altura`}
-              data-posY={String(posLinhaInferior)}
-              onPointerDown={podeEditar ? corredorInferior : undefined}
+              data-elemento="corte"
+              data-posy={String(posLinhaInferior)}
+              onPointerDown={podeEditar ? (e) => { selecionar('corte'); corredorInferior(e); } : undefined}
               className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none ${podeEditar ? 'cursor-row-resize' : 'pointer-events-none'}`}
               style={{
                 top: `${posLinhaInferior}%`,
@@ -372,14 +398,15 @@ export default function EditorCanvas({
             role={podeEditar && urlVideoAtiva ? 'button' : undefined}
             tabIndex={podeEditar && urlVideoAtiva ? 0 : undefined}
             aria-label="Mover o vídeo (arraste com o mouse) e ampliar/reduzir (roda do mouse)"
+            data-elemento="video"
             data-enq-zoom={String(areaN.zoom)}
             data-enq-x={String(areaN.deslocamentoX)}
             data-enq-y={String(areaN.deslocamentoY)}
             data-area-largura={String(areaN.largura)}
             data-area-altura={String(areaN.altura)}
             data-area-fit={area.fit}
-            onPointerDown={podeEditar && urlVideoAtiva ? arrastarEnquadramento : undefined}
-            className={`absolute overflow-hidden ${podeEditar && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'}`}
+            onPointerDown={podeEditar && urlVideoAtiva ? (e) => { selecionar('video'); arrastarEnquadramento(e); } : undefined}
+            className={`absolute overflow-hidden ${podeEditar && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'} ${elementoSelecionado === 'video' ? 'edl-elemento-selecionado' : ''}`}
             style={{
               left: area.x * escala,
               top: area.y * escala,
@@ -495,12 +522,13 @@ export default function EditorCanvas({
           role={podeEditar && area.mostrarMarcacao ? 'button' : undefined}
           tabIndex={podeEditar && area.mostrarMarcacao ? 0 : undefined}
           aria-label="Mover a área do vídeo (composiçom final)"
+          data-elemento="area"
           data-x={String(area.x)}
           data-y={String(area.y)}
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
-          onPointerDown={podeEditar && area.mostrarMarcacao ? arrastarArea : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && area.mostrarMarcacao ? '' : 'pointer-events-none'}`}
+          onPointerDown={podeEditar && area.mostrarMarcacao ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && area.mostrarMarcacao ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
@@ -561,10 +589,11 @@ export default function EditorCanvas({
             role={podeEditar ? 'button' : undefined}
             tabIndex={podeEditar ? 0 : undefined}
             aria-label="Arrastar logo"
+            data-elemento="logo"
             data-x={logo.x}
             data-y={logo.y}
-            onPointerDown={podeEditar ? arrastarLogo : undefined}
-            className={`edl-logo absolute ${podeEditar ? '' : 'pointer-events-none'}`}
+            onPointerDown={podeEditar ? (e) => { selecionar('logo'); arrastarLogo(e); } : undefined}
+            className={`edl-logo absolute ${podeEditar ? '' : 'pointer-events-none'} ${elementoSelecionado === 'logo' ? 'edl-elemento-selecionado' : ''}`}
             style={{
               left: `${logo.x}%`,
               top: `${logo.y}%`,
@@ -615,6 +644,7 @@ export default function EditorCanvas({
           { chave: 'inferior', rotulo: 'Texto inferior', t: textoInf },
         ].map(({ chave, rotulo, t }) => {
           if (!t.visivel || String(t.conteudo || '').trim() === '') return null;
+          const idElemento = chave === 'superior' ? 'textoSuperior' : 'textoInferior';
           const arrastar = chave === 'superior' ? arrastarTextoSuperior : arrastarTextoInferior;
           const redimensionar = chave === 'superior' ? redimensionarTextoSup : redimensionarTextoInf;
           return (
@@ -623,10 +653,11 @@ export default function EditorCanvas({
               role={podeEditar ? 'button' : undefined}
               tabIndex={podeEditar ? 0 : undefined}
               aria-label={`Arrastar ${rotulo.toLowerCase()}`}
+              data-elemento={idElemento}
               data-x={String(t.x)}
               data-y={String(t.y)}
-              onPointerDown={podeEditar ? arrastar : undefined}
-              className={`edl-texto-canvas absolute ${podeEditar ? '' : 'pointer-events-none'}`}
+              onPointerDown={podeEditar ? (e) => { selecionar(idElemento); arrastar(e); } : undefined}
+              className={`edl-texto-canvas absolute ${podeEditar ? '' : 'pointer-events-none'} ${elementoSelecionado === idElemento ? 'edl-elemento-selecionado' : ''}`}
               style={{
                 left: `${t.x}%`,
                 top: `${t.y}%`,
@@ -661,10 +692,25 @@ export default function EditorCanvas({
 
         {/* IDENTIDADE DO CANAL — nome do canal, @ do canal e selo azul de
             verificado: elementos INDEPENDENTES (posição/tamanho próprios).
-            Editáveis SÓ na célula selecionada (nas demais, somente leitura). */}
-        <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} />
-        <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} />
-        <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} />
+            Editáveis SÓ na célula selecionada (nas demais, somente leitura).
+            Cada um seleciona sua camada no clique (Camadas ⇄ Preview). */}
+        <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeNome'} aoSelecionar={selecionar} />
+        <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeUsuario'} aoSelecionar={selecionar} />
+        <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'selo'} aoSelecionar={selecionar} />
+
+        {/* IMAGENS (Adicionar elementos → Imagem): cada imagem é UMA camada
+            independente — arrastável, redimensionável e selecionável direto no
+            preview. MESMA geometria que o render compõe (prévia = render). */}
+        {(config.imagens || []).map((im) => (
+          <ElementoImagem
+            key={im.id}
+            imagem={im}
+            aoAtualizarConfig={atualizador}
+            selecionado={elementoSelecionado === `imagem:${im.id}`}
+            aoSelecionar={selecionar}
+            somenteLeitura={!podeEditar}
+          />
+        ))}
       </div>
 
       {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}

@@ -206,7 +206,84 @@ export function gerarRedimensionarLogo(aoAtualizarConfig) {
   };
 }
 
-/* ---------------------------------------------------------------------------
+/* --------------------------------------------------------------------------- 
+ * IMAGEM (Editor em Lote) — mover/redimensionar um elemento de imagem
+ * independente (config.imagens[], localizado por `id` — nunca por índice,
+ * pra não trocar de alvo quando a lista muda). Mesma matemática da logo:
+ * posição em % do canvas e largura em % da largura do canvas.
+ * ------------------------------------------------------------------------- */
+
+/** Aplica `cambios` na imagem `id` dentro de cfg.imagens (imutável). */
+function atualizarImagem(config, id, cambios) {
+  return {
+    ...config,
+    imagens: (config.imagens || []).map((im) => (im && im.id === id ? { ...im, ...cambios } : im)),
+  };
+}
+
+/** Arraste da IMAGEM (x% = centro, y% = topo — mesma convenção da logo). */
+export function gerarArrasteImagem(id, aoAtualizarConfig) {
+  return function aoPointerDown(e) {
+    if (!aoAtualizarConfig) return;
+    const canvasEl = e.currentTarget.parentElement;
+    if (!canvasEl) return;
+    const rect = canvasEl.getBoundingClientRect();
+
+    // Posição inicial lida dos data-x/data-y (sempre atuais — sem stale closure).
+    const el = e.currentTarget;
+    const inicial = { x: parseFloat(el.dataset.x) || 0, y: parseFloat(el.dataset.y) || 0 };
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    function aoMover(ev) {
+      const dx = ((ev.clientX - startX) / rect.width) * 100;
+      const dy = ((ev.clientY - startY) / rect.height) * 100;
+      aoAtualizarConfig((cfg) =>
+        atualizarImagem(cfg, id, {
+          x: Math.min(100, Math.max(0, (inicial.x || 0) + dx)),
+          y: Math.min(100, Math.max(0, (inicial.y || 0) + dy)),
+        })
+      );
+    }
+    const aoSoltar = quitarEscuchas(aoMover);
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+  };
+}
+
+/** Alça de redimensionar a IMAGEM (largura em % do canvas; altura via
+ * `alturaProporcao` natural — sem distorção, igual à logo/selo). */
+export function gerarRedimensionarImagem(id, aoAtualizarConfig) {
+  return function aoPointerDown(e) {
+    if (!aoAtualizarConfig) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const canvasEl = encontrarCanvas(e.currentTarget);
+    if (!canvasEl) return;
+    const escala = parseFloat(canvasEl.dataset.escala || '1');
+    const cW = parseFloat(canvasEl.dataset.canvasLargura || String(CANVAS_LARGURA));
+
+    const el = e.currentTarget;
+    const inicialLargura = parseFloat(el.dataset.largura) || 30;
+    const startX = e.clientX;
+
+    function aoMover(ev) {
+      const dx = (ev.clientX - startX) / Math.max(escala, 0.05);
+      const largura = inicialLargura + (dx / cW) * 100;
+      aoAtualizarConfig((cfg) =>
+        atualizarImagem(cfg, id, { largura: Math.min(100, Math.max(2, largura)) })
+      );
+    }
+    function aoSoltar() {
+      window.removeEventListener('pointermove', aoMover);
+      window.removeEventListener('pointerup', aoSoltar);
+    }
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+  };
+}
+
+/* --------------------------------------------------------------------------- 
  * TEXTO — redimensionar la anchura del bloque desde una manija lateral.
  * Ruta: ['textos','superior'] | ['textos','inferior'] (independientes).
  * ------------------------------------------------------------------------- */
@@ -316,7 +393,7 @@ export function gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig, minPx = 
  * Superior e inferior são INDEPENDENTES: mudar uma linha NUNCA altera a outra.
  * ------------------------------------------------------------------------- */
 
-/** Handler de arrastre da linha de corte SUPERIOR (`data-posY` = % desde o
+/** Handler de arrastre da linha de corte SUPERIOR (`data-posy` = % desde o
  * topo). Mueve solo `corteBordas.superior` (0..CORTE_MAXIMO). */
 export function gerarArrastarCorteSuperior(aoAtualizarConfig, videoId = null) {
   return function aoPointerDown(e) {
@@ -328,7 +405,7 @@ export function gerarArrastarCorteSuperior(aoAtualizarConfig, videoId = null) {
     const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');
 
     const el = e.currentTarget;
-    const inicialPos = parseFloat(el.dataset.posY) || 0;
+    const inicialPos = parseFloat(el.dataset.posy) || 0;
 
     const startY = e.clientY;
 
@@ -353,7 +430,7 @@ export function gerarArrastarCorteSuperior(aoAtualizarConfig, videoId = null) {
 }
 
 /** Handler de arrastre da linha de corte INFERIOR. A linha vive em
- * `top: (100 − inferior)%`; `data-posY` = essa posição. Arrastrar para CIMA
+ * `top: (100 − inferior)%`; `data-posy` = essa posição. Arrastrar para CIMA
  * aumenta `corteBordas.inferior` (independiente de `superior`). */
 export function gerarArrastarCorteInferior(aoAtualizarConfig, videoId = null) {
   return function aoPointerDown(e) {
@@ -365,7 +442,7 @@ export function gerarArrastarCorteInferior(aoAtualizarConfig, videoId = null) {
     const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');
 
     const el = e.currentTarget;
-    const inicialPos = parseFloat(el.dataset.posY) || 100;
+    const inicialPos = parseFloat(el.dataset.posy) || 100;
 
     const startY = e.clientY;
 

@@ -318,6 +318,29 @@ export function criarConfigLimpaDeLote() {
   };
 }
 
+/**
+ * IMAGEM (Editor em Lote) — elemento de imagem independente da composição
+ * ("Adicionar elementos → Imagem"). Mesma convenção da LOGO: x% marca o
+ * CENTRO (prévia usa translate(-50%, 0)), y% marca o TOPO, largura em % da
+ * largura do canvas e `alturaProporcao` (altura/largura natural da imagem)
+ * preserva a proporção na prévia E no render (pipeline compõe com `contain`).
+ * O arquivo viaja como dataURL (mesmo mecanismo do selo PNG) DENTRO do
+ * template (`imagens`), então prévia e vídeo final ficam idênticos.
+ */
+export function criarImagemPadrao({ url, alturaProporcao = 1, nome = null }) {
+  return {
+    id: `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    url: typeof url === 'string' && url.startsWith('data:image/') ? url : null,
+    nome: typeof nome === 'string' ? nome.slice(0, 60) : null,
+    x: 50,
+    y: 36,
+    largura: 30,
+    alturaProporcao: Number(alturaProporcao) > 0 ? Number(alturaProporcao) : 1,
+    opacidade: 100,
+    visivel: true,
+  };
+}
+
 /** Rótulo curto do vídeo no lote (vídeo 01, vídeo 02, ...). */
 export function rotuloDeVideo(indice) {
   return `vídeo ${String(indice + 1).padStart(2, '0')}`;
@@ -356,6 +379,12 @@ export function normalizarConfigEditor(salva) {
       usuario: { ...base.identidade.usuario, ...(salva?.identidade?.usuario || {}) },
       selo: { ...base.identidade.selo, ...(salva?.identidade?.selo || {}) },
     },
+    // IMAGENS (Editor em Lote): array de elementos de imagem independentes.
+    // Sanitizado: só entram objetos com dataURL de imagem — nada herda de
+    // configs antigas sem o campo (regra do lote limpo).
+    imagens: (Array.isArray(salva?.imagens) ? salva.imagens : [])
+      .filter((im) => im && typeof im.url === 'string' && im.url.startsWith('data:image/'))
+      .map((im) => ({ ...criarImagemPadrao({ url: im.url, alturaProporcao: im.alturaProporcao, nome: im.nome }), ...im, url: im.url })),
   };
   // Logo: sem URL não há o que mostrar — opt-in estrito.
   if (!cfg.logo?.url) cfg.logo.visivel = false;
@@ -399,6 +428,8 @@ export function loteTemEdicoesAtivas(cfg) {
   if (['superior', 'inferior'].some((k) => textoVisivelNoPreview(cfg.textos?.[k]))) return true;
   if (['nome', 'usuario'].some((k) => identidadeTextoVisivelNoPreview(cfg.identidade?.[k]))) return true;
   if (cfg.identidade?.selo?.visivel) return true;
+  // IMAGENS: qualquer imagem visível é uma edição ativa (nada herda de lote).
+  if ((cfg.imagens || []).some((im) => im && im.visivel)) return true;
   const corte = cfg.corteBordas || {};
   if (corte.ativo || Number(corte.superior) > 0 || Number(corte.inferior) > 0) return true;
   if (Object.keys(cfg.overridesPorVideo || {}).length > 0) return true;
@@ -497,7 +528,10 @@ export function criarConfigPadrao() {
       inferior: textoPadrao('inferior'),
     },
     // Identidade do canal (logo + nome + @ + selo azul) — compartilhada por
-    // todo o lote; elementos editáveis no popup grande e no canvas.
+    // todo o lote; elementos editáveis no painel e direto no canvas.
     identidade: criarIdentidadePadrao(),
+    // IMAGENS (Editor em Lote): elementos de imagem independentes — nasce
+    // vazio (regra de lote limpo; nada herda de sessões anteriores).
+    imagens: [],
   };
 }

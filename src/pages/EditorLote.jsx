@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderEditor from '../components/editorlote/HeaderEditor';
-import PainelDownloads from '../components/editorlote/PainelDownloads';
-import ListaVideos from '../components/editorlote/ListaVideos';
 import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
+import PainelCamadas from '../components/editorlote/PainelCamadas';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
 import {
   criarConfigPadrao,
@@ -443,6 +442,11 @@ export default function EditorLote() {
   const [templateIdSalvo, setTemplateIdSalvo] = useState(() => loteSalvo?.templateId || null);
   const [assinaturaSalva, setAssinaturaSalva] = useState(() => loteSalvo?.assinatura || null);
   const [toast, setToast] = useState(null);
+  // ELEMENTO SELECIONADO no Preview (Camadas ⇄ Preview ⇄ configuração à
+  // esquerda): 'logo' | 'textoSuperior' | 'textoInferior' | 'identidadeNome' |
+  // 'identidadeUsuario' | 'selo' | 'area' | 'corte' | 'video' | 'fundo' |
+  // `imagem:<id>`. Clicar fora no canvas → null (deseleção).
+  const [elementoSelecionado, setElementoSelecionado] = useState(null);
   const timerToast = useRef(null);
   const pollRef = useRef(null);
   const inicioFilaRef = useRef(0);
@@ -1077,7 +1081,7 @@ export default function EditorLote() {
   }, [itens, config, enfileirando, garantirTemplate, iniciarPolling, mostrarToast]);
 
   return (
-    <div className="edl-root h-full w-full flex flex-col overflow-hidden">
+    <div className="edl-root w-full min-h-screen flex flex-col">
       <HeaderEditor
         total={itens.length}
         status={statusTexto}
@@ -1087,26 +1091,34 @@ export default function EditorLote() {
         processando={enfileirando}
       />
 
-      <div className="flex-1 min-h-0 flex">
-        {/* ESQUERDA — importação + LISTA dos vídeos importados (forma PRINCIPAL
-            de selecionar o vídeo que aparece no Canvas/editor) */}
-        <aside className="w-[280px] shrink-0 h-full min-h-0 flex flex-col border-r border-[color:var(--edl-borda)]">
-          <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
-          <ListaVideos
+      <div className="edl-layout flex-1 grid items-start" onPointerDown={(e) => { if (e.target === e.currentTarget) setElementoSelecionado(null); }}>
+        {/* ESQUERDA — "ADICIONAR ELEMENTOS" + configuração do elemento
+            selecionado (logo · texto · imagem · vídeo). Os popups pequenos
+            (texto/imagem/vídeo) abrem DENTRO deste painel: o Preview central
+            nunca é coberto nem substituído. */}
+        <aside className="edl-painel-esquerdo min-w-0 flex flex-col border-r border-[color:var(--edl-borda)]" aria-label="Ferramentas do editor">
+          <PainelEditor
+            config={config}
+            aoAtualizarConfig={setConfig}
+            elementoSelecionado={elementoSelecionado}
+            aoSelecionarElemento={setElementoSelecionado}
+            itensLote={itens}
+            aoDetectarBordas={aoDetectarBordas}
+            detectandoBordas={detectandoBordas}
+            progressoBordas={progressoBordas}
             itens={itens}
             idSelecionado={idSelecionado}
-            aoSelecionar={aoSelecionar}
-            aoFocar={aoFocar}
-            aoRemover={aoRemoverVideo}
+            aoSelecionarVideo={aoSelecionar}
+            aoFocarVideo={aoFocar}
+            aoRemoverVideo={aoRemoverVideo}
+            aoAdicionarVideo={aoAdicionarVideo}
           />
         </aside>
 
-        {/* CENTRO — O PRÓPRIO ESPAÇO CENTRAL mostra os MESMOS vídeos da
-            esquerda: topo com botões 1X/2X/3X (qtd. de vídeos lado a lado) e
-            os vídeos DIFERENTES por linha dentro desse MESMO espaço (não é
-            grade separada nem faixa abaixo do preview). Clicar numa célula
-            seleciona o vídeo principal editável (config compartilhada). */}
-        <section className="flex-1 min-w-0 h-full min-h-0 flex flex-col">
+        {/* CENTRO — PREVIEW SEMPRE VISÍVEL: mostra os MESMOS vídeos da lista
+            (1X/2X/3X) com a config COMPARTILHADA. Clicar num elemento do canvas
+            seleciona a camada correspondente; clicar fora deseleciona. */}
+        <section className="edl-preview-central min-w-0 flex flex-col" aria-label="Preview da composição">
           <AreaCentral
             itens={itens}
             idSelecionado={idSelecionado}
@@ -1117,14 +1129,21 @@ export default function EditorLote() {
             aoSelecionar={aoSelecionar}
             aoFocar={aoFocar}
             aoRemoverItem={aoRemoverVideo}
+            elementoSelecionado={elementoSelecionado}
+            aoSelecionarElemento={setElementoSelecionado}
           />
         </section>
 
-        {/* DIREITA — SOMENTE ferramentas do editor: Logo (popup de identidade:
-            logo/nome/@/selo) · Texto superior · Texto inferior · Área do vídeo ·
-            Corte de bordas · Fundo · Propriedades — config COMPARTILHADA */}
-        <aside className="w-[340px] shrink-0 h-full min-h-0 overflow-y-auto border-l border-[color:var(--edl-borda)]">
-          <PainelEditor config={config} aoAtualizarConfig={setConfig} itemSelecionado={itemSelecionado} itensLote={itens} aoDetectarBordas={aoDetectarBordas} detectandoBordas={detectandoBordas} progressoBordas={progressoBordas} />
+        {/* DIREITA — CAMADAS: cada elemento da composição é uma camada, na
+            ordem do render, com olho (mostra/oculta o flag real) e clique que
+            seleciona/destaca no Preview. Sem duplicatas por função. */}
+        <aside className="edl-painel-camadas min-w-0 border-l border-[color:var(--edl-borda)]" aria-label="Camadas do editor">
+          <PainelCamadas
+            config={config}
+            aoAtualizarConfig={setConfig}
+            elementoSelecionado={elementoSelecionado}
+            aoSelecionarElemento={setElementoSelecionado}
+          />
         </aside>
       </div>
 

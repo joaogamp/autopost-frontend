@@ -18,20 +18,19 @@ export default function App() {
     setPagina('agendamento');
   }
 
-  // Navegação principal: barra superior compacta (BarraNavegacao), no topo e
-  // centralizada. O conteúdo ocupa o restante da altura. O Editor em Lote é
-  // uma tela full-bleed de 3 colunas (tema escuro escopado `edl-`): renderiza
-  // SEM o padding rolável das outras páginas, que ficam intactas.
+  // Todas as páginas usam rolagem de documento; o zoom é tratado localmente
+  // pelo vídeo do Editor, nunca pelo shell da aplicação.
+  const ehEditor = pagina === 'editorlote';
   return (
-    <div className="flex flex-col h-screen bg-base text-text font-body overflow-hidden">
+    <div className="flex flex-col bg-base text-text font-body min-h-screen">
       <BarraNavegacao paginaAtiva={pagina} aoMudarPagina={setPagina} />
 
-      {pagina === 'editorlote' ? (
-        <main className="flex-1 min-w-0 overflow-hidden">
+      {ehEditor ? (
+        <main className="flex-1 min-w-0">
           <EditorLote />
         </main>
       ) : (
-        <main className="flex-1 min-w-0 overflow-y-auto px-6 sm:px-10 py-10 transition-all">
+        <main className="flex-1 min-w-0 px-6 sm:px-10 py-10 transition-all">
           {pagina === 'dashboard' && <Dashboard />}
           {pagina === 'agendamento' && (
             <Agendamento

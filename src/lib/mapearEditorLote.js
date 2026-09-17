@@ -131,8 +131,29 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
     };
   };
 
+  // IMAGENS (Editor em Lote) — elementos de imagem independentes. Cada uma
+  // viaja como dataURL DENTRO do template (`imagens`), na MESMA convenção da
+  // prévia: x% = CENTRO (deslocado metade da largura pra virar borda esquerda
+  // em px) e y% = TOPO; altura pela proporção natural (`contain` no pipeline).
+  // Additive: sem imagens, o campo vai null e o render segue igual.
+  const imagensPayload = (config.imagens || [])
+    .filter((im) => im && im.visivel && typeof im.url === 'string' && im.url.startsWith('data:image/'))
+    .map((im) => {
+      const larguraPx = Math.max(1, Math.round((Math.min(100, Math.max(2, Number(im.largura) || 30)) / 100) * canvas.largura));
+      const proporcao = Number(im.alturaProporcao) > 0 ? Number(im.alturaProporcao) : 1;
+      const alturaPx = Math.max(1, Math.round(larguraPx * proporcao));
+      const opacidade = Number(im.opacidade);
+      return {
+        urlImagem: im.url,
+        x: Math.round((Number(im.x) / 100) * canvas.largura - larguraPx / 2),
+        y: Math.round((Number(im.y) / 100) * canvas.altura),
+        largura: larguraPx,
+        altura: alturaPx,
+        ...(Number.isFinite(opacidade) && opacidade >= 0 && opacidade < 100 ? { opacidade: Math.round(opacidade) } : {}),
+      };
+    });
+
   return {
-    nome: NOME_TEMPLATE_LOTE,
     corFundo: canvas.corFundo,
     canvasLargura: canvas.largura,
     canvasAltura: canvas.altura,
@@ -181,6 +202,9 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
     identidadeNome: mapearTextoIdentidade(config.identidade?.nome),
     identidadeUsuario: mapearTextoIdentidade(config.identidade?.usuario),
     identidadeSelo: mapearSeloIdentidade(config.identidade?.selo),
+    // IMAGENS independentes (dataURL + geometria em px) — null quando não há
+    // imagem visível: o pipeline pula e nada muda nos fluxos existentes.
+    imagens: imagensPayload.length ? imagensPayload : null,
   };
 }
 
@@ -220,6 +244,10 @@ export function firmaComposicion(config) {
     Math.round(Number(logo.alturaProporcao || 0) * 1000),
     'sup:' + assinarTexto(textos.superior),
     'inf:' + assinarTexto(textos.inferior),
+    // IMAGENS: id/url/geometria/opacidade — re-renderiza a célula quando muda.
+    'img:' + (config.imagens || [])
+      .map((im) => (im && im.url ? [im.id, Math.round(im.x), Math.round(im.y), Math.round(im.largura), Math.round((im.opacidade ?? 100)), im.visivel ? 1 : 0].join(',') : 'n'))
+      .join(';'),
   ].join('|');
 }
 

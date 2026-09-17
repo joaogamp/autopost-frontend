@@ -279,6 +279,10 @@ export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, temp
   formData.append('identidadeNome', JSON.stringify(payload.identidadeNome || null));
   formData.append('identidadeUsuario', JSON.stringify(payload.identidadeUsuario || null));
   formData.append('identidadeSelo', JSON.stringify(payload.identidadeSelo || null));
+  // IMAGENS independentes (dataURL + geometria) — o servidor guarda o array no
+  // template e o pipeline (Oracle/worker) compõe na MESMA ordem da prévia.
+  // Sem imagens, envia null: o campo é limpo no template e nada muda.
+  formData.append('imagens', JSON.stringify(payload.imagens || null));
   if (payload.corteBordas) formData.append('corteBordas', JSON.stringify(payload.corteBordas));
   if (arquivoLogo) formData.append('logo', arquivoLogo);
 

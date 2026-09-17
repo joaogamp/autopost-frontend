@@ -129,7 +129,7 @@ function AreaCentral(p) {
   }, [colunas, seleccionadoItem ? seleccionadoItem.id : null]);
   const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : 300;
   const gradeCls = 'grid gap-3 w-full';
-  const modoUnicoCls = 'w-full max-w-[560px] mx-auto mt-20';
+  const modoUnicoCls = 'w-full max-w-[560px] mx-auto mt-3';
   // Clave do reproductor por modo (1X/2X/3X) + visibilidad: qualquer cambio
   // remonta o player PAUSADO (sem autoplay, sem loop), nunca deja un vídeo
   // tocando em background tras mudar la vista.
@@ -182,6 +182,8 @@ function AreaCentral(p) {
                 mostrarRodape={false}
                 compacto
                 claveReproductor={claveReproductor}
+                elementoSelecionado={p.elementoSelecionado}
+                aoSelecionarElemento={p.aoSelecionarElemento}
                 base
                 aoRemoverBase={aoRemoverItem ? () => aoRemoverItem(seleccionadoItem) : undefined}
               />
@@ -215,6 +217,8 @@ function AreaCentral(p) {
                 alturaPorCelula={alturaPorCelula}
                 claveReproductor={claveReproductor}
                 referenciaSel={item.id === idSelecionado ? celulaSelRef : undefined}
+                elementoSelecionado={p.elementoSelecionado}
+                aoSelecionarElemento={p.aoSelecionarElemento}
               />
             ))}
           </div>
@@ -265,6 +269,10 @@ function CelulaVideo(props) {
           mostrarRodape={false}
           compacto
           claveReproductor={props.claveReproductor}
+          /* SELEÇÃO DE ELEMENTOS (Camadas ⇄ Preview): só a célula editável
+             seleciona/destaca — as demais são somente leitura. */
+          elementoSelecionado={selecionado ? props.elementoSelecionado : null}
+          aoSelecionarElemento={selecionado ? props.aoSelecionarElemento : undefined}
           /* Só a célula do VÍDEO BASE (selecionada) mostra o selo "Base" + a
              lixeira que remove o vídeo base do Editor (local, sem apagar o
              arquivo original). */

@@ -1,62 +1,38 @@
-import { useState } from 'react';
-import {
-  Wand2,
-  Type,
-  Image as ImageIcon,
-  Scan,
-  Scissors,
-  Paintbrush,
-  SlidersHorizontal,
-  ChevronDown,
-  Eye,
-  EyeOff,
-  Trash2,
-  Upload,
-  RotateCcw,
-  Maximize2,
-} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, Check, BadgeCheck, ImagePlus, Scan } from 'lucide-react';
+import BotaoEmoji from './BotaoEmoji';
 import {
   CORES_FUNDO,
   criarConfigPadrao,
-  textoPadrao,
+  criarIdentidadePadrao,
+  criarImagemPadrao,
   CORTE_MAXIMO,
   FONTES_TEXTO,
   PESOS_TEXTO,
   ALINEACIONES_TEXTO,
 } from '../../lib/configEditorLote';
-import PopupLogo from './PopupLogo';
-import ControleDirecional from './ControleDirecional';
-import BotaoEmoji from './BotaoEmoji';
-import { useRef } from 'react';
+import PainelDownloads from './PainelDownloads';
+import ListaVideos from './ListaVideos';
 
 /**
- * EDITOR EM LOTE — coluna DIREITA: painel do editor (PainelEditor).
+ * EDITOR EM LOTE — COLUNA ESQUERDA: "Adicionar elementos" + configuração do
+ * elemento selecionado (o Preview central fica SEMPRE visível; nada é
+ * substituído por tela branca).
  *
- * Na direita ficam SOMENTE as ferramentas (todas escrevem na CONFIG
- * COMPARTILHADA do lote — sem config por vídeo e sem botão "Aplicar a todos";
- * cada mudança repinta o canvas e vale para TODOS os vídeos, na hora):
+ *  - "Adicionar elementos": Logo · Texto · Imagem · Vídeo (um caminho único
+ *    por funcionalidade — sem dois botões de logo, sem dois sistemas de texto);
+ *  - abaixo, a CONFIGURAÇÃO do elemento selecionado (camada selecionada no
+ *    painel de Camadas ou clicada direto no Preview);
+ *  - textos/imagem/vídeo abrem POPUPS PEQUENOS ancorados neste painel — nunca
+ *    cobrem o Preview;
+ *  - posição/tamanho são 100% mouse no Preview: AQUI não existe X/Y, slider de
+ *    posição nem campo numérico de coordenada (só estilo e escala/opacidade).
  *
- *   1. Logo            — abre o popup GRANDE da identidade do canal
- *   2. Texto superior  — elemento independente
- *   3. Texto inferior  — elemento independente
- *   4. Área do vídeo   — X/Y/largura/altura + encaixe + marcação
- *   5. Corte de bordas — superior/inferior INDEPENDENTES (padrão 0%/0%)
- *   6. Fundo           — cor de fundo do canvas
- *   7. Propriedades    — infos da config compartilhada + restaurar padrão
+ * Toda escrita vai para a CONFIG COMPARTILHADA do lote (um único estado):
+ * mudar qualquer coisa repinta o canvas e vale para todos os vídeos, na hora.
  */
 
-/* ---------- ferramentas (UMA aberta por vez) ---------- */
-const FERRAMENTAS = [
-  { id: 'logo', rotulo: 'Logo', Icone: ImageIcon },
-  { id: 'superior', rotulo: 'Texto superior', Icone: Type },
-  { id: 'inferior', rotulo: 'Texto inferior', Icone: Type },
-  { id: 'area', rotulo: 'Área do vídeo', Icone: Scan },
-  { id: 'corte', rotulo: 'Corte de bordas', Icone: Scissors },
-  { id: 'fundo', rotulo: 'Fundo', Icone: Paintbrush },
-  { id: 'propriedades', rotulo: 'Propriedades', Icone: SlidersHorizontal },
-];
-
-/* ---------- controles base ---------- */
+/* ---------- controles base (tema escuro edl-) ---------- */
 
 function Rotulo({ children, valor }) {
   return (
@@ -104,102 +80,110 @@ function Alternar({ rotulo, ativo, aoMudar }) {
       </span>
       <span
         className="relative w-8 h-[18px] rounded-full transition-colors shrink-0"
-        style={{ background: ativo ? 'var(--edl-grad)' : '#2a2a35' }}
+        style={{ background: ativo ? 'var(--edl-grad)' : 'rgba(255,255,255,0.15)' }}
       >
-        <span
-          className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all"
-          style={{ left: ativo ? 16 : 2 }}
-        />
+        <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all shadow" style={{ left: ativo ? 16 : 2 }} />
       </span>
     </button>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Controles de UM bloco de texto (superior OU inferior) — cada campo escreve  */
-/* SOMENTE na ruta `textos.<chave>` do bloco dado; o outro texto não é tocado. */
-/* -------------------------------------------------------------------------- */
-function TextoBloco({ chave, t, aoMudar }) {
-  const rotulo = chave === 'superior' ? 'Texto superior' : 'Texto inferior';
-  const pesoAtivo = t.peso || 'negrita';
-  const alinhamentoAtivo = t.alinhamento || 'centro';
-  const campoRef = useRef(null);
+function LinhaAcoes({ children }) {
+  return <div className="flex items-center gap-1.5 flex-wrap">{children}</div>;
+}
+
+function BotaoPequeno({ children, onClick, icone: Icone, tom = 'neutro', title }) {
+  const classe =
+    tom === 'perigo'
+      ? 'border-rose-500/40 text-rose-300 hover:text-rose-200 hover:border-rose-400/70'
+      : tom === 'destaque'
+        ? 'border-transparent text-white'
+        : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`edl-ring-foco flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors ${classe}`}
+      style={tom === 'destaque' ? { background: 'var(--edl-grad)' } : undefined}
+    >
+      {Icone ? <Icone className="w-3 h-3" /> : null}
+      {children}
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * BLOCOS DE CONFIGURAÇÃO POR ELEMENTO
+ * Nenhum campo de POSIÇÃO (x/y) em lugar algum: mover/redimensionar é 100%
+ * mouse no Preview. Aqui só conteúdo, estilo, largura/escala e visibilidade.
+ * ------------------------------------------------------------------------- */
+
+/** Atualiza UM campo de um bloco de texto da arte (superior/inferior). */
+function mudarTexto(aoAtualizarConfig, chave, campo, valor) {
+  aoAtualizarConfig((cfg) => ({
+    ...cfg,
+    textos: {
+      ...cfg.textos,
+      [chave]: {
+        ...(cfg.textos?.[chave] || {}),
+        [campo]: valor,
+        // Opt-in ao digitar: conteúdo não vazio liga o elemento.
+        ...(campo === 'conteudo' && String(valor || '').trim() !== '' ? { visivel: true } : null),
+      },
+    },
+  }));
+}
+
+function SelecaoTipografia({ t, aoMudar }) {
   return (
     <>
-      <div>
-        <Rotulo>{rotulo} — conteúdo</Rotulo>
-        <div className="flex items-start gap-1.5">
-          <textarea
-            ref={campoRef}
-            value={t.conteudo || ''}
-            onChange={(e) => aoMudar('conteudo', e.target.value)}
-            rows={3}
-            placeholder={chave === 'superior' ? 'Ex.: o título que aparece em cima...' : 'Ex.: a legenda que aparece embaixo...'}
-            className="edl-input flex-1 min-w-0 text-[12px] font-medium px-2.5 py-2 resize-none leading-relaxed"
-          />
-          <BotaoEmoji campoRef={campoRef} aoInserir={(novo) => aoMudar('conteudo', novo)} />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Rotulo>Fonte</Rotulo>
+          <select
+            value={t.fonte}
+            onChange={(e) => aoMudar('fonte', e.target.value)}
+            className="edl-input w-full text-[11px] font-semibold px-2 py-1.5 rounded-lg outline-none"
+          >
+            {FONTES_TEXTO.map((f) => (
+              <option key={f.id} value={f.id}>{f.rotulo}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Rotulo>Peso</Rotulo>
+          <select
+            value={t.peso}
+            onChange={(e) => aoMudar('peso', e.target.value)}
+            className="edl-input w-full text-[11px] font-semibold px-2 py-1.5 rounded-lg outline-none"
+          >
+            {PESOS_TEXTO.map((p) => (
+              <option key={p.id} value={p.id}>{p.rotulo}</option>
+            ))}
+          </select>
         </div>
       </div>
-
       <div>
-        <Rotulo>Fonte</Rotulo>
-        <select
-          value={t.fonte || 'Arial'}
-          onChange={(e) => aoMudar('fonte', e.target.value)}
-          className="edl-input w-full text-[11px] font-bold px-2.5 py-2"
-        >
-          {FONTES_TEXTO.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.rotulo}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <Rotulo>Peso</Rotulo>
-        <div className="grid grid-cols-3 gap-1.5">
-          {PESOS_TEXTO.map((p) => (
+        <Rotulo>Alinhamento</Rotulo>
+        <div className="flex gap-1.5">
+          {ALINEACIONES_TEXTO.map((a) => (
             <button
-              key={p.id}
+              key={a.id}
               type="button"
-              onClick={() => aoMudar('peso', p.id)}
-              className={`edl-ring-foco h-7 rounded-lg text-[10px] font-extrabold transition-colors ${
-                pesoAtivo === p.id ? 'edl-botao-grad' : 'edl-superficie'
+              onClick={() => aoMudar('alinhamento', a.id)}
+              className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
+                t.alinhamento === a.id
+                  ? 'border-[color:var(--edl-rosa)] text-white'
+                  : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
               }`}
-              style={pesoAtivo === p.id ? undefined : { color: 'var(--edl-texto-dim)' }}
+              style={t.alinhamento === a.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
             >
-              {p.rotulo}
+              {a.rotulo}
             </button>
           ))}
         </div>
       </div>
-
-      <div>
-        <Rotulo>Alinhamento</Rotulo>
-        <div className="grid grid-cols-3 gap-1.5">
-          {ALINEACIONES_TEXTO.map((a) => {
-            const rotuloAl = a.id === 'esquerda' ? 'Esquerda' : a.id === 'direita' ? 'Direita' : 'Centro';
-            return (
-              <button
-                key={a.id}
-                type="button"
-                title={a.rotulo}
-                onClick={() => aoMudar('alinhamento', a.id)}
-                className={`edl-ring-foco h-7 rounded-lg text-[10px] font-extrabold transition-colors ${
-                  alinhamentoAtivo === a.id ? 'edl-botao-grad' : 'edl-superficie'
-                }`}
-                style={alinhamentoAtivo === a.id ? undefined : { color: 'var(--edl-texto-dim)' }}
-              >
-                {rotuloAl}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <Deslizador rotulo="Tamanho da fonte" sufixo="px" valor={t.tamanho ?? 72} min={16} max={160} aoMudar={(v) => aoMudar('tamanho', v)} />
-
       <div>
         <Rotulo>Cor</Rotulo>
         <div className="flex items-center gap-2">
@@ -216,80 +200,347 @@ function TextoBloco({ chave, t, aoMudar }) {
             onChange={(e) => {
               if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) aoMudar('cor', e.target.value);
             }}
-            className="edl-input flex-1 text-[11px] font-mono px-2.5 py-2 uppercase"
+            className="edl-input flex-1 text-[11px] font-mono px-2.5 py-1.5 rounded-lg outline-none"
           />
         </div>
       </div>
-
-      {/* Posição via controle direcional (mesmos x/y internos; sem sliders X/Y) */}
-      <ControleDirecional
-        rotulo="Posição"
-        x={t.x ?? 50}
-        y={t.y ?? 12}
-        aoMudar={(nx, ny) => {
-          aoMudar('x', nx);
-          aoMudar('y', ny);
-        }}
-      />
-      <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 80)} min={20} max={100} aoMudar={(v) => aoMudar('largura', v)} />
-      <Deslizador rotulo="Altura do bloco" sufixo="px" valor={Math.round(t.altura ?? 240)} min={60} max={1200} aoMudar={(v) => aoMudar('altura', v)} />
-      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
-      <Alternar rotulo={`${rotulo} visível em todos os vídeos`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
-
-      <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-        Este {rotulo.toLowerCase()} é INDEPENDENTE do outro: posição, tamanho e estilo próprios — mexer num não muda o outro.
-      </p>
     </>
   );
 }
 
-export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionado: _itemSelecionado, itensLote = [], aoDetectarBordas, detectandoBordas = false, progressoBordas = null }) {
-  // Ferramenta aberta — UMA por vez (a direita contém somente as ferramentas).
-  const [ferramenta, setFerramenta] = useState('logo');
-  // Popup GRANDE da identidade (logo/nome/@/selo, fundo branco, drag/resize).
-  const [popupLogoAberta, setPopupLogoAberta] = useState(false);
+/** Bloco de TEXTO da arte (superior/inferior). */
+function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig, aoAbrirPopupTexto }) {
+  const aoMudar = (campo, valor) => mudarTexto(aoAtualizarConfig, chave, campo, valor);
+  return (
+    <div className="px-3.5 py-3.5 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-extrabold text-white">{rotulo}</span>
+        <BotaoPequeno icone={Type} onClick={aoAbrirPopupTexto} title="Escrever/editar o texto num popup pequeno (o Preview continua visível)">Editar texto</BotaoPequeno>
+      </div>
+      <p className="text-[11px] break-words text-white/70">{t.conteudo || 'Sem texto. Clique em Editar texto.'}</p>
+      <div className="flex items-center justify-between">
+        <Rotulo>Emoji</Rotulo>
+        <BotaoEmoji aoInserir={(emoji) => aoMudar('conteudo', `${t.conteudo || ''}${emoji}`)} />
+      </div>
+      <SelecaoTipografia t={t} aoMudar={aoMudar} />
+      <Deslizador rotulo="Tamanho da fonte" sufixo="px" valor={Math.round(t.tamanho ?? 72)} min={10} max={160} aoMudar={(v) => aoMudar('tamanho', v)} />
+      <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 46)} min={10} max={100} aoMudar={(v) => aoMudar('largura', v)} />
+      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+      <Alternar rotulo={`${rotulo} visível`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+      <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+        Mover e redimensionar: direto no Preview (arraste o texto; alça lateral
+        = largura). Sem X/Y — a posição é sempre mouse.
+      </p>
+    </div>
+  );
+}
 
-  const aoMudarLogo = (campo, valor) =>
-    aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, [campo]: valor } }));
-  // DOIS textos independentes: `chave` é 'superior' ou 'inferior' — cada um
-  // tem conteúdo/posição/tamanho/estilo PRÓPRIOS (mexer num não muda o outro).
-  const aoMudarTexto = (chave, campo, valor) =>
+/** Bloco de IDENTIDADE (nome do canal | @ do canal). */
+function BlocoIdentidade({ chave, rotulo, t, aoAtualizarConfig }) {
+  const aoMudar = (campo, valor) =>
+    aoAtualizarConfig((cfg) => {
+      const pad = criarIdentidadePadrao();
+      const atual = { ...pad, ...cfg.identidade };
+      atual[chave] = {
+        ...pad[chave],
+        ...atual[chave],
+        [campo]: valor,
+        ...(campo === 'conteudo' && String(valor || '').trim() !== '' ? { visivel: true } : null),
+      };
+      return { ...cfg, identidade: atual };
+    });
+  return (
+    <div className="px-3.5 py-3.5 space-y-3">
+      <span className="text-[11px] font-extrabold text-white">{rotulo}</span>
+      <div>
+        <Rotulo>Conteúdo</Rotulo>
+        <textarea
+          value={t.conteudo || ''}
+          onChange={(e) => aoMudar('conteudo', e.target.value)}
+          rows={2}
+          placeholder={chave === 'usuario' ? '@seucanal' : 'Nome do canal'}
+          className="edl-input w-full text-[11px] font-semibold px-2.5 py-2 rounded-lg resize-y outline-none"
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <Rotulo>Emoji</Rotulo>
+        <BotaoEmoji aoInserir={(emoji) => aoMudar('conteudo', `${t.conteudo || ''}${emoji}`)} />
+      </div>
+      <SelecaoTipografia t={t} aoMudar={aoMudar} />
+      <Deslizador rotulo="Tamanho da fonte" sufixo="px" valor={Math.round(t.tamanho ?? 40)} min={10} max={120} aoMudar={(v) => aoMudar('tamanho', v)} />
+      <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 46)} min={10} max={100} aoMudar={(v) => aoMudar('largura', v)} />
+      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+      <Alternar rotulo={`${rotulo} visível`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+      <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+        Elemento independente: arraste no Preview pra posicionar (sem X/Y) e
+        use as alças pra largura/tamanho.
+      </p>
+    </div>
+  );
+}
+
+/** Bloco da LOGO — "Sua logo [prévia] [Trocar]": UM único caminho de logo
+ * (um botão de envio e um de troca usando O MESMO input — nunca dois sistemas). */
+function BlocoLogo({ config, aoAtualizarConfig, aoEscolherLogo, aoRemoverLogo }) {
+  const inputRef = useRef(null);
+  const logo = config.logo || {};
+  const temLogo = !!(config.logo.visivel && config.logo.url);
+  const aoMudar = (campo, valor) => aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, [campo]: valor } }));
+  return (
+    <div className="px-3.5 py-3.5 space-y-3">
+      <span className="text-[11px] font-extrabold text-white">Sua logo</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        className="hidden"
+        onChange={aoEscolherLogo}
+      />
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+          {temLogo ? (
+            <img src={config.logo.url} alt="Logo" className="max-w-full max-h-full object-contain" />
+          ) : (
+            <ImageIcon className="w-5 h-5 edl-icone-b opacity-60" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <LinhaAcoes>
+            <BotaoPequeno icone={Upload} onClick={() => inputRef.current?.click()} tom="destaque">
+              {temLogo ? 'Trocar' : 'Enviar logo'}
+            </BotaoPequeno>
+            {temLogo ? (
+              <BotaoPequeno icone={Trash2} tom="perigo" onClick={aoRemoverLogo}>Remover</BotaoPequeno>
+            ) : null}
+          </LinhaAcoes>
+          <p className="text-[9px] font-semibold mt-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
+            PNG (SVG/JPEG também) · continua a mesma logo compartilhada do lote.
+          </p>
+        </div>
+      </div>
+      {temLogo ? (
+        <>
+          <Deslizador rotulo="Largura da logo" sufixo="%" valor={Math.round(logo.largura ?? 22)} min={3} max={100} aoMudar={(v) => aoMudar('largura', v)} />
+          <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(logo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+          <Alternar rotulo="Logo visível" ativo={!!logo.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            Arraste a logo direto no Preview pra mover (sem X/Y).
+          </p>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** Bloco do SELO DE VERIFICADO — usado na configuração inline E dentro do
+ * popup pequeno de selo (MESMO caminho, zero duplicação). Sem PNG, o selo
+ * usa o ícone vetorial (nunca texto falso). Posição/tamanho: 100% mouse no
+ * Preview. */
+function BlocoSelo({ selo, aoAtualizarConfig, aoEscolherSelo, aoRemoverSelo }) {
+  const inputRef = useRef(null);
+  const s = selo || {};
+  const temPng = typeof s.urlImagem === 'string' && s.urlImagem.startsWith('data:image/');
+  const aoMudar = (campo, valor) =>
     aoAtualizarConfig((cfg) => ({
       ...cfg,
-      textos: {
-        ...(cfg.textos || { superior: textoPadrao('superior'), inferior: textoPadrao('inferior') }),
-        [chave]: { ...(cfg.textos?.[chave] || textoPadrao(chave)), [campo]: valor, ...((campo==='conteudo' && String(valor||'').trim()!=='')?{visivel:true}:null) },
+      identidade: {
+        ...criarIdentidadePadrao(),
+        ...cfg.identidade,
+        selo: { ...(cfg.identidade?.selo || {}), [campo]: valor },
       },
     }));
-  const aoMudarCanvas = (campo, valor) =>
-    aoAtualizarConfig((cfg) => ({ ...cfg, canvas: { ...cfg.canvas, [campo]: valor } }));
-  const aoMudarArea = (campo, valor) =>
-    aoAtualizarConfig((cfg) => ({ ...cfg, areaVideo: { ...cfg.areaVideo, [campo]: valor } }));
-  // Corte de bordas (config compartilhada `corteBordas`). SUPERIOR e INFERIOR
-  // são TOTALMENTE independentes: mudar um NUNCA altera o outro — cada um
-  // varia de 0 a CORTE_MAXIMO por si só (só o encode final do servidor resolve
-  // uma sobreposição extrema, sem nunca reescrever o valor do outro campo).
-  const aoMudarCorte = (campo, valor) =>
-    aoAtualizarConfig((cfg) => {
-      const ePercentual = campo === 'superior' || campo === 'inferior';
-      return {
-        ...cfg,
-        corteBordas: {
-          ...cfg.corteBordas,
-          [campo]: ePercentual ? Math.min(CORTE_MAXIMO, Math.max(0, Number(valor) || 0)) : valor,
-        },
-      };
-    });
+  return (
+    <div className="px-3.5 py-3.5 space-y-3">
+      <span className="text-[11px] font-extrabold text-white">Selo de verificado</span>
+      <input ref={inputRef} type="file" accept="image/png,image/webp" className="hidden" onChange={aoEscolherSelo} />
+      <div className="flex items-center gap-3">
+        <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+          {temPng ? (
+            <img src={s.urlImagem} alt="Selo" className="max-w-full max-h-full object-contain" />
+          ) : (
+            <BadgeCheck className="w-6 h-6" style={{ color: '#1d9bf0' }} />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <LinhaAcoes>
+            <BotaoPequeno icone={Upload} onClick={() => inputRef.current?.click()} tom="destaque">
+              {temPng ? 'Trocar PNG' : 'Enviar PNG'}
+            </BotaoPequeno>
+            {temPng ? (
+              <BotaoPequeno icone={Trash2} tom="perigo" onClick={aoRemoverSelo}>Remover PNG</BotaoPequeno>
+            ) : null}
+          </LinhaAcoes>
+          <p className="text-[9px] font-semibold mt-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
+            {temPng
+              ? 'PNG do usuário no Preview e no render (mesma imagem).'
+              : 'Sem PNG, o selo usa o ícone vetorial padrão.'}
+          </p>
+        </div>
+      </div>
+      <Deslizador rotulo="Largura do selo" sufixo="%" valor={Math.round((s.largura ?? 3.4) * 10) / 10} min={0.5} max={12} passo={0.1} aoMudar={(v) => aoMudar('largura', v)} />
+      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(s.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+      <Alternar rotulo="Selo visível" ativo={!!s.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+      <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+        Arraste o selo no Preview pra posicionar (sem X/Y). Ele também aparece
+        como camada no painel “Camadas”.
+      </p>
+    </div>
+  );
+}
 
+/** Bloco de IMAGEM (Adicionar elementos → Imagem): troca/remoção + estilo. */
+function BlocoImagem({ imagem, aoAtualizarConfig, aoTrocarImagem, aoRemoverImagem }) {
+  const inputRef = useRef(null);
+  if (!imagem) return null;
+  const aoMudar = (campo, valor) =>
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      imagens: (cfg.imagens || []).map((im) => (im && im.id === imagem.id ? { ...im, [campo]: valor } : im)),
+    }));
+  return (
+    <div className="px-3.5 py-3.5 space-y-3">
+      <span className="text-[11px] font-extrabold text-white">Imagem</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => aoTrocarImagem(e, imagem.id)}
+      />
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+          <img src={imagem.url} alt={imagem.nome || 'Imagem'} className="max-w-full max-h-full object-contain" />
+        </div>
+        <LinhaAcoes>
+          <BotaoPequeno icone={Upload} onClick={() => inputRef.current?.click()}>Trocar</BotaoPequeno>
+          <BotaoPequeno icone={Trash2} tom="perigo" onClick={() => aoRemoverImagem(imagem.id)}>Remover</BotaoPequeno>
+        </LinhaAcoes>
+      </div>
+      <Deslizador rotulo="Largura" sufixo="%" valor={Math.round(imagem.largura ?? 30)} min={2} max={100} aoMudar={(v) => aoMudar('largura', v)} />
+      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(imagem.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+      <Alternar rotulo="Imagem visível" ativo={!!imagem.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
+      <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+        Arraste no Preview pra mover e use a alça de canto pra redimensionar
+        (sem X/Y). A imagem entra no mesmo PNG de overlay do render.
+      </p>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * ADICIONAR ELEMENTOS (4 botões — um caminho único por funcionalidade)
+ * ------------------------------------------------------------------------- */
+const ADICIONAR = [
+  { id: 'logo', rotulo: 'Logo', Icone: ImageIcon },
+  { id: 'texto', rotulo: 'Texto', Icone: Type },
+  { id: 'imagem', rotulo: 'Imagem', Icone: ImagePlus },
+  { id: 'video', rotulo: 'Vídeo', Icone: Film },
+];
+
+/** Popup pequeno — SEMPRE ancorado dentro deste painel para NUNCA cobrir o
+ * Preview central. */
+const CLASSE_POPUP =
+  'relative mx-2 my-2 z-10 rounded-xl border border-[color:var(--edl-borda)] p-3 shadow-2xl max-h-[480px] overflow-y-auto';
+
+/** Rótulos dos popups pequenos de LOGO / FUNDO / IDENTIDADE / SELO — MESMO
+ * padrão visual dos popups de texto/imagem/vídeo (CLASSE_POPUP, ancorado no
+ * PAINEL ESQUERDO): o Preview central NUNCA é coberto nem substituído. */
+const POPUP_ROTULOS = {
+  logo: 'Sua logo',
+  fundo: 'Fundo do vídeo',
+  identidade: 'Identidade do canal',
+  selo: 'Selo de verificado',
+};
+
+export default function PainelEditor({
+  config,
+  aoAtualizarConfig,
+  elementoSelecionado = null,
+  aoSelecionarElemento,
+  itensLote = [],
+  aoDetectarBordas,
+  detectandoBordas = false,
+  progressoBordas = null,
+  // Popup pequeno de VÍDEO — MESMA lista única do Editor (sem cópia/duplicata).
+  itens = [],
+  idSelecionado = null,
+  aoSelecionarVideo,
+  aoFocarVideo,
+  aoRemoverVideo,
+  aoAdicionarVideo,
+}) {
+  const [popup, setPopup] = useState(null); // 'logo' | 'texto' | 'imagem' | 'video' | 'fundo' | 'identidade' | 'selo' | null
+  const [alvoTexto, setAlvoTexto] = useState('superior');
+  const [rascunhoTexto, setRascunhoTexto] = useState({ conteudo: '', visivel: false });
+  const [erroPopup, setErroPopup] = useState('');
+  /** Última seleção já processada pela auto-abertura (Camadas ⇄ Preview). */
+  const ultimaSelecaoRef = useRef(null);
+
+  /** Popup correspondente a UMA seleção — mesmo caminho p/ Camadas e Preview. */
+  function abrirPopupPara(sel) {
+    if (sel === 'logo') {
+      setErroPopup('');
+      setPopup('logo');
+      return;
+    }
+    if (sel === 'fundo') {
+      setPopup('fundo');
+      return;
+    }
+    if (sel === 'identidadeNome' || sel === 'identidadeUsuario') {
+      setPopup('identidade');
+      return;
+    }
+    if (sel === 'selo') {
+      setPopup('selo');
+      return;
+    }
+    if (sel === 'textoSuperior') {
+      abrirPopupTexto('superior');
+      return;
+    }
+    if (sel === 'textoInferior') {
+      abrirPopupTexto('inferior');
+      return;
+    }
+    // imagem:<id> · video · area · corte → configuração INLINE (sem popup).
+    fecharPopup();
+  }
+
+  /** Fechar popup: NÃO reabre sozinho — só um NOVO clique de seleção reabre. */
+  function fecharPopup() {
+    ultimaSelecaoRef.current = null;
+    fecharPopup();
+  }
+
+  // AUTO-ABERTURA por seleção (Camadas ⇄ Preview): qualquer mudança de
+  // elementoSelecionado (clique na camada à direita OU no elemento do Preview)
+  // abre o popup correspondente. Fechar via X não reabre sozinho.
+  useEffect(() => {
+    const sel = elementoSelecionado;
+    if (!sel || sel === ultimaSelecaoRef.current) return;
+    ultimaSelecaoRef.current = sel;
+    abrirPopupPara(sel);
+  }, [elementoSelecionado]);
+
+  const textos = config.textos || {};
+  const identidade = { ...criarIdentidadePadrao(), ...(config.identidade || {}) };
+  const imagemSelecionada =
+    typeof elementoSelecionado === 'string' && elementoSelecionado.startsWith('imagem:')
+      ? (config.imagens || []).find((im) => im.id === elementoSelecionado.slice(7)) || null
+      : null;
+
+  /* ---------------- LOGO (UM único caminho) ---------------- */
+
+  /** Envia/troca a logo (mesmo input para os dois estados). */
   function aoEscolherLogo(e) {
     const arquivo = e.target.files?.[0];
     if (!arquivo) return;
-    if (config.logo.url && config.logo.url.startsWith('blob:')) URL.revokeObjectURL(config.logo.url);
+    const logoAtual = config.logo || {};
+    if (logoAtual.url && String(logoAtual.url).startsWith('blob:')) URL.revokeObjectURL(logoAtual.url);
     const url = URL.createObjectURL(arquivo);
     aoAtualizarConfig((cfg) => ({ ...cfg, logo: { ...cfg.logo, url, arquivo, visivel: true } }));
     e.target.value = '';
-    // Proporção real da imagem (altura/largura): o template do servidor usa
-    // largura × altura em px — sem isso a altura do overlay seria um chute.
     const img = new Image();
     img.onload = () => {
       if (img.naturalWidth > 0) {
@@ -302,12 +553,10 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
     img.src = url;
   }
 
+  /** Remoção COMPLETA da logo — regra definitiva anti-ressurreição (url +
+   * arquivo + dataURL + visibilidade + proporção zerados). */
   function aoRemoverLogo() {
-    if (config.logo.url && config.logo.url.startsWith('blob:')) URL.revokeObjectURL(config.logo.url);
-    // REGRA DEFINITIVA — limpeza COMPLETA: url + arquivo + logoDataUrl +
-    // visibilidade + proporção. Sem isso o autosave (logoDataUrl no
-    // localStorage) e o `visivel` antigo ressuscitariam a logo que o usuário
-    // acabou de remover.
+    if (config.logo?.url && String(config.logo.url).startsWith('blob:')) URL.revokeObjectURL(config.logo.url);
     aoAtualizarConfig((cfg) => ({
       ...cfg,
       logo: {
@@ -321,301 +570,368 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
     }));
   }
 
-  function aoRestaurar() {
-    aoAtualizarConfig((cfg) => {
-      const padrao = criarConfigPadrao();
-      // Mantém a logo atual E a identidade (re-enviar/re-digitar é chato) —
-      // reutilização EXPLÍCITA escolhida pelo usuário (regra anti-herança não
-      // se aplica aqui: é um clique consciente). Preserva dataURL/visibilidade
-      // para a logo continuar idêntica após o autosave.
-      return {
-        ...padrao,
-        logo: {
-          ...padrao.logo,
-          url: cfg.logo.url,
-          arquivo: cfg.logo.arquivo,
-          logoDataUrl: cfg.logo.logoDataUrl ?? null,
-          alturaProporcao: cfg.logo.alturaProporcao ?? null,
-          visivel: cfg.logo.visivel,
+  /* ---------------- SELO (PNG próprio, dataURL) ---------------- */
+
+  function aoEscolherSelo(e) {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    e.target.value = '';
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      const dataUrl =
+        typeof leitor.result === 'string' && leitor.result.startsWith('data:image/') ? leitor.result : null;
+      if (!dataUrl) return;
+      aoAtualizarConfig((cfg) => ({
+        ...cfg,
+        identidade: {
+          ...criarIdentidadePadrao(),
+          ...cfg.identidade,
+          selo: { ...(cfg.identidade?.selo || {}), urlImagem: dataUrl, visivel: true },
         },
-        identidade: cfg.identidade || padrao.identidade,
+      }));
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth > 0) {
+          aoAtualizarConfig((cfg) => ({
+            ...cfg,
+            identidade: {
+              ...criarIdentidadePadrao(),
+              ...cfg.identidade,
+              selo: {
+                ...(cfg.identidade?.selo || {}),
+                alturaProporcao: img.naturalHeight / img.naturalWidth,
+              },
+            },
+          }));
+        }
       };
+      img.src = dataUrl;
+    };
+    leitor.readAsDataURL(arquivo);
+  }
+
+  /** Remove o PNG do selo e desliga o elemento (o vetorial não volta sozinho). */
+  function aoRemoverSelo() {
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      identidade: {
+        ...criarIdentidadePadrao(),
+        ...cfg.identidade,
+        selo: { ...(cfg.identidade?.selo || {}), urlImagem: null, alturaProporcao: 1, visivel: false },
+      },
+    }));
+  }
+
+  /* ---------------- IMAGEM (dataURL — vai pro overlay do render) ---------------- */
+
+  const LIMITE_IMAGEM_BYTES = 3 * 1024 * 1024;
+
+  function lerImagemComoDataUrl(arquivo, aoPronto) {
+    if (!arquivo) return;
+    if (!/^image\//.test(arquivo.type || '')) {
+      setErroPopup('Escolha um arquivo de imagem (PNG/JPG/WebP).');
+      return;
+    }
+    if (arquivo.size > LIMITE_IMAGEM_BYTES) {
+      setErroPopup('Imagem muito grande (máx. 3 MB) — ela viaja dentro do template.');
+      return;
+    }
+    setErroPopup('');
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      const dataUrl =
+        typeof leitor.result === 'string' && leitor.result.startsWith('data:image/') ? leitor.result : null;
+      if (!dataUrl) {
+        setErroPopup('Não foi possível ler a imagem.');
+        return;
+      }
+      aoPronto(dataUrl, arquivo.name || null);
+    };
+    leitor.readAsDataURL(arquivo);
+  }
+
+  /** Adiciona uma IMAGEM à composição (vira elemento + camada, na hora). */
+  function aoEscolherImagem(e) {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    e.target.value = '';
+    lerImagemComoDataUrl(arquivo, (dataUrl, nome) => {
+      const nova = criarImagemPadrao({ url: dataUrl, alturaProporcao: 1, nome });
+      aoAtualizarConfig((cfg) => ({ ...cfg, imagens: [...(cfg.imagens || []), nova] }));
+      if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento(`imagem:${nova.id}`);
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth > 0) {
+          aoAtualizarConfig((cfg) => ({
+            ...cfg,
+            imagens: (cfg.imagens || []).map((im) =>
+              im.id === nova.id ? { ...im, alturaProporcao: img.naturalHeight / img.naturalWidth } : im
+            ),
+          }));
+        }
+      };
+      img.src = dataUrl;
+      fecharPopup();
     });
   }
 
-  return (
-    <div className="flex flex-col">
-      {/* Cabeçalho — somente título; sem badge de arquivo (limpeza visual).
-          `itemSelecionado` continua recebido via props para lógica/futuro, mas
-          sem apresentação visual aqui. */}
-      <div className="px-4 pt-3.5 pb-3 border-b border-[color:var(--edl-borda)]">
-        <div className="flex items-center gap-2">
-          <Wand2 className="w-4 h-4 edl-icone-a" />
-          <h2 className="font-display text-sm font-extrabold text-white">Editor</h2>
-          <div className="flex-1" />
-        </div>
-      </div>
+  /** Troca o arquivo de uma imagem existente (mantém posição/largura). */
+  function aoTrocarImagem(e, id) {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+    e.target.value = '';
+    lerImagemComoDataUrl(arquivo, (dataUrl, nome) => {
+      aoAtualizarConfig((cfg) => ({
+        ...cfg,
+        imagens: (cfg.imagens || []).map((im) => (im && im.id === id ? { ...im, url: dataUrl, nome: nome || im.nome } : im)),
+      }));
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth > 0) {
+          aoAtualizarConfig((cfg) => ({
+            ...cfg,
+            imagens: (cfg.imagens || []).map((im) =>
+              im.id === id ? { ...im, alturaProporcao: img.naturalHeight / img.naturalWidth } : im
+            ),
+          }));
+        }
+      };
+      img.src = dataUrl;
+    });
+  }
 
-      {/* FERRAMENTAS — na direita ficam SOMENTE as ferramentas do editor.
-          UMA aberta por vez: clicar numa abre ela e fecha a anterior. */}
-      <nav aria-label="Ferramentas do editor" className="px-2 pt-2 grid grid-cols-2 gap-1.5">
-        {FERRAMENTAS.map(({ id, rotulo, Icone }) => {
-          const ativa = ferramenta === id;
-          const eTexto = id === 'superior' || id === 'inferior';
-          const textoVisivel = eTexto ? config.textos?.[id]?.visivel !== false : null;
-          return (
-            <button
-              key={id}
-              type="button"
-              aria-expanded={ativa}
-              onClick={() => setFerramenta(id)}
-              className={`edl-ring-foco w-full flex items-center gap-2 text-[11px] font-extrabold px-3 py-2.5 rounded-lg transition-colors ${
-                ativa ? 'edl-botao-grad' : 'edl-superficie'
-              }`}
-              style={ativa ? undefined : { color: 'var(--edl-texto-dim)' }}
-            >
-              <Icone className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{rotulo}</span>
-              <span className="flex-1" />
-              {textoVisivel !== null && !ativa && (
-                textoVisivel ? <Eye className="w-3 h-3 shrink-0 opacity-70" /> : <EyeOff className="w-3 h-3 shrink-0 opacity-40" />
-              )}
-              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${ativa ? 'rotate-180' : ''}`} />
-            </button>
-          );
-        })}
-      </nav>
+  function aoRemoverImagem(id) {
+    aoAtualizarConfig((cfg) => ({ ...cfg, imagens: (cfg.imagens || []).filter((im) => im && im.id !== id) }));
+    if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento(null);
+  }
 
-      {/* FERRAMENTA: LOGO — abre o popup GRANDE da IDENTIDADE DO CANAL
-          (fundo branco: imagem/logo · nome do canal · @ do canal · selo azul,
-          cada elemento independente: mover/redimensionar/tamanho). */}
-      {ferramenta === 'logo' && (
-        <div className="px-4 py-3.5 space-y-3.5">
-          {config.logo.url && config.logo.visivel ? (
-            <div className="edl-superficie rounded-lg p-2.5 flex items-center gap-2.5">
-              <div className="w-12 h-12 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0 p-1.5">
-                <img
-                  src={config.logo.url}
-                  alt="Logo atual"
-                  onLoad={(e) => {
-                    const im = e.currentTarget;
-                    if (im.naturalWidth > 0) {
-                      const prop = im.naturalHeight / im.naturalWidth;
-                      if (Math.abs((config.logo.alturaProporcao || 0) - prop) > 0.001) {
-                        aoMudarLogo('alturaProporcao', prop);
-                      }
-                    }
-                  }}
-                  className="max-w-full max-h-full"
-                />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-white truncate">
-                  {config.logo.arquivo?.nome || 'Logo aplicada'}
-                </p>
-                <p className="text-[9px] font-semibold mt-0.5" style={{ color: 'var(--edl-texto-mut)' }}>
-                  aplicada em todos os vídeos importados
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={aoRemoverLogo}
-                title="Remover logo"
-                className="edl-ring-foco w-8 h-8 rounded-lg edl-superficie flex items-center justify-center shrink-0"
-              >
-                <Trash2 className="w-3.5 h-3.5 edl-icone-a" />
-              </button>
-            </div>
-          ) : (
-            <label
-              htmlFor="edl-input-logo"
-              className="edl-ring-foco edl-superficie rounded-lg py-6 flex flex-col items-center justify-center gap-1.5 cursor-pointer border border-dashed"
-              style={{ borderColor: 'rgba(236,72,153,0.45)' }}
-            >
-              <Upload className="w-4 h-4 edl-icone-a" />
-              <span className="text-[11px] font-bold text-white">Enviar logo</span>
-              <span className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-                PNG/SVG com fundo transparente fica melhor
-              </span>
-            </label>
-          )}
-          <input id="edl-input-logo" type="file" accept="image/*" className="hidden" onChange={aoEscolherLogo} />
+  /* ---------------- RESTAURAR PADRÃO (reutilização explícita) ---------------- */
 
-          {/* Popup GRANDE da identidade (fundo branco, drag+resize de todos
-              os elementos: logo · nome · @ · selo azul) */}
-          <button
-            type="button"
-            onClick={() => setPopupLogoAberta(true)}
-            className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold py-2.5 rounded-lg"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            Abrir editor da identidade do canal
-          </button>
+  function aoRestaurar() {
+    const base = criarConfigPadrao();
+    aoAtualizarConfig((cfg) => ({
+      ...base,
+      loteId: cfg.loteId,
+      loteCriadoEm: cfg.loteCriadoEm,
+      // Logo e identidade são escolha EXPLÍCITA do usuário: sobrevivem ao reset.
+      logo: cfg.logo,
+      identidade: cfg.identidade,
+    }));
+  }
 
-          {config.logo.url && (
-            <label
-              htmlFor="edl-input-logo"
-              className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2 rounded-lg cursor-pointer"
-            >
-              <Upload className="w-3 h-3 edl-icone-b" />
-              Trocar logo
-            </label>
-          )}
+  /* ---------------- POPUP PEQUENO DE TEXTO (Preview continua visível) ---------------- */
 
-          <ControleDirecional
-            rotulo="Posição"
-            x={config.logo.x ?? 50}
-            y={config.logo.y ?? 8}
-            aoMudar={(nx, ny) => {
-              aoMudarLogo('x', nx);
-              aoMudarLogo('y', ny);
-            }}
-          />
-          <Deslizador rotulo="Largura" sufixo="%" valor={Math.round(config.logo.largura)} min={2} max={60} aoMudar={(v) => aoMudarLogo('largura', v)} />
-          <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(config.logo.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudarLogo('opacidade', v)} />
-          <Alternar rotulo="Logo visível em todos os vídeos" ativo={!!config.logo.visivel} aoMudar={(v) => aoMudarLogo('visivel', v)} />
-        </div>
-      )}
-      {/* FERRAMENTAS: TEXTO SUPERIOR / TEXTO INFERIOR — cada um é um elemento
-          INDEPENDENTE com conteúdo, posição, tamanho, largura/altura, fonte,
-          peso, cor, alinhamento, opacidade e visibilidade PRÓPRIOS. */}
-      {(ferramenta === 'superior' || ferramenta === 'inferior') && (
-        <div className="px-4 py-3.5 space-y-3.5">
-          <TextoBloco
-            chave={ferramenta}
-            t={config.textos?.[ferramenta] || textoPadrao()}
-            aoMudar={(campo, valor) => aoMudarTexto(ferramenta, campo, valor)}
-          />
-        </div>
-      )}
+  function abrirPopupTexto(alvo = null) {
+    const escolhido = alvo || (elementoSelecionado === 'textoInferior' ? 'inferior' : 'superior');
+    const t = textos[escolhido] || {};
+    setAlvoTexto(escolhido);
+    setRascunhoTexto({ conteudo: t.conteudo || '', visivel: !!t.visivel });
+    setErroPopup('');
+    setPopup('texto');
+    if (typeof aoSelecionarElemento === 'function') {
+      aoSelecionarElemento(escolhido === 'inferior' ? 'textoInferior' : 'textoSuperior');
+    }
+  }
 
-      {/* FERRAMENTA: ÁREA DO VÍDEO (composiçom do vídeo FINAL) — define ONDE o
-          vídeo entra no 1080×1920 final (`areaVideo` → scale/crop/pad do
-          FFmpeg). No canvas ela é só um GUIA tracejado (arrastável/
-          redimensionável na célula selecionada quando "Marcação da área" está
-          LIGADA): a PRÉVIA continua mostrando o vídeo ORIGINAL normal, sem
-          aplicar esta área. Ajuste fino aqui (px). */}
-      {ferramenta === 'area' && (
-        <div className="px-4 py-3.5 space-y-3.5">
+  /** Troca o alvo (principal/inferior) guardando novo ponto de restauração. */
+  function trocarAlvoTexto(alvo) {
+    const t = textos[alvo] || {};
+    setAlvoTexto(alvo);
+    setRascunhoTexto({ conteudo: t.conteudo || '', visivel: !!t.visivel });
+    if (typeof aoSelecionarElemento === 'function') {
+      aoSelecionarElemento(alvo === 'inferior' ? 'textoInferior' : 'textoSuperior');
+    }
+  }
+
+  /** Cancelar = volta exatamente o que havia quando o popup abriu. */
+  function cancelarPopupTexto() {
+    const { conteudo, visivel } = rascunhoTexto;
+    const chave = alvoTexto;
+    fecharPopup();
+    aoAtualizarConfig((cfg) => ({
+      ...cfg,
+      textos: { ...cfg.textos, [chave]: { ...(cfg.textos?.[chave] || {}), conteudo, visivel } },
+    }));
+  }
+
+  /* ---------------- BOTÕES "ADICIONAR ELEMENTOS" ---------------- */
+
+  function aoClicarAdicionar(id) {
+    if (id === 'logo') {
+      setErroPopup('');
+      setPopup('logo');
+      if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('logo');
+      return;
+    }
+    if (id === 'texto') {
+      abrirPopupTexto();
+      return;
+    }
+    if (id === 'imagem') {
+      setErroPopup('');
+      setPopup('imagem');
+      return;
+    }
+    if (id === 'video') {
+      setErroPopup('');
+      setPopup('video');
+      if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('video');
+      return;
+    }
+    // LOGO — popup pequeno (MESMO padrão dos demais). ÚNICO caminho de logo:
+    // este popup reutiliza o renderConfig('logo') (BlocoLogo: prévia + Trocar).
+    if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('logo');
+    setErroPopup('');
+    setPopup('logo');
+  }
+
+  /* ---------------- CONFIGURAÇÃO DO ELEMENTO SELECIONADO ---------------- */
+
+  function renderConfig() {
+    const sel = elementoSelecionado;
+
+    if (sel === 'logo') {
+      return (
+        <BlocoLogo
+          config={config}
+          aoAtualizarConfig={aoAtualizarConfig}
+          aoEscolherLogo={aoEscolherLogo}
+          aoRemoverLogo={aoRemoverLogo}
+        />
+      );
+    }
+
+    if (sel === 'textoSuperior' || sel === 'textoInferior') {
+      const chave = sel === 'textoSuperior' ? 'superior' : 'inferior';
+      return (
+        <BlocoTexto
+          chave={chave}
+          rotulo={sel === 'textoSuperior' ? 'Texto principal' : 'Texto inferior'}
+          t={textos[chave] || {}}
+          aoAtualizarConfig={aoAtualizarConfig}
+          aoAbrirPopupTexto={() => abrirPopupTexto(chave)}
+        />
+      );
+    }
+
+    if (sel === 'identidadeNome' || sel === 'identidadeUsuario') {
+      const chave = sel === 'identidadeNome' ? 'nome' : 'usuario';
+      return (
+        <BlocoIdentidade
+          chave={chave}
+          rotulo={sel === 'identidadeNome' ? 'Nome do canal' : 'Usuário (@)'}
+          t={identidade[chave] || {}}
+          aoAtualizarConfig={aoAtualizarConfig}
+        />
+      );
+    }
+
+    if (sel === 'selo') {
+      return (
+        <BlocoSelo
+          selo={identidade.selo}
+          aoAtualizarConfig={aoAtualizarConfig}
+          aoEscolherSelo={aoEscolherSelo}
+          aoRemoverSelo={aoRemoverSelo}
+        />
+      );
+    }
+
+    if (imagemSelecionada) {
+      return (
+        <BlocoImagem
+          imagem={imagemSelecionada}
+          aoAtualizarConfig={aoAtualizarConfig}
+          aoTrocarImagem={aoTrocarImagem}
+          aoRemoverImagem={aoRemoverImagem}
+        />
+      );
+    }
+
+    if (sel === 'area' || sel === 'video') {
+      const area = config.areaVideo || {};
+      const aoMudarArea = (campo, valor) =>
+        aoAtualizarConfig((cfg) => ({ ...cfg, areaVideo: { ...cfg.areaVideo, [campo]: valor } }));
+      return (
+        <div className="px-3.5 py-3.5 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-white">Vídeo</span>
+            <BotaoPequeno icone={Film} onClick={() => setPopup('video')}>Importar vídeos</BotaoPequeno>
+          </div>
           <div>
-            <Rotulo>Encaixe do vídeo na área (vídeo final)</Rotulo>
-            <div className="grid grid-cols-2 gap-1.5">
+            <Rotulo>Encaixe dentro da área</Rotulo>
+            <div className="flex gap-1.5">
               {[
-                { id: 'cobrir', titulo: 'Preenche a área inteira (pode cortar bordas)' },
-                { id: 'ajustar', titulo: 'Cabe inteiro dentro da área (barras laterais)' },
-              ].map(({ id, titulo }) => {
-                const ativo = (config.areaVideo.fit || 'cobrir') === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    title={titulo}
-                    onClick={() => aoMudarArea('fit', id)}
-                    className={`edl-ring-foco h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-colors ${
-                      ativo ? 'edl-botao-grad' : 'edl-superficie'
-                    }`}
-                    style={ativo ? undefined : { color: 'var(--edl-texto-dim)' }}
-                  >
-                    {id === 'cobrir' ? 'Cobrir' : 'Ajustar'}
-                  </button>
-                );
-              })}
+                { id: 'cobrir', rotulo: 'Cobrir' },
+                { id: 'ajustar', rotulo: 'Ajustar' },
+              ].map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => aoMudarArea('fit', o.id)}
+                  className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
+                    area.fit === o.id
+                      ? 'border-[color:var(--edl-rosa)] text-white'
+                      : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
+                  }`}
+                  style={area.fit === o.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+                >
+                  {o.rotulo}
+                </button>
+              ))}
             </div>
           </div>
-
-          <div className="pt-1">
-            <Rotulo>Área do vídeo (px do canvas final)</Rotulo>
-            <div className="edl-superficie rounded-lg p-3 space-y-3">
-              <Deslizador rotulo="X" sufixo="px" valor={config.areaVideo.x} min={0} max={500} aoMudar={(v) => aoMudarArea('x', v)} />
-              <Deslizador rotulo="Y" sufixo="px" valor={config.areaVideo.y} min={0} max={1200} aoMudar={(v) => aoMudarArea('y', v)} />
-              <Deslizador rotulo="Largura" sufixo="px" valor={config.areaVideo.largura} min={100} max={1080} aoMudar={(v) => aoMudarArea('largura', v)} />
-              <Deslizador rotulo="Altura" sufixo="px" valor={config.areaVideo.altura} min={100} max={1920} aoMudar={(v) => aoMudarArea('altura', v)} />
-              <Alternar
-                rotulo="Marcação da área"
-                ativo={!!config.areaVideo.mostrarMarcacao}
-                aoMudar={(v) => aoMudarArea('mostrarMarcacao', v)}
-              />
-              <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-                Esta área posiciona o vídeo no vídeo FINAL. A prévia do Editor
-                mostra o vídeo ORIGINAL normal, no canvas inteiro — a composição
-                entra só no processamento.
-              </p>
-            </div>
-          </div>
+          <Alternar
+            rotulo="Mostrar guia da área"
+            ativo={!!area.mostrarMarcacao}
+            aoMudar={(v) => aoMudarArea('mostrarMarcacao', v)}
+          />
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            Zoom do vídeo: roda do mouse SOBRE o vídeo no Preview. Mover: arraste
+            o vídeo (ou o guia da área quando a marcação está ligada). Sem X/Y.
+          </p>
         </div>
-      )}
+      );
+    }
 
-      {/* FERRAMENTA: CORTE AUTOMATICO DE BORDAS — BOTAO DE ACAO (Fase 2).
-          Ao clicar, cada video importado e analisado individualmente
-          (amostra 6 frames, sem MP4, sem tocar o original); o resultado vai
-          para `overridesPorVideo` e aparece no preview na hora via clip.
-          Sliders = ajuste fino global. */}
-      {ferramenta === 'corte' && (
-        <div className="px-4 py-3.5 space-y-3.5">
-          <div className="edl-superficie rounded-lg p-3 space-y-3">
+    if (sel === 'corte') {
+      const corte = config.corteBordas || {};
+      const aoMudarCorte = (campo, valor) =>
+        aoAtualizarConfig((cfg) => ({ ...cfg, corteBordas: { ...cfg.corteBordas, [campo]: valor } }));
+      return (
+        <div className="px-3.5 py-3.5 space-y-3">
+          <span className="text-[11px] font-extrabold text-white">Corte de bordas</span>
+          <Alternar rotulo="Corte ativo (vai pro render)" ativo={!!corte.ativo} aoMudar={(v) => aoMudarCorte('ativo', v)} />
+          <Deslizador rotulo="Borda superior" sufixo="%" valor={Math.round(corte.superior || 0)} min={0} max={CORTE_MAXIMO} aoMudar={(v) => aoMudarCorte('superior', v)} />
+          <Deslizador rotulo="Borda inferior" sufixo="%" valor={Math.round(corte.inferior || 0)} min={0} max={CORTE_MAXIMO} aoMudar={(v) => aoMudarCorte('inferior', v)} />
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            Arraste as linhas tracejadas no Preview pra ajustar o corte (sem
+            X/Y). O corte usa o MESMO valor no FFmpeg — prévia = render.
+          </p>
+          {typeof aoDetectarBordas === 'function' ? (
             <button
               type="button"
               onClick={aoDetectarBordas}
-              disabled={detectandoBordas || itensLote.length === 0}
-              className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold py-2.5 rounded-lg disabled:opacity-60"
+              disabled={detectandoBordas}
+              className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2.5 rounded-lg disabled:opacity-50"
             >
-              <Scan className="w-3.5 h-3.5" />
-              {detectandoBordas ? 'Analisando bordas...' : 'Corte automatico de bordas'}
+              <Scan className="w-3.5 h-3.5 edl-icone-b" />
+              {detectandoBordas ? 'Detectando…' : 'Corte automático de bordas'}
             </button>
-            {detectandoBordas && progressoBordas && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-bold" style={{ color: 'var(--edl-texto-dim)' }}>Analisando {progressoBordas.atual}/{progressoBordas.total}</span>
-                  <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--edl-texto-mut)' }}>{progressoBordas.nome || ''}</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.12)' }}>
-                  <div className="h-full rounded-full" style={{ width: `${Math.round(((progressoBordas.atual || 0) / Math.max(1, progressoBordas.total || 1)) * 100)}%`, background: 'var(--edl-grad)' }} />
-                </div>
-              </div>
-            )}
-            {Object.keys(config.overridesPorVideo || {}).length > 0 && (
-              <button
-                type="button"
-                onClick={() => aoAtualizarConfig((cfg) => ({ ...cfg, overridesPorVideo: {} }))}
-                className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[10px] font-bold py-2 rounded-lg"
-              >
-                Limpar cortes automaticos ({Object.keys(config.overridesPorVideo || {}).length})
-              </button>
-            )}
-            <Alternar
-              rotulo="Corte manual (ajuste fino global)"
-              ativo={!!config.corteBordas?.ativo}
-              aoMudar={(v) => aoMudarCorte('ativo', v)}
-            />
-            <Deslizador
-              rotulo="Corte superior"
-              sufixo="%"
-              valor={Math.round(config.corteBordas?.superior || 0)}
-              min={0}
-              max={CORTE_MAXIMO}
-              aoMudar={(v) => aoMudarCorte('superior', v)}
-            />
-            <Deslizador
-              rotulo="Corte inferior"
-              sufixo="%"
-              valor={Math.round(config.corteBordas?.inferior || 0)}
-              min={0}
-              max={CORTE_MAXIMO}
-              aoMudar={(v) => aoMudarCorte('inferior', v)}
-            />
-            <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-              Única detecção do sistema: o botao analisa cada video (8 frames
-              amostrados) e SALVA o resultado; o preview mostra exatamente esse
-              corte e "Processar videos" apenas materializa — sem nova
-              deteccao. Sem confianca, o video fica sem corte. Arraste as
-              linhas no canvas para ajuste fino individual.
+          ) : null}
+          {progressoBordas !== null && progressoBordas !== undefined ? (
+            <p className="text-[9px] font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
+              Progresso: {Math.round(progressoBordas)}%
             </p>
-          </div>
+          ) : null}
         </div>
-      )}
-      {/* FERRAMENTA: FUNDO — cor de fundo do canvas (vai pro template) */}
-      {ferramenta === 'fundo' && (
-        <div className="px-4 py-3.5 space-y-3.5">
+      );
+    }
+
+    if (sel === 'fundo') {
+      return (
+        <div className="px-3.5 py-3.5 space-y-3">
+          <span className="text-[11px] font-extrabold text-white">Fundo</span>
           <div>
             <Rotulo>Cor de fundo do canvas</Rotulo>
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -624,74 +940,303 @@ export default function PainelEditor({ config, aoAtualizarConfig, itemSelecionad
                   key={c}
                   type="button"
                   title={c}
-                  onClick={() => aoMudarCanvas('corFundo', c)}
+                  onClick={() => aoAtualizarConfig((cfg) => ({ ...cfg, canvas: { ...cfg.canvas, corFundo: c } }))}
                   className={`w-7 h-7 rounded-lg border-2 transition-colors ${
-                    config.canvas.corFundo === c
-                      ? 'border-[color:var(--edl-rosa)]'
-                      : 'border-[color:var(--edl-borda)]'
+                    config.canvas?.corFundo === c ? 'border-[color:var(--edl-rosa)]' : 'border-[color:var(--edl-borda)]'
                   }`}
                   style={{ background: c }}
                 />
               ))}
               <input
                 type="color"
-                value={config.canvas.corFundo}
-                onChange={(e) => aoMudarCanvas('corFundo', e.target.value)}
+                value={config.canvas?.corFundo || '#ffffff'}
+                onChange={(e) => aoAtualizarConfig((cfg) => ({ ...cfg, canvas: { ...cfg.canvas, corFundo: e.target.value } }))}
                 title="Cor personalizada"
                 className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-2 border-[color:var(--edl-borda)] p-0"
               />
             </div>
           </div>
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            O fundo é a base da composição (não some no render) e também aparece
+            nas áreas reveladas pelo corte.
+          </p>
         </div>
-      )}
+      );
+    }
 
-      {/* FERRAMENTA: PROPRIEDADES — infos da config compartilhada + restaurar */}
-      {ferramenta === 'propriedades' && (
-        <div className="px-4 py-3.5 space-y-3.5">
-          <div className="edl-superficie rounded-lg p-3 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
-                Canvas
-              </span>
-              <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
-                1080×1920 (9:16)
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
-                Configuração
-              </span>
-              <span className="text-[10px] font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
-                única · compartilhada
-              </span>
-            </div>
-            <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-              Não existe botão "Aplicar a todos": há UMA configuração
-              compartilhada — qualquer mudança em logo, textos, área do vídeo,
-              corte ou fundo reflete automaticamente em todos os vídeos importados.
-            </p>
+    // NENHUM elemento selecionado — painel informativo (o Preview continua visível).
+    return (
+      <div className="px-3.5 py-3.5 space-y-3.5">
+        <div className="edl-superficie rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
+              Canvas
+            </span>
+            <span className="text-[10px] font-mono font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
+              1080×1920 (9:16)
+            </span>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
+              Configuração
+            </span>
+            <span className="text-[10px] font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
+              única · compartilhada
+            </span>
+          </div>
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            Selecione uma camada no painel “Camadas” (à direita) ou clique num
+            elemento direto no Preview. Toda mudança vale para TODOS os vídeos do
+            lote, na hora — sem botão “Aplicar a todos”.
+          </p>
+        </div>
+        <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+          Adicione elementos acima: Logo · Texto · Imagem · Vídeo. Os demais
+          elementos (Fundo, Corte, Nome, @, Selo, Área) já existem como camadas.
+        </p>
+        <button
+          type="button"
+          onClick={aoRestaurar}
+          className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2.5 rounded-lg"
+        >
+          <RotateCcw className="w-3.5 h-3.5 edl-icone-a" />
+          Restaurar padrão (mantém logo e identidade)
+        </button>
+      </div>
+    );
+  }
 
-          <button
-            type="button"
-            onClick={aoRestaurar}
-            className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2.5 rounded-lg"
-          >
-            <RotateCcw className="w-3.5 h-3.5 edl-icone-a" />
-            Restaurar padrão (mantém logo e identidade)
-          </button>
+  return (
+    <div className="relative h-full min-h-0 flex flex-col bg-[color:var(--edl-painel)]">
+      {/* CABEÇALHO — ADICIONAR ELEMENTOS (4 botões, um caminho por função) */}
+      <div className="shrink-0 px-3 py-3 border-b border-[color:var(--edl-borda)]">
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 edl-icone-a shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </svg>
+          <h2 className="font-display text-xs font-extrabold text-white">Adicionar elementos</h2>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 mt-2.5">
+          {ADICIONAR.map((item) => {
+            const Icone = item.Icone;
+            const ativo =
+              item.id === 'logo'
+                ? elementoSelecionado === 'logo'
+                : item.id === 'texto'
+                  ? elementoSelecionado === 'textoSuperior' || elementoSelecionado === 'textoInferior'
+                  : item.id === 'video'
+                    ? elementoSelecionado === 'video' || elementoSelecionado === 'area'
+                    : !!imagemSelecionada;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => aoClicarAdicionar(item.id)}
+                title={`Adicionar ${item.rotulo}`}
+                aria-pressed={ativo}
+                className={`edl-ring-foco flex items-center justify-center gap-1.5 text-[10px] font-bold px-2 py-2.5 rounded-lg border transition-colors ${
+                  ativo
+                    ? 'border-[color:var(--edl-rosa)] text-white'
+                    : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
+                }`}
+                style={ativo ? { background: 'rgba(236,72,153,0.14)' } : { background: 'rgba(255,255,255,0.02)' }}
+              >
+                <Icone className={`w-3.5 h-3.5 ${ativo ? 'edl-icone-a' : 'edl-icone-b opacity-80'}`} />
+                {item.rotulo}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* CONFIGURAÇÃO do elemento selecionado (context panel) */}
+      {!popup && (
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden" role={elementoSelecionado ? 'dialog' : undefined} aria-label={elementoSelecionado ? 'Configuração do elemento' : undefined}>
+          {elementoSelecionado && <button type="button" className="edl-botao-fantasma text-xs m-2 p-2 rounded-lg" onClick={() => aoSelecionarElemento(null)}>Fechar configuração</button>}
+          {renderConfig()}
         </div>
       )}
 
-      {/* Popup GRANDE da logo — abre por cima de tudo; toda mudança é na config
-          COMPARTILHADA (canvas de trás e todo o lote atualizam em tempo real). */}
-      {popupLogoAberta && (
-        <PopupLogo
-          config={config}
-          aoAtualizarConfig={aoAtualizarConfig}
-          aoCerrar={() => setPopupLogoAberta(false)}
-        />
-      )}
+{/* POPUPS PEQUENOS — LOGO · FUNDO · IDENTIDADE · SELO (UM único bloco por
+          popup; MESMO padrão dos popups de texto/imagem/vídeo: ancorados NESTE
+          painel esquerdo — o Preview central NUNCA é coberto nem substituído).
+          O conteúdo REUTILIZA o renderConfig() do elemento selecionado: um
+          único caminho por função, sem X/Y (movimentação é 100% mouse no
+          Preview). */}
+      {popup && POPUP_ROTULOS[popup] ? (
+        <div
+          className={CLASSE_POPUP}
+          style={{ background: 'var(--edl-painel)', boxShadow: '0 20px 50px -12px rgba(0,0,0,0.8)' }}
+          role="dialog"
+          aria-label={`Editar ${POPUP_ROTULOS[popup]}`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-white">{POPUP_ROTULOS[popup]}</span>
+            <button
+              type="button"
+              onClick={fecharPopup}
+              aria-label="Fechar"
+              className="edl-ring-foco w-6 h-6 rounded-lg flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {/* IDENTIDADE: alterna Nome do canal ⇄ Usuário (@) sem fechar o popup. */}
+          {popup === 'identidade' && typeof aoSelecionarElemento === 'function' ? (
+            <div className="flex gap-1.5 mt-2.5">
+              {[
+                { id: 'identidadeNome', rotulo: 'Nome do canal' },
+                { id: 'identidadeUsuario', rotulo: 'Usuário (@)' },
+              ].map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => aoSelecionarElemento(o.id)}
+                  className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
+                    elementoSelecionado === o.id
+                      ? 'border-[color:var(--edl-rosa)] text-white'
+                      : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
+                  }`}
+                  style={elementoSelecionado === o.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+                >
+                  {o.rotulo}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-2">{renderConfig()}</div>
+        </div>
+      ) : null}
+
+      {/* POPUP PEQUENO — TEXTO (o Preview continua visível atrás, atualizando) */}
+
+{popup === 'texto' ? (
+        <div
+          className={CLASSE_POPUP}
+          style={{ background: 'var(--edl-painel)', boxShadow: '0 20px 50px -12px rgba(0,0,0,0.8)' }}
+          role="dialog"
+          aria-label="Editar texto"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-white">Escrever texto</span>
+            <button
+              type="button"
+              onClick={fecharPopup}
+              aria-label="Fechar"
+              className="edl-ring-foco w-6 h-6 rounded-lg flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex gap-1.5 mt-2.5">
+            {[
+              { id: 'superior', rotulo: 'Principal' },
+              { id: 'inferior', rotulo: 'Inferior' },
+            ].map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => trocarAlvoTexto(o.id)}
+                className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
+                  alvoTexto === o.id
+                    ? 'border-[color:var(--edl-rosa)] text-white'
+                    : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
+                }`}
+                style={alvoTexto === o.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+              >
+                {o.rotulo}
+              </button>
+            ))}
+          </div>
+          <textarea
+            autoFocus
+            rows={4}
+            value={textos[alvoTexto]?.conteudo || ''}
+            onChange={(e) => mudarTexto(aoAtualizarConfig, alvoTexto, 'conteudo', e.target.value)}
+            placeholder="Escreva aqui…"
+            className="edl-input w-full mt-2 text-[11px] font-semibold px-2.5 py-2 rounded-lg resize-y outline-none"
+          />
+          <div className="flex justify-end gap-1.5 mt-2.5">
+            <BotaoPequeno onClick={cancelarPopupTexto}>Cancelar</BotaoPequeno>
+            <BotaoPequeno icone={Check} tom="destaque" onClick={fecharPopup}>Confirmar</BotaoPequeno>
+          </div>
+          <p className="text-[9px] font-semibold leading-relaxed mt-2" style={{ color: 'var(--edl-texto-mut)' }}>
+            O Preview atualiza em tempo real. “Cancelar” volta o texto anterior.
+          </p>
+        </div>
+      ) : null}
+
+      {/* POPUP PEQUENO — IMAGEM (upload → entra na composição na hora) */}
+      {popup === 'imagem' ? (
+        <div
+          className={CLASSE_POPUP}
+          style={{ background: 'var(--edl-painel)', boxShadow: '0 20px 50px -12px rgba(0,0,0,0.8)' }}
+          role="dialog"
+          aria-label="Adicionar imagem"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-white">Adicionar imagem</span>
+            <button
+              type="button"
+              onClick={fecharPopup}
+              aria-label="Fechar"
+              className="edl-ring-foco w-6 h-6 rounded-lg flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <label className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold py-2.5 rounded-lg mt-2.5 cursor-pointer">
+            <Upload className="w-3.5 h-3.5" />
+            Escolher imagem
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={aoEscolherImagem} />
+          </label>
+          <p className="text-[9px] font-semibold leading-relaxed mt-2" style={{ color: 'var(--edl-texto-mut)' }}>
+            A imagem entra na composição imediatamente, vira uma camada e é
+            arrastável/redimensionável no Preview (PNG/JPG/WebP até 3 MB).
+          </p>
+          {erroPopup ? (
+            <p className="text-[10px] font-bold mt-2 flex items-start gap-1.5" style={{ color: '#f87171' }}>
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              {erroPopup}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* POPUP PEQUENO — VÍDEO (MESMA lista única do Editor: importar + base) */}
+      {popup === 'video' ? (
+        <div
+          className={`${CLASSE_POPUP} p-0 flex flex-col`}
+          style={{ background: 'var(--edl-painel)', boxShadow: '0 20px 50px -12px rgba(0,0,0,0.8)' }}
+          role="dialog"
+          aria-label="Vídeos do lote"
+        >
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-[color:var(--edl-borda)]">
+            <span className="text-[11px] font-extrabold text-white">Vídeos do lote</span>
+            <button
+              type="button"
+              onClick={fecharPopup}
+              aria-label="Fechar"
+              className="edl-ring-foco w-6 h-6 rounded-lg flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
+          <div className="flex-1 min-h-0 flex flex-col" style={{ maxHeight: 260 }}>
+            <ListaVideos
+              itens={itens}
+              idSelecionado={idSelecionado}
+              aoSelecionar={aoSelecionarVideo}
+              aoFocar={aoFocarVideo}
+              aoRemover={aoRemoverVideo}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
+
+

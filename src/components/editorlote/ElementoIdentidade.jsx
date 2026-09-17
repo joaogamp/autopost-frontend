@@ -24,22 +24,24 @@ import {
 export const COR_SELO_AZUL = '#1d9bf0';
 
 /** Texto da identidade (nome do canal | @ do canal) — arrastável + alças. */
-export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfig, somenteLeitura = false }) {
+export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfig, somenteLeitura = false, selecionado = false, aoSelecionar }) {
   if (!t || !t.visivel || String(t.conteudo || '').trim() === '') return null;
   const ruta = ['identidade', chave];
   // Handlers criados por render (mesmo padrão dos textos da arte).
   const arrastar = gerarArrasteDeRuta(ruta, aoAtualizarConfig);
   const alcaLargura = gerarRedimensionarLarguraRuta(ruta, 10, 100, aoAtualizarConfig);
   const alcaTamanho = gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig);
+  const idElemento = chave === 'nome' ? 'identidadeNome' : 'identidadeUsuario';
   return (
     <div
       role={somenteLeitura ? undefined : 'button'}
       tabIndex={somenteLeitura ? undefined : 0}
       aria-label={`Arrastar ${chave} do canal`}
+      data-elemento={idElemento}
       data-x={String(t.x)}
       data-y={String(t.y)}
-      onPointerDown={somenteLeitura ? undefined : arrastar}
-      className={`edl-texto-canvas absolute select-none ${somenteLeitura ? 'pointer-events-none' : ''}`}
+      onPointerDown={somenteLeitura ? undefined : (e) => { if (typeof aoSelecionar === 'function') aoSelecionar(idElemento); arrastar(e); }}
+      className={`edl-texto-canvas absolute select-none ${somenteLeitura ? 'pointer-events-none' : ''} ${selecionado ? 'edl-elemento-selecionado' : ''}`}
       style={{
         left: `${t.x}%`,
         top: `${t.y}%`,
@@ -83,7 +85,7 @@ export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfi
 }
 
 /** Selo azul de verificado — arrastável + redimensionável (centrado em x/y). */
-export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig, somenteLeitura = false }) {
+export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig, somenteLeitura = false, selecionado = false, aoSelecionar }) {
   if (!selo || !selo.visivel) return null;
   const arrastar = gerarArrasteDeRuta(['identidade', 'selo'], aoAtualizarConfig);
   const alcaLargura = gerarRedimensionarLarguraRuta(['identidade', 'selo'], 1, 12, aoAtualizarConfig);
@@ -92,10 +94,11 @@ export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig, somenteLeitura
       role={somenteLeitura ? undefined : 'button'}
       tabIndex={somenteLeitura ? undefined : 0}
       aria-label="Arrastar selo de verificado"
+      data-elemento="selo"
       data-x={String(selo.x)}
       data-y={String(selo.y)}
-      onPointerDown={somenteLeitura ? undefined : arrastar}
-      className={`edl-logo absolute select-none ${somenteLeitura ? 'pointer-events-none' : ''}`}
+      onPointerDown={somenteLeitura ? undefined : (e) => { if (typeof aoSelecionar === 'function') aoSelecionar('selo'); arrastar(e); }}
+      className={`edl-logo absolute select-none ${somenteLeitura ? 'pointer-events-none' : ''} ${selecionado ? 'edl-elemento-selecionado' : ''}`}
       style={{
         left: `${selo.x}%`,
         top: `${selo.y}%`,
