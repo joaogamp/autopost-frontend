@@ -219,47 +219,47 @@ function SelecaoTipografia({ t, aoMudar }) {
 function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig }) {
   const aoMudar = (campo, valor) => mudarTexto(aoAtualizarConfig, chave, campo, valor);
   return (
-    <div className="px-1 py-2 space-y-2">
+    <div className="px-3.5 py-3.5 space-y-3.5">
       <span className="text-[11px] font-extrabold text-white">{rotulo}</span>
       <div>
         <Rotulo>Escrever texto</Rotulo>
         <textarea
-          rows={2}
+          rows={3}
           value={t.conteudo || ''}
           onChange={(e) => aoMudar('conteudo', e.target.value)}
           placeholder="Escreva aqui…"
-          className="edl-input w-full text-[11px] font-semibold px-2 py-1.5 rounded-lg resize-y outline-none"
+          className="edl-input w-full text-[11px] font-semibold px-2.5 py-2 rounded-lg resize-y outline-none"
         />
       </div>
-      <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <Rotulo>Fonte</Rotulo>
-            <select
-              value={t.fonte}
-              onChange={(e) => aoMudar('fonte', e.target.value)}
-              className="edl-input w-full text-[11px] font-semibold px-1.5 py-1.5 rounded-lg outline-none"
-            >
-              {FONTES_TEXTO.map((f) => (
-                <option key={f.id} value={f.id}>{f.rotulo}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Rotulo>Peso</Rotulo>
-            <select
-              value={t.peso}
-              onChange={(e) => aoMudar('peso', e.target.value)}
-              className="edl-input w-full text-[11px] font-semibold px-1.5 py-1.5 rounded-lg outline-none"
-            >
-              {PESOS_TEXTO.map((p) => (
-                <option key={p.id} value={p.id}>{p.rotulo}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div>
-          <Rotulo>Emoji</Rotulo>
+      <div>
+        <Rotulo>Fonte</Rotulo>
+        <select
+          value={t.fonte}
+          onChange={(e) => aoMudar('fonte', e.target.value)}
+          className="edl-input w-full text-[11px] font-semibold px-2.5 py-2 rounded-lg outline-none"
+        >
+          {FONTES_TEXTO.map((f) => (
+            <option key={f.id} value={f.id}>{f.rotulo}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <Rotulo>Peso</Rotulo>
+        <select
+          value={t.peso}
+          onChange={(e) => aoMudar('peso', e.target.value)}
+          className="edl-input w-full text-[11px] font-semibold px-2.5 py-2 rounded-lg outline-none"
+        >
+          {PESOS_TEXTO.map((p) => (
+            <option key={p.id} value={p.id}>{p.rotulo}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-dim)' }}>
+            Emoji
+          </span>
           <BotaoEmoji aoInserir={(emoji) => aoMudar('conteudo', `${t.conteudo || ''}${emoji}`)} />
         </div>
       </div>
@@ -271,7 +271,7 @@ function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig }) {
               key={a.id}
               type="button"
               onClick={() => aoMudar('alinhamento', a.id)}
-              className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
+              className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-colors ${
                 t.alinhamento === a.id
                   ? 'border-[color:var(--edl-rosa)] text-white'
                   : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
@@ -283,60 +283,31 @@ function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig }) {
           ))}
         </div>
       </div>
-      <div className="grid grid-cols-[1fr_auto] items-end gap-2">
-        <div>
-          <Rotulo>Cor</Rotulo>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={t.cor || '#0f172a'}
-              onChange={(e) => aoMudar('cor', e.target.value)}
-              className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border border-[color:var(--edl-borda)] p-0.5 shrink-0"
-            />
-            <input
-              type="text"
-              value={t.cor || '#0f172a'}
-              spellCheck={false}
-              onChange={(e) => {
-                if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) aoMudar('cor', e.target.value);
-              }}
-              className="edl-input flex-1 min-w-0 text-[11px] font-mono px-2 py-1.5 rounded-lg outline-none"
-            />
-          </div>
+      <div>
+        <Rotulo>Cor</Rotulo>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={t.cor || '#0f172a'}
+            onChange={(e) => aoMudar('cor', e.target.value)}
+            className="w-9 h-9 rounded-lg cursor-pointer bg-transparent border border-[color:var(--edl-borda)] p-0.5 shrink-0"
+          />
+          <input
+            type="text"
+            value={t.cor || '#0f172a'}
+            spellCheck={false}
+            onChange={(e) => {
+              if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) aoMudar('cor', e.target.value);
+            }}
+            className="edl-input flex-1 min-w-0 text-[11px] font-mono px-2.5 py-2 rounded-lg outline-none"
+          />
         </div>
-        <AlternarCompacto rotulo="Visível" ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <Deslizador rotulo="Tamanho" sufixo="px" valor={Math.round(t.tamanho ?? 72)} min={10} max={160} aoMudar={(v) => aoMudar('tamanho', v)} />
-        <Deslizador rotulo="Largura" sufixo="%" valor={Math.round(t.largura ?? 46)} min={10} max={100} aoMudar={(v) => aoMudar('largura', v)} />
-        <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
-      </div>
+      <Deslizador rotulo="Tamanho da fonte" sufixo="px" valor={Math.round(t.tamanho ?? 72)} min={10} max={160} aoMudar={(v) => aoMudar('tamanho', v)} />
+      <Deslizador rotulo="Largura do bloco" sufixo="%" valor={Math.round(t.largura ?? 46)} min={10} max={100} aoMudar={(v) => aoMudar('largura', v)} />
+      <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(t.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
+      <Alternar rotulo={`${rotulo} visível`} ativo={!!t.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
     </div>
-  );
-}
-
-/** Interruptor compacto (mesma lógica de `Alternar`, em formato reduzido para
- * caber lado a lado com outro controle no painel de Texto). */
-function AlternarCompacto({ rotulo, ativo, aoMudar }) {
-  return (
-    <button
-      type="button"
-      onClick={() => aoMudar(!ativo)}
-      className="edl-ring-foco edl-superficie flex items-center gap-2 px-2 py-1.5 rounded-lg"
-      style={{ color: ativo ? 'var(--edl-texto)' : 'var(--edl-texto-mut)' }}
-      title={rotulo}
-    >
-      <span className="flex items-center gap-1 text-[10px] font-bold">
-        {ativo ? <Eye className="w-3.5 h-3.5 edl-icone-a" /> : <EyeOff className="w-3.5 h-3.5 opacity-70" />}
-        {rotulo}
-      </span>
-      <span
-        className="relative w-8 h-[18px] rounded-full transition-colors shrink-0"
-        style={{ background: ativo ? 'var(--edl-grad)' : 'rgba(255,255,255,0.15)' }}
-      >
-        <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all shadow" style={{ left: ativo ? 16 : 2 }} />
-      </span>
-    </button>
   );
 }
 
@@ -548,7 +519,7 @@ const CLASSE_POPUP =
   'relative mx-2 my-2 z-10 rounded-xl border border-[color:var(--edl-borda)] p-3 shadow-2xl max-h-[480px] overflow-y-auto';
 
 const CLASSE_POPUP_TEXTO =
-  'relative mx-2 my-2 z-10 rounded-xl border border-[color:var(--edl-borda)] p-2.5 shadow-2xl';
+  'relative mx-2 my-2 z-10 rounded-xl border border-[color:var(--edl-borda)] p-3.5 shadow-2xl';
 
 /** Rótulos dos popups pequenos de LOGO / FUNDO / IDENTIDADE / SELO — MESMO
  * padrão visual dos popups de texto/imagem/vídeo (CLASSE_POPUP, ancorado no
