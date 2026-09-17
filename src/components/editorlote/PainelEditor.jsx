@@ -510,7 +510,7 @@ export default function PainelEditor({
   /** Fechar popup: NÃO reabre sozinho — só um NOVO clique de seleção reabre. */
   function fecharPopup() {
     ultimaSelecaoRef.current = null;
-    fecharPopup();
+    setPopup(null);
   }
 
   // AUTO-ABERTURA por seleção (Camadas ⇄ Preview): qualquer mudança de
