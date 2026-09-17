@@ -48,7 +48,7 @@ export default function App() {
           <EditorLote />
         </main>
       ) : (
-        <main className="flex-1 min-w-0 px-6 sm:px-10 py-10 transition-all">
+        <main className="autopost-pages flex-1 min-w-0 px-6 sm:px-10 py-10 transition-all">
           {pagina === 'dashboard' && <Dashboard />}
           {pagina === 'agendamento' && (
             <Agendamento

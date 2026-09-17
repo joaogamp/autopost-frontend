@@ -228,6 +228,19 @@ export default function EditorCanvas({
     else arrastarVideoNoCanvas(e);
   };
 
+  // Alternativa touch à roda: mesma geometria, ancorada no centro do vídeo.
+  const zoomTouch = (sentido) => {
+    atualizador((cfg) => {
+      const a = areaVideoNormalizada(cfg.areaVideo);
+      const novo = deslocamentoSobZoom({
+        area: a, dimsVideo: dimsVideoRef.current, fit: a.fit,
+        novoZoom: a.zoom + sentido * Math.max(0.05, Math.min(0.25, 0.12 * a.zoom)),
+        mx: a.largura / 2, my: a.altura / 2,
+      });
+      return { ...cfg, areaVideo: { ...cfg.areaVideo, ...novo } };
+    });
+  };
+
   /** RESET: volta tamanho e posição originais (sem controles X/Y). */
   const redefinirEnquadramento = useCallback(() => {
     atualizador((cfg) => ({
@@ -777,6 +790,14 @@ export default function EditorCanvas({
           className="absolute left-0 right-0 bottom-0 z-30"
         />
       </div>
+
+      {podeEditar && urlVideoAtiva && (
+        <div className="edl-zoom-touch" role="group" aria-label="Zoom do vídeo">
+          <button type="button" className="edl-botao-fantasma edl-ring-foco rounded-lg" aria-label="Diminuir zoom" onClick={() => zoomTouch(-1)}>−</button>
+          <span className="self-center text-xs" style={{ color: 'var(--edl-texto-dim)' }}>{Math.round(areaN.zoom * 100)}%</span>
+          <button type="button" className="edl-botao-fantasma edl-ring-foco rounded-lg" aria-label="Aumentar zoom" onClick={() => zoomTouch(1)}>+</button>
+        </div>
+      )}
 
       {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}
       {mostrarRodape && (

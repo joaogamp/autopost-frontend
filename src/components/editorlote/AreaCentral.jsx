@@ -128,7 +128,7 @@ function AreaCentral(p) {
     return () => obs.disconnect();
   }, [colunas, seleccionadoItem ? seleccionadoItem.id : null]);
   const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : 300;
-  const gradeCls = 'grid gap-3 w-full';
+  const gradeCls = 'edl-grade-previews grid gap-3 w-full';
   const modoUnicoCls = 'w-full max-w-[560px] mx-auto mt-3';
   // Clave do reproductor por modo (1X/2X/3X) + visibilidad: qualquer cambio
   // remonta o player PAUSADO (sem autoplay, sem loop), nunca deja un vídeo

@@ -19,7 +19,7 @@ const ITENS = [
 
 export default function BarraNavegacao({ paginaAtiva, aoMudarPagina }) {
   return (
-    <header className="shrink-0 sticky top-0 z-20 h-12 bg-[#0a0a0f] border-b border-[#26262f] select-none">
+    <header className="autopost-nav shrink-0 sticky top-0 z-20 h-12 bg-[#0a0a0f] border-b border-[#26262f] select-none">
       {/* Fixa no topo durante a rolagem da página (sticky no shell do documento;
          na shell h-screen do Editor o sticky é inofensivo — não há rolagem). */}
       {/* Grade de 3 colunas: marca à esquerda, menu centrado, versão à direita */}

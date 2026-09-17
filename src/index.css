@@ -390,11 +390,60 @@ select option {
 @media (max-width: 1000px) {
   .edl-layout { grid-template-columns: 200px minmax(0, 1fr) 400px; }
 }
-@media (max-width: 760px) {
-  .edl-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .edl-preview-central { grid-column: 1 / -1; grid-row: 1; position: sticky; top: 56px; z-index: 20; background: var(--edl-painel); }
-  .edl-preview-central canvas, .edl-preview-central video { max-width: 100%; }
-  .edl-painel-esquerdo { grid-column: 1; grid-row: 2; }
-  .edl-painel-direita { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; }
+@media (max-width: 768px) {
+  .edl-layout { grid-template-columns: minmax(0, 1fr); }
+  .edl-preview-central { grid-column: 1; grid-row: 1; position: static; height: auto; }
+  .edl-painel-direita { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; height: auto; }
+  .edl-painel-esquerdo { grid-column: 1; grid-row: 3; height: auto; }
+  .edl-painel-esquerdo, .edl-painel-camadas, .edl-painel-ferramentas { min-height: 0; }
+  .edl-painel-camadas, .edl-painel-ferramentas { height: auto; }
 }
+
+/* Adaptação web mobile; nenhuma regra abaixo muda o desktop. */
+@media (max-width: 768px) {
+  .autopost-nav > div { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding-inline: 8px; }
+  .autopost-nav h1, .autopost-nav > div > div:last-child { display: none; }
+  .autopost-nav nav { margin-inline: 0; padding-block: 3px; }
+  .autopost-nav button { min-height: 40px; }
+  .autopost-pages { padding: 24px 12px; }
+  .autopost-pages .grid > *, .autopost-pages .flex > * { min-width: 0; }
+  .autopost-pages .flex.justify-between { flex-wrap: wrap; gap: 12px; }
+  .autopost-pages .glass-panel { padding-inline: 12px; }
+  .autopost-pages .grid-cols-2, .autopost-pages .md\:grid-cols-2,
+  .autopost-pages .md\:grid-cols-4, .autopost-pages .sm\:grid-cols-3 { grid-template-columns: minmax(0, 1fr); }
+  .autopost-pages input:not([type="checkbox"]), .autopost-pages select,
+  .autopost-pages textarea { max-width: 100%; min-width: 0; font-size: 16px; }
+  .autopost-pages p { overflow-wrap: anywhere; }
+  .autopost-pages button { min-height: 40px; }
+  .autopost-pages .fixed.inset-0 > div { max-height: calc(100dvh - 32px); overflow-y: auto; overflow-wrap: anywhere; }
+  .autopost-pages .fixed.inset-0 button { flex-shrink: 0; }
+  .edl-root > header { flex-wrap: wrap; gap: 12px; padding: 12px; }
+  .edl-root > header > .flex-1 { display: none; }
+  .edl-root > header > div:last-child { width: 100%; }
+  .edl-root > header > div:last-child button { flex: 1; justify-content: center; padding-inline: 8px; min-height: 44px; }
+  .edl-preview-central > div > div:first-child { flex-wrap: wrap; }
+  .edl-preview-central [role="group"] button { min-height: 36px; }
+  .edl-grade-previews { grid-template-columns: minmax(0, 1fr) !important; }
+  .edl-painel-direita, .edl-painel-esquerdo { border-inline: 0; }
+  .edl-painel-ferramentas, .edl-painel-camadas { border-bottom: 1px solid var(--edl-borda); }
+  .edl-painel-direita button { min-height: 36px; }
+  .edl-painel-direita select, .edl-painel-direita textarea,
+  .edl-painel-direita input:not([type="range"]):not([type="color"]) { min-width: 0; max-width: 100%; font-size: 16px; }
+  .edl-painel-direita .grid > * { min-width: 0; }
+  .edl-painel-direita input[type="range"] { min-height: 32px; }
+  .edl-painel-direita [role="dialog"] { max-height: min(480px, calc(100dvh - 80px)); overflow-y: auto; overscroll-behavior: contain; }
+  .edl-painel-direita [role="dialog"] > div:first-child { gap: 8px; }
+  .edl-painel-direita [role="dialog"] > div:first-child button { min-width: 36px; flex-shrink: 0; }
+  .edl-painel-direita [aria-label="Escolher emoji"] { width: min(248px, calc(100vw - 64px)); grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .edl-painel-direita [aria-label="Escolher emoji"] button { width: 100%; }
+  .edl-root > .fixed { width: calc(100% - 24px); max-width: 480px; overflow-wrap: anywhere; }
+  [data-edl-controles] { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px 64px; gap: 4px; }
+  [data-edl-controles] button { width: 36px; height: 36px; }
+  [data-edl-controles] input { min-height: 28px; width: 100%; }
+  [data-edl-controles] input[aria-label="Progresso do vídeo"] { grid-column: 1 / -1; grid-row: 2; }
+  .edl-zoom-touch { display: flex; gap: 8px; justify-content: center; padding: 8px; }
+  .edl-zoom-touch button { min-width: 44px; min-height: 44px; }
+}
+.edl-zoom-touch { display: none; }
+@media (max-width: 768px) { .edl-zoom-touch { display: flex; } }
 
