@@ -80,13 +80,39 @@ export function gerarArraste(alvo, aoAtualizarConfig) {
  * ÁREA DO VÍDEO — mover/redimensionar a região onde o vídeo fica (px do canvas).
  * ------------------------------------------------------------------------- */
 
-/** Mueve la ÁREA DEL VÍDEO arrastrando el rectángulo punteado. */
-export function gerarArrastreArea(aoAtualizarConfig) {
+/** Fração MÍNIMA da região do vídeo que precisa continuar visível dentro do
+ * canvas ao arrastar. Sem isso a região ficaria presa às bordas do canvas
+ * (folga zero quando `área == canvas`) e o vídeo não se moveria — foi
+ * exatamente o defeito: o arraste era limitado a [0, canvas - área] e, no
+ * enquadramento padrão, esse intervalo é um único ponto (nada se move). */
+const MARGEM_MINIMA_VISIVEL = 0.3;
+
+/** Limita um valor a um intervalo (helper local, sem dependências). */
+function limitar(valor, minimo, maximo) {
+  return Math.min(maximo, Math.max(minimo, valor));
+}
+
+/**
+ * MOVE O VÍDEO (região de composição `areaVideo.x/y`, px do canvas) —
+ * usado pelo GUIA da área E PELO PRÓPRIO VÍDEO no Preview (um único
+ * caminho: o mesmo estado que o render usa no pad final do canvas).
+ *
+ * Move 1:1 com o ponteiro (px do canvas, independe do zoom da interface) e
+ * permite que a região saia PARCIALMENTE do canvas, mantendo sempre
+ * `MARGEM_MINIMA_VISIVEL` visível — assim o vídeo segue o mouse em todas as
+ * direções mesmo quando preenche a área inteira (padrão).
+ *
+ * Só a BARRA de controles do player (`[data-edl-controles]`: play/seek/volume)
+ * NÃO arrasta; o vídeo em si segue arrastável.
+ *
+ * `opcoes.aoInteragir`/`opcoes.aoFinalizar` (opcionais) avisam início/fim do
+ * arraste — usados para o cursor "grabbing" e a dica discreta no Preview.
+ */
+export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
+  const { aoInteragir = null, aoFinalizar = null } = opcoes || {};
   return function aoPointerDown(e) {
-    // No arrastra la zona cuando el usuario interactúa con el player REAL
-    // (vídeo / controles de play-volumen-progreso llevan `data-edl-jugador`).
     const objetivo = e.target;
-    if (typeof objetivo.closest === 'function' && objetivo.closest('[data-edl-jugador]')) return;
+    if (typeof objetivo.closest === 'function' && objetivo.closest('[data-edl-controles]')) return;
     e.preventDefault();
     e.stopPropagation();
     const canvasEl = encontrarCanvas(e.currentTarget);
@@ -102,8 +128,16 @@ export function gerarArrastreArea(aoAtualizarConfig) {
       largura: parseFloat(el.dataset.largura) || 0,
       altura: parseFloat(el.dataset.altura) || 0,
     };
+    // Limites: a região pode sair parcialmente do canvas (mantendo a margem
+    // mínima visível) — intervalo com folga REAL, nunca um ponto só.
+    const xMin = -(inicial.largura * (1 - MARGEM_MINIMA_VISIVEL));
+    const xMax = cW - inicial.largura * MARGEM_MINIMA_VISIVEL;
+    const yMin = -(inicial.altura * (1 - MARGEM_MINIMA_VISIVEL));
+    const yMax = cH - inicial.altura * MARGEM_MINIMA_VISIVEL;
     const startX = e.clientX;
     const startY = e.clientY;
+
+    if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });
 
     function aoMover(ev) {
       const dx = (ev.clientX - startX) / escala;
@@ -112,17 +146,20 @@ export function gerarArrastreArea(aoAtualizarConfig) {
         ...cfg,
         areaVideo: {
           ...cfg.areaVideo,
-          x: Math.min(cW - inicial.largura, Math.max(0, inicial.x + dx)),
-          y: Math.min(cH - inicial.altura, Math.max(0, inicial.y + dy)),
+          x: limitar(inicial.x + dx, xMin, xMax),
+          y: limitar(inicial.y + dy, yMin, yMax),
         },
       }));
     }
     function aoSoltar() {
       window.removeEventListener('pointermove', aoMover);
       window.removeEventListener('pointerup', aoSoltar);
+      window.removeEventListener('pointercancel', aoSoltar);
+      if (typeof aoFinalizar === 'function') aoFinalizar();
     }
     window.addEventListener('pointermove', aoMover);
     window.addEventListener('pointerup', aoSoltar);
+    window.addEventListener('pointercancel', aoSoltar);
   };
 }
 /** Redimensiona la ÁREA DEL VÍDEO desde las manijas ('direita'|'abaixo'|'canto'). */

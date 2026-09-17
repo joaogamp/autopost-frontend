@@ -10,8 +10,10 @@ import { Play, Pause, Volume2, VolumeX, RotateCcw } from 'lucide-react';
  * - volume (slider) + silenciar
  * - barra de progresso com busqueda (seek) e tempo decorrido/total
  *
- * Toda a estrutura leva `data-edl-jugador` para que a ÁREA DO VÍDEO não
- * arrastre quando o usuário interage com o reproductor (gerarArrastreArea).
+ * Toda a estrutura do player leva `data-edl-jugador` (compatibilidade) e a
+ * barra de controles leva `data-edl-controles`: só a BARRA não arrasta
+ * (play/seek/volume seguem funcionando) — o vídeo em si é arrastável
+ * (gerarArrastreArea / gerarArrastarEnquadramentoVideo).
  */
 
 function formatoTiempo(segs) {

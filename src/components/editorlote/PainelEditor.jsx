@@ -888,7 +888,8 @@ export default function PainelEditor({
           />
           <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
             Zoom do vídeo: roda do mouse SOBRE o vídeo no Preview. Mover: arraste
-            o vídeo (ou o guia da área quando a marcação está ligada). Sem X/Y.
+            o vídeo direto no Preview (posição) — com zoom ampliado (acima de
+            100%), o arraste enquadra o conteúdo dentro da área. Sem X/Y.
           </p>
         </div>
       );

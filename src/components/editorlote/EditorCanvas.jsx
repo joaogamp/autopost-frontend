@@ -190,6 +190,31 @@ export default function EditorCanvas({
     () => setArrastandoVideo(false),
   );
 
+  /**
+   * ARRASTAR O VÍDEO DIRETO NO PREVIEW — UM único caminho, sem depender do
+   * guia da área (`mostrarMarcacao`) e sem X/Y:
+   *
+   *  · zoom > 1 → o quadro é MAIOR que a área e existe folga de enquadramento:
+   *    o arraste desloca o enquadramento (crop) — `arrastarEnquadramento`;
+   *  · zoom ≤ 1 → NÃO existe folga (`quadro == área`): o arraste move a
+   *    POSIÇÃO do vídeo no canvas (`areaVideo.x/y`) — o MESMO estado que a
+   *    prévia usa (a camada é posicionada por x/y) e que o render usa no pad
+   *    final do canvas. É este caminho que estava morto: o arraste das
+   *    bordas só existia no guia e, com `área == canvas`, o intervalo era
+   *    `[0, 0]` (nada se movia).
+   */
+  const arrastarVideoNoCanvas = gerarArrastreArea(atualizador, {
+    aoInteragir: () => { setArrastandoVideo(true); mostrarDicaEnquadramento('Movendo o vídeo…'); },
+    aoFinalizar: () => setArrastandoVideo(false),
+  });
+
+  /** O arraste no vídeo usa o enquadramento (folga) quando o quadro foi
+   * ampliado; abaixo disso move a posição do vídeo no canvas. */
+  const moverVideo = (e) => {
+    if (areaN.zoom > 1) arrastarEnquadramento(e);
+    else arrastarVideoNoCanvas(e);
+  };
+
   /** RESET: volta tamanho e posição originais (sem controles X/Y). */
   const redefinirEnquadramento = useCallback(() => {
     atualizador((cfg) => ({
@@ -399,13 +424,17 @@ export default function EditorCanvas({
             tabIndex={podeEditar && urlVideoAtiva ? 0 : undefined}
             aria-label="Mover o vídeo (arraste com o mouse) e ampliar/reduzir (roda do mouse)"
             data-elemento="video"
+            data-x={String(area.x)}
+            data-y={String(area.y)}
+            data-largura={String(area.largura)}
+            data-altura={String(area.altura)}
             data-enq-zoom={String(areaN.zoom)}
             data-enq-x={String(areaN.deslocamentoX)}
             data-enq-y={String(areaN.deslocamentoY)}
             data-area-largura={String(areaN.largura)}
             data-area-altura={String(areaN.altura)}
             data-area-fit={area.fit}
-            onPointerDown={podeEditar && urlVideoAtiva ? (e) => { selecionar('video'); arrastarEnquadramento(e); } : undefined}
+            onPointerDown={podeEditar && urlVideoAtiva ? (e) => { selecionar('video'); moverVideo(e); } : undefined}
             className={`absolute overflow-hidden ${podeEditar && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'} ${elementoSelecionado === 'video' ? 'edl-elemento-selecionado' : ''}`}
             style={{
               left: area.x * escala,
