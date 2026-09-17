@@ -8,15 +8,13 @@ import EditorLote from './pages/EditorLote';
 import BoasVindas from './pages/BoasVindas';
 
 export default function App() {
-  const [pagina, setPagina] = useState('dashboard');
-  // A tela de boas-vindas aparece ANTES de entrar no Editor existente.
-  // Nada do Editor foi alterado: ela apenas controla o acesso visual a ele.
-  const [boasVindasVista, setBoasVindasVista] = useState(false);
+  // BoasVindas e a PRIMEIRA TELA global: bloqueia Dashboard, BarraNavegacao
+  // e qualquer outra pagina ate clicar em "ENTRAR NO MEU EDITOR DE VIDEO".
+  const [entrouNoEditor, setEntrouNoEditor] = useState(false);
+  const [pagina, setPagina] = useState('editorlote');
 
   function mudarPagina(destino) {
     setPagina(destino);
-    // Sair do Editor volta a exigir a boas-vindas no proximo acesso.
-    if (destino !== 'editorlote') setBoasVindasVista(false);
   }
 
   // Fluxo do produto: EDITOR → AGENDAMENTO → BIBLIOTECA (Instagram é o destino
@@ -32,12 +30,12 @@ export default function App() {
   // Todas as páginas usam rolagem de documento; o zoom é tratado localmente
   // pelo vídeo do Editor, nunca pelo shell da aplicação.
   const ehEditor = pagina === 'editorlote';
-  // Antes do Editor: mostra a boas-vindas (sem barra de navegacao do app).
-  const mostrarBoasVindas = ehEditor && !boasVindasVista;
-  if (mostrarBoasVindas) {
+  // Gate global: enquanto nao entrou, mostra SOMENTE BoasVindas
+  // (sem BarraNavegacao, sem Dashboard, sem nenhuma outra pagina).
+  if (!entrouNoEditor) {
     return (
       <div className="flex flex-col bg-base text-text font-body min-h-screen">
-        <BoasVindas aoEntrar={() => setBoasVindasVista(true)} />
+        <BoasVindas aoEntrar={() => { setEntrouNoEditor(true); setPagina('editorlote'); }} />
       </div>
     );
   }
