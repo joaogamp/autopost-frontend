@@ -344,15 +344,19 @@ export default function EditorCanvas({
           background: corFundo,
         }}
       >
-        {/* CORTE DE BORDAS — guias de ediçom: SÓ aparecem quando a camada
-            "Corte de borda" está SELECIONADA (preview limpo = vídeo final).
-            A área cortada revela o FUNDO DO CANVAS puro (`corFundo` — BRANCO
-            por padrão), SEM véu/faixa escura por cima: é o MESMO `corFundo`
-            que o render final usa pra cobrir o corte, então prévia e
-            processamento ficam visualmente idênticos. Cor NEUTRA (nada de
-            rosa/roxo). O corte em si continua visível na prévia pelo
-            clip-path da camada do vídeo (abaixo), sempre fiel ao render. */}
-        {podeEditar && elementoSelecionado === 'corte' && (
+        {/* CORTE DE BORDAS — guias PERMANENTES de ediçom: as linhas ficam
+            SEMPRE visíveis (referência visual da área de corte), independente
+            de qual camada está selecionada (Logo, Texto, Imagem, Selo, Vídeo…).
+            Clicar numa linha seleciona a camada "Corte de borda" e permite
+            arrastá-la. A área cortada revela o FUNDO DO CANVAS puro
+            (`corFundo` — BRANCO por padrão), SEM véu/faixa escura por cima: é
+            o MESMO `corFundo` que o render final usa pra cobrir o corte, então
+            prévia e processamento ficam visualmente idênticos. Cor NEUTRA
+            (nada de rosa/roxo). O corte em si continua visível na prévia pelo
+            clip-path da camada do vídeo (abaixo), sempre fiel ao render.
+            A LINHA NÃO CORTA nada: é só guia; a máscara real é o clip-path da
+            camada do vídeo (abaixo) — logo/textos/selo/imagens ficam FORA dela. */}
+        {(
           <>
             {/* Linha superior de corte */}
             <div
@@ -365,7 +369,7 @@ export default function EditorCanvas({
               data-elemento="corte"
               data-posy={String(corteSup)}
               onPointerDown={(e) => { selecionar('corte'); corredorSuperior(e); }}
-              className="edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize"
+              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize ${podeEditar ? '' : 'pointer-events-none'}`}
               style={{
                 top: `${corteSup}%`,
                 borderTop: '2px dashed rgba(148, 163, 184, 0.9)',
@@ -386,7 +390,7 @@ export default function EditorCanvas({
               data-elemento="corte"
               data-posy={String(posLinhaInferior)}
               onPointerDown={(e) => { selecionar('corte'); corredorInferior(e); }}
-              className="edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize"
+              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize ${podeEditar ? '' : 'pointer-events-none'}`}
               style={{
                 top: `${posLinhaInferior}%`,
                 borderBottom: '2px dashed rgba(148, 163, 184, 0.9)',
