@@ -11,8 +11,6 @@ import {
   PESOS_TEXTO,
   ALINEACIONES_TEXTO,
 } from '../../lib/configEditorLote';
-import PainelDownloads from './PainelDownloads';
-import ListaVideos from './ListaVideos';
 
 /**
  * EDITOR EM LOTE — COLUNA ESQUERDA: "Adicionar elementos" + configuração do
@@ -1239,4 +1237,5 @@ export default function PainelEditor({
   );
 }
 
+
 

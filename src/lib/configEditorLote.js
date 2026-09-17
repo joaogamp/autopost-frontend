@@ -468,10 +468,10 @@ export function criarConfigPadrao() {
     // Área do vídeo: onde o vídeo encaixa (px do canvas — formato do template
     // do servidor). fit: 'cobrir' | 'ajustar' (o mesmo do pipeline FFmpeg).
     areaVideo: {
-      x: 90,
-      y: 860,
-      largura: 900,
-      altura: 1000,
+      x: 0,
+      y: 0,
+      largura: CANVAS_LARGURA,
+      altura: CANVAS_ALTURA,
       fit: 'cobrir',
       // ENQUADRAMENTO DO VÍDEO (mouse): zoom + posição dentro da área, em %
       // (50 = centro). Mesma estrutura compartilhada do lote → prévia e render

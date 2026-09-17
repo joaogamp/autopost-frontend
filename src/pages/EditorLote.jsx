@@ -3,6 +3,8 @@ import HeaderEditor from '../components/editorlote/HeaderEditor';
 import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelEditor from '../components/editorlote/PainelEditor';
 import PainelCamadas from '../components/editorlote/PainelCamadas';
+import PainelDownloads from '../components/editorlote/PainelDownloads';
+import ListaVideos from '../components/editorlote/ListaVideos';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
 import {
   criarConfigPadrao,
@@ -1092,33 +1094,27 @@ export default function EditorLote() {
       />
 
       <div className="edl-layout flex-1 grid items-start" onPointerDown={(e) => { if (e.target === e.currentTarget) setElementoSelecionado(null); }}>
-        {/* ESQUERDA — "ADICIONAR ELEMENTOS" + configuração do elemento
-            selecionado (logo · texto · imagem · vídeo). Os popups pequenos
-            (texto/imagem/vídeo) abrem DENTRO deste painel: o Preview central
-            nunca é coberto nem substituído. */}
-        <aside className="edl-painel-esquerdo min-w-0 flex flex-col border-r border-[color:var(--edl-borda)]" aria-label="Ferramentas do editor">
-          <PainelEditor
-            config={config}
-            aoAtualizarConfig={setConfig}
-            elementoSelecionado={elementoSelecionado}
-            aoSelecionarElemento={setElementoSelecionado}
-            itensLote={itens}
-            aoDetectarBordas={aoDetectarBordas}
-            detectandoBordas={detectandoBordas}
-            progressoBordas={progressoBordas}
-            itens={itens}
-            idSelecionado={idSelecionado}
-            aoSelecionarVideo={aoSelecionar}
-            aoFocarVideo={aoFocar}
-            aoRemoverVideo={aoRemoverVideo}
-            aoAdicionarVideo={aoAdicionarVideo}
-          />
+        {/* ESQUERDA — VÍDEOS IMPORTADOS */}
+        <aside className="edl-painel-esquerdo min-w-0 flex flex-col border-r border-[color:var(--edl-borda)] h-full" aria-label="Vídeos Importados">
+          <div className="shrink-0 px-3 py-3 border-b border-[color:var(--edl-borda)]">
+            <h2 className="font-display text-xs font-extrabold text-white uppercase tracking-wider">Vídeos Importados</h2>
+          </div>
+          <div className="p-3">
+             <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
+          </div>
+          <div className="flex-1 min-h-0 flex flex-col">
+            <ListaVideos
+              itens={itens}
+              idSelecionado={idSelecionado}
+              aoSelecionar={aoSelecionar}
+              aoFocar={aoFocar}
+              aoRemover={aoRemoverVideo}
+            />
+          </div>
         </aside>
 
-        {/* CENTRO — PREVIEW SEMPRE VISÍVEL: mostra os MESMOS vídeos da lista
-            (1X/2X/3X) com a config COMPARTILHADA. Clicar num elemento do canvas
-            seleciona a camada correspondente; clicar fora deseleciona. */}
-        <section className="edl-preview-central min-w-0 flex flex-col" aria-label="Preview da composição">
+        {/* CENTRO — PREVIEW SEMPRE VISÍVEL */}
+        <section className="edl-preview-central min-w-0 flex flex-col h-full" aria-label="Preview da composição">
           <AreaCentral
             itens={itens}
             idSelecionado={idSelecionado}
@@ -1134,16 +1130,29 @@ export default function EditorLote() {
           />
         </section>
 
-        {/* DIREITA — CAMADAS: cada elemento da composição é uma camada, na
-            ordem do render, com olho (mostra/oculta o flag real) e clique que
-            seleciona/destaca no Preview. Sem duplicatas por função. */}
-        <aside className="edl-painel-camadas min-w-0 border-l border-[color:var(--edl-borda)]" aria-label="Camadas do editor">
-          <PainelCamadas
-            config={config}
-            aoAtualizarConfig={setConfig}
-            elementoSelecionado={elementoSelecionado}
-            aoSelecionarElemento={setElementoSelecionado}
-          />
+        {/* DIREITA — CAMADAS */}
+        <aside className="edl-painel-direita min-w-0 grid grid-cols-2 border-l border-[color:var(--edl-borda)] h-full" aria-label="Painéis da direita">
+          <div className="edl-painel-ferramentas min-w-0 flex flex-col border-r border-[color:var(--edl-borda)] h-full">
+            <PainelEditor
+              config={config}
+              aoAtualizarConfig={setConfig}
+              elementoSelecionado={elementoSelecionado}
+              aoSelecionarElemento={setElementoSelecionado}
+              itensLote={itens}
+              aoDetectarBordas={aoDetectarBordas}
+              detectandoBordas={detectandoBordas}
+              progressoBordas={progressoBordas}
+              
+            />
+          </div>
+          <div className="edl-painel-camadas min-w-0 flex flex-col h-full">
+            <PainelCamadas
+              config={config}
+              aoAtualizarConfig={setConfig}
+              elementoSelecionado={elementoSelecionado}
+              aoSelecionarElemento={setElementoSelecionado}
+            />
+          </div>
         </aside>
       </div>
 
@@ -1166,3 +1175,4 @@ export default function EditorLote() {
     </div>
   );
 }
+

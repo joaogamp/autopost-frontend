@@ -108,6 +108,8 @@ export default function ControlesVideo({ src, encaixe, estiloVideo = null, posic
         src={src}
         playsInline
         preload="auto"
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
         className="w-full h-full"
         style={{ objectFit: encaixe, ...(posicaoObjeto ? { objectPosition: posicaoObjeto } : null), ...(estiloVideo || null) }}
         onLoadedMetadata={(e) => {
