@@ -1142,7 +1142,12 @@ export default function EditorLote() {
               aoDetectarBordas={aoDetectarBordas}
               detectandoBordas={detectandoBordas}
               progressoBordas={progressoBordas}
-              
+              itens={itens}
+              idSelecionado={idSelecionado}
+              aoSelecionarVideo={aoSelecionar}
+              aoFocarVideo={aoFocar}
+              aoRemoverVideo={aoRemoverVideo}
+              aoAdicionarVideo={aoAdicionarVideo}
             />
           </div>
           <div className="edl-painel-camadas min-w-0 flex flex-col h-full">
