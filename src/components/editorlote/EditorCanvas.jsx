@@ -52,7 +52,11 @@ import ElementoImagem from './ElementoImagem';
  *   materializa com o MESMO valor (drawbox single-pass). NENHUMA detecção
  *   acontece no processamento: o render nunca re-detecta nem re-enquadra;
  * - logo, textos e identidade continuam sendo renderizados por cima do vídeo
- *   (posiçom/tamanho/proporçom preservados; editáveis normalmente).
+ *   (posiçom/tamanho/proporçom preservados; editáveis normalmente);
+ * - os CONTROLES DO PLAYER (play/pause · progresso · volume) vivem numa camada
+ *   FIXA própria (`data-edl-destino-controles`), FORA do clip-path: o corte
+ *   afeta SOMENTE o conteúdo visual do vídeo — os controles nunca são cortados,
+ *   nunca mudam de posição por causa do corte e seguem 100% interativos.
  */
 
 /** Altura MÁXIMA padrão do preview 9:16 na TELA (px). Pode ser sobrescrita
@@ -142,6 +146,15 @@ export default function EditorCanvas({
   const dimsVideoRef = useRef(null);
   const camadaVideoRef = useRef(null);
   const dicaTimerRef = useRef(null);
+  // CONTROLES DO PLAYER — camada FIXA do preview. O nó vive no fundo do canvas,
+  // FORA do clip-path do vídeo; o ControlesVideo PORTA a barra pra cá
+  // (createPortal). Assim o corte (clip-path) recorta SOMENTE o conteúdo
+  // visual do vídeo: play/pause, progresso, volume e demais controles nunca
+  // são cortados, nunca mudam de posição por causa do corte e seguem 100%
+  // interativos. Estado (não ref) porque o portal precisa re-renderizar quando
+  // o nó fica disponível (pós-commit).
+  const destinoControlesRef = useRef(null);
+  const [destinoControles, setDestinoControles] = useState(null);
   // Dica DISCRETA durante a interação (some sozinha — nada de controles X/Y,
   // sliders ou caixa fixa: só o vídeo e, momentaneamente, um texto pequeno).
   const [dicaEnquadramento, setDicaEnquadramento] = useState(null);
@@ -314,6 +327,11 @@ export default function EditorCanvas({
     return () => ro.disconnect();
   }, [aoAtualizarDataset]);
 
+  // Portal dos controles: precisa do nó REAL do DOM (disponível pós-commit).
+  useEffect(() => {
+    setDestinoControles(destinoControlesRef.current);
+  }, []);
+
   return (
     <div
       ref={contenedorRef}
@@ -355,7 +373,9 @@ export default function EditorCanvas({
             (nada de rosa/roxo). O corte em si continua visível na prévia pelo
             clip-path da camada do vídeo (abaixo), sempre fiel ao render.
             A LINHA NÃO CORTA nada: é só guia; a máscara real é o clip-path da
-            camada do vídeo (abaixo) — logo/textos/selo/imagens ficam FORA dela. */}
+            camada do vídeo (abaixo) — logo/textos/selo/imagens e os CONTROLES
+            do player ficam FORA dela (os controles, na camada fixa própria,
+            `data-edl-destino-controles`, no fundo do canvas). */}
         {(
           <>
             {/* Linha superior de corte */}
@@ -405,7 +425,10 @@ export default function EditorCanvas({
         {/* VÍDEO (original + edicoes da previa): sem corte mostra o quadro
             completo (`contain`); com corte efetivo, a camada leva `clip-path`
             com o mesmo % do render. Arquivo original intacto; `areaVideo` segue
-            como guia (so o FINAL compoe). */}
+            como guia (so o FINAL compoe). NESTA camada recortada vive SOMENTE
+            o conteúdo visual do vídeo (e a dica de enquadramento): os CONTROLES
+            do player NÃO estão aqui — são portados pra camada fixa
+            `data-edl-destino-controles` (abaixo), fora do clip-path. */}
         <div className="absolute inset-0" style={corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
           {/* CAMADA DO VÍDEO — ocupa a ÁREA de composição e desenha o vídeo
               EXATAMENTE como no vídeo final: quadro = área × zoom, posicionado
@@ -458,6 +481,7 @@ export default function EditorCanvas({
                   src={urlVideoAtiva}
                   encaixe={area.fit}
                   onDimensoes={aoDimensoesVideo}
+                  destinoControles={destinoControles}
                 />
               ) : item && item.thumbnail ? (
                 <img
@@ -736,6 +760,22 @@ export default function EditorCanvas({
             somenteLeitura={!podeEditar}
           />
         ))}
+
+        {/* CONTROLES DO PLAYER — CAMADA FIXA do preview (FORA do clip-path).
+            Estrutura desejada do Preview:
+              ├── camada do VÍDEO      → recebe o clip-path (corte)
+              ├── overlays             → Logo · Texto · Imagem · Selo
+              └── CONTROLES DO PLAYER  → Play/Pause · Progresso · Volume
+            O ControlesVideo porta a barra exatamente pra cá: o corte afeta
+            SOMENTE o conteúdo visual do vídeo; os controles ficam fixos no
+            fundo do preview — nunca cortados, nunca reposicionados pelo corte,
+            sempre visíveis e 100% interativos. (O contêiner tem altura zero:
+            a barra ancorada nele cresce pra cima a partir do fundo do canvas.) */}
+        <div
+          ref={destinoControlesRef}
+          data-edl-destino-controles="true"
+          className="absolute left-0 right-0 bottom-0 z-30"
+        />
       </div>
 
       {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}
