@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, Check, BadgeCheck, ImagePlus, Scan } from 'lucide-react';
+import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, Check, BadgeCheck, ImagePlus, Scan, Image as ImageIcon } from 'lucide-react';
 import BotaoEmoji from './BotaoEmoji';
 import {
   CORES_FUNDO,
