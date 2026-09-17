@@ -67,7 +67,7 @@ export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfi
             data-largura={String(t.largura)}
             onPointerDown={alcaLargura}
             className="absolute w-2 h-6 rounded-sm border-2 border-white shadow"
-            style={{ right: -7, top: '50%', transform: 'translateY(-50%)', background: 'var(--edl-roxo)', cursor: 'ew-resize', touchAction: 'none' }}
+            style={{ right: -7, top: '50%', transform: 'translateY(-50%)', background: '#94a3b8', cursor: 'ew-resize', touchAction: 'none' }}
           />
           {/* Alça de canto: aumenta/diminui o TAMANHO DA FONTE */}
           <span
@@ -76,7 +76,7 @@ export function ElementoIdentidadeTexto({ chave, t, escala = 1, aoAtualizarConfi
             data-tamanho={String(t.tamanho)}
             onPointerDown={alcaTamanho}
             className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
-            style={{ right: -7, bottom: -7, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+            style={{ right: -7, bottom: -7, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
           />
         </>
       )}
@@ -133,7 +133,7 @@ export function ElementoIdentidadeSelo({ selo, aoAtualizarConfig, somenteLeitura
           data-largura={String(selo.largura)}
           onPointerDown={alcaLargura}
           className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
-          style={{ right: -6, bottom: -6, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+          style={{ right: -6, bottom: -6, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
         />
       )}
     </div>

@@ -344,17 +344,19 @@ export default function EditorCanvas({
           background: corFundo,
         }}
       >
-        {/* CORTE DE BORDAS — linhas pontilhadas (arrastáveis SÓ na célula
-            selecionada; nas demais são SOMENTE visualização). São APENAS
-            GUIAS de ediçom. A área cortada revela o FUNDO DO CANVAS puro
-            (`corFundo` — BRANCO por padrão), SEM véu/faixa escura por cima:
-            é o MESMO `corFundo` que o render final usa pra cobrir o corte,
-            então prévia e processamento ficam visualmente idênticos. */}
-        {(corteAtivo || podeEditar) && (
+        {/* CORTE DE BORDAS — guias de ediçom: SÓ aparecem quando a camada
+            "Corte de borda" está SELECIONADA (preview limpo = vídeo final).
+            A área cortada revela o FUNDO DO CANVAS puro (`corFundo` — BRANCO
+            por padrão), SEM véu/faixa escura por cima: é o MESMO `corFundo`
+            que o render final usa pra cobrir o corte, então prévia e
+            processamento ficam visualmente idênticos. Cor NEUTRA (nada de
+            rosa/roxo). O corte em si continua visível na prévia pelo
+            clip-path da camada do vídeo (abaixo), sempre fiel ao render. */}
+        {podeEditar && elementoSelecionado === 'corte' && (
           <>
             {/* Linha superior de corte */}
             <div
-              role={podeEditar ? 'slider' : undefined}
+              role="slider"
               aria-label="Corte superior"
               aria-valuemin={0}
               aria-valuemax={CORTE_MAXIMO}
@@ -362,22 +364,20 @@ export default function EditorCanvas({
               aria-valuetext={`${Math.round(corteSup)}% da altura`}
               data-elemento="corte"
               data-posy={String(corteSup)}
-              onPointerDown={podeEditar ? (e) => { selecionar('corte'); corredorSuperior(e); } : undefined}
-              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none ${podeEditar ? 'cursor-row-resize' : 'pointer-events-none'}`}
+              onPointerDown={(e) => { selecionar('corte'); corredorSuperior(e); }}
+              className="edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize"
               style={{
                 top: `${corteSup}%`,
-                borderTop: '2px dashed var(--edl-roxo)',
+                borderTop: '2px dashed rgba(148, 163, 184, 0.9)',
               }}
             >
-              {/* Alça visual central (só na célula editável) */}
-              {podeEditar && (
-                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
-              )}
+              {/* Alça visual central */}
+              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: '#94a3b8' }} />
             </div>
 
             {/* Linha inferior de corte */}
             <div
-              role={podeEditar ? 'slider' : undefined}
+              role="slider"
               aria-label="Corte inferior"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -385,24 +385,16 @@ export default function EditorCanvas({
               aria-valuetext={`${Math.round(posLinhaInferior)}% da altura`}
               data-elemento="corte"
               data-posy={String(posLinhaInferior)}
-              onPointerDown={podeEditar ? (e) => { selecionar('corte'); corredorInferior(e); } : undefined}
-              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none ${podeEditar ? 'cursor-row-resize' : 'pointer-events-none'}`}
+              onPointerDown={(e) => { selecionar('corte'); corredorInferior(e); }}
+              className="edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize"
               style={{
                 top: `${posLinhaInferior}%`,
-                borderBottom: '2px dashed var(--edl-roxo)',
+                borderBottom: '2px dashed rgba(148, 163, 184, 0.9)',
               }}
             >
-              {/* Alça visual central (só na célula editável) */}
-              {podeEditar && (
-                <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: 'var(--edl-roxo)' }} />
-              )}
+              {/* Alça visual central */}
+              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: '#94a3b8' }} />
             </div>
-
-            {/* FASE 2: o corte EFETIVO (global + override do video) APARECE
-                na previa via clip-path (feedback imediato do arraste e da
-                deteccao); a área cortada revela o `corFundo` PURO — sem véu
-                escuro (o render final cobre o corte com o mesmo `corFundo`).
-                O arquivo original segue intacto; o mesmo % vai ao render (Fase 3). */}
           </>
         )}
 
@@ -557,7 +549,7 @@ export default function EditorCanvas({
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
           onPointerDown={podeEditar && area.mostrarMarcacao ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && area.mostrarMarcacao ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && area.mostrarMarcacao && elementoSelecionado === 'area' ? 'edl-guia-ativa' : ''} ${podeEditar && area.mostrarMarcacao ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
@@ -570,8 +562,8 @@ export default function EditorCanvas({
           }}
         >
 
-          {/* Manijas de redimensionar (SÓ na célula editável) */}
-          {podeEditar && area.mostrarMarcacao && (
+          {/* Manijas de redimensionar (SÓ quando a ÁREA está selecionada) */}
+          {podeEditar && area.mostrarMarcacao && elementoSelecionado === 'area' && (
             <>
               <span
                 role="slider"
@@ -582,7 +574,7 @@ export default function EditorCanvas({
                 data-altura={String(area.altura)}
                 onPointerDown={redimensionarAreaDireita}
                 className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{ right: -5, top: '50%', transform: 'translateY(-50%)', width: 12, height: 26, background: 'var(--edl-rosa)', cursor: 'ew-resize', touchAction: 'none' }}
+                style={{ right: -5, top: '50%', transform: 'translateY(-50%)', width: 12, height: 26, background: '#94a3b8', cursor: 'ew-resize', touchAction: 'none' }}
               />
               <span
                 role="slider"
@@ -593,7 +585,7 @@ export default function EditorCanvas({
                 data-altura={String(area.altura)}
                 onPointerDown={redimensionarAreaAbaixo}
                 className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{ bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 26, height: 12, background: 'var(--edl-roxo)', cursor: 'ns-resize', touchAction: 'none' }}
+                style={{ bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 26, height: 12, background: '#94a3b8', cursor: 'ns-resize', touchAction: 'none' }}
               />
               <span
                 role="slider"
@@ -604,7 +596,7 @@ export default function EditorCanvas({
                 data-altura={String(area.altura)}
                 onPointerDown={redimensionarAreaCanto}
                 className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{ right: -5, bottom: -5, width: 14, height: 14, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+                style={{ right: -5, bottom: -5, width: 14, height: 14, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
               />
             </>
           )}
@@ -658,7 +650,7 @@ export default function EditorCanvas({
                 data-largura={String(logo.largura)}
                 onPointerDown={redimensionarLogo}
                 className="absolute w-4 h-4 rounded-full border-2 border-white shadow"
-                style={{ right: -8, bottom: -8, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+                style={{ right: -8, bottom: -8, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
               />
             )}
           </div>
@@ -712,7 +704,7 @@ export default function EditorCanvas({
                   data-largura={String(t.largura)}
                   onPointerDown={redimensionar}
                   className="absolute w-2.5 h-9 rounded-sm border-2 border-white shadow"
-                  style={{ right: -9, top: '50%', transform: 'translateY(-50%)', background: 'var(--edl-rosa)', cursor: 'ew-resize', touchAction: 'none' }}
+                  style={{ right: -9, top: '50%', transform: 'translateY(-50%)', background: '#94a3b8', cursor: 'ew-resize', touchAction: 'none' }}
                 />
               )}
             </div>

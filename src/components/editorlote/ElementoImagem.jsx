@@ -56,7 +56,7 @@ export default function ElementoImagem({ imagem, aoAtualizarConfig, selecionado 
           data-largura={String(imagem.largura)}
           onPointerDown={redimensionar}
           className="absolute w-3 h-3 rounded-full border-2 border-white shadow"
-          style={{ right: -7, bottom: -7, background: 'var(--edl-grad)', cursor: 'nwse-resize', touchAction: 'none' }}
+          style={{ right: -7, bottom: -7, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
         />
       )}
     </div>

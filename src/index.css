@@ -232,10 +232,16 @@ select option {
 
 }
 
-/* Área do vídeo marcada */
+/* Área do vídeo (guia): SEMPRE neutra — o preenchimento rosa/roxo antigo era
+   a "linha rosa permanente" no preview. O guia aparece SÓ como contorno
+   tracejado neutro quando a marcação está ligada (classe utilitária). */
 .edl-area-video {
-  border: 2px dashed rgba(236, 72, 153, 0.75);
-  background-color: rgba(139, 92, 246, 0.1);
+  border: 2px dashed transparent;
+  background-color: transparent;
+}
+.edl-area-video.edl-guia-ativa {
+  border-color: rgba(148, 163, 184, 0.65);
+  background-color: transparent;
 }
 
 /* Selo "BASE" (card do vídeo base) — discreto, sem brilho/glow */
@@ -285,20 +291,17 @@ select option {
   line-height: 1.15;
 }
 
-/* Item 4 — handles/alças dos textos SÓ aparecem no hover/focus do bloco ou
-   quando o popup precisa (classe utilitária). Durante a digitação no painel
-   (sem hover no canvas) o texto fica limpo: sem bola rosa, sem tracinhos.
-   Ferramentas reais preservadas: área do vídeo, linhas de corte, drag. */
+/* Item 4 — handles/alças SÓ aparecem no elemento SELECIONADO (classe
+   `edl-elemento-selecionado`, aplicada por Camadas ⇄ Preview). Elemento
+   não selecionado fica 100% limpo — sem bola rosa, sem tracinhos, nem no
+   hover. Ferramentas reais preservadas: área do vídeo, linhas de corte, drag. */
 .edl-texto-canvas [role="slider"],
 .edl-logo [role="slider"] {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
 }
-.edl-texto-canvas:hover [role="slider"],
-.edl-texto-canvas:focus-within [role="slider"],
-.edl-logo:hover [role="slider"],
-.edl-logo:focus-within [role="slider"],
+.edl-elemento-selecionado [role="slider"],
 .edl-mostra-alcas [role="slider"] {
   opacity: 1;
   pointer-events: auto;
@@ -353,12 +356,13 @@ select option {
   color: var(--edl-texto);
 }
 
-/* SELEÇÃO DE ELEMENTO (Camadas ⇄ Preview): anel tracejado rosa SÓ no
-   elemento selecionado — some ao clicar fora (deseleção), sem caixas
-   permanentes. outline não altera layout. */
+/* SELEÇÃO DE ELEMENTO (Camadas ⇄ Preview): indicação DISCRETA — um contorno
+   sólido neutro SÓ no elemento selecionado. Some ao clicar fora
+   (deseleção), sem caixas permanentes. outline não altera layout.
+   (Antes: tracejado rosa ocupando toda a área — removido.) */
 .edl-elemento-selecionado {
-  outline: 2px dashed var(--edl-rosa);
-  outline-offset: 3px;
+  outline: 1px solid rgba(148, 163, 184, 0.8);
+  outline-offset: 2px;
 }
 
 
