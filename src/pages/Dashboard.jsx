@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { buscarBiblioteca, buscarFila, excluirItemFila } from '../lib/api';
+import { buscarFila, listarAgendamentos, excluirItemFila } from '../lib/api';
 import CartaoEstatistica from '../components/CartaoEstatistica';
 import StatusDot from '../components/StatusDot';
 import { Film, Clock, Loader2, CheckCircle2, AlertCircle, Activity, Trash2, X, RefreshCw } from 'lucide-react';
@@ -8,7 +8,7 @@ import { Film, Clock, Loader2, CheckCircle2, AlertCircle, Activity, Trash2, X, R
 const FILA_EXCLUIVEL = new Set(['aguardando', 'concluido', 'erro']);
 
 /**
- * ÚNICO timer do Painel: o poll automático de /api/biblioteca + /api/fila.
+ * ÚNICO timer do Painel: o poll automático de /api/fila + /api/agendamentos.
  * O botão "Atualizar", o retorno de visibilidade da aba e o pós-exclusão
  * reutilizam a MESMA função de carga (carregar) — nunca há um segundo
  * setInterval nem fetch sobreposto (trava `buscaEmVoo` + reexecução pendente).
@@ -25,8 +25,34 @@ export function contarPorStatus(itens, status) {
   return (itens || []).filter((item) => item && item.status === status).length;
 }
 
+/**
+ * Agendamentos ATIVOS/FUTUROS para publicação — MESMA definição canônica do
+ * backend (`limpezaPublicados.js` → temAgendamentoAtivo):
+ *   - 'agendado'   → PROGRAMADO (ainda vai publicar);
+ *   - 'publicando' → publicação em andamento (agendamento ainda ativo).
+ * Ficam FORA: 'publicado' (já publicado), 'cancelado' (cancelado) e 'erro'
+ * (não vai mais publicar — o backend libera o vídeo para reagendar).
+ */
+const STATUS_AGENDAMENTO_ATIVO = new Set(['agendado', 'publicando']);
+
+/**
+ * VÍDEOS com agendamento ativo/futuro (GET /api/agendamentos) — é o número do
+ * card "Vídeos" do Painel. Um VÍDEO é contado UMA vez (chave `finalId ||
+ * bibliotecaId`, a MESMA identidade de vídeo usada pelo backend), então
+ * registros repetidos do mesmo vídeo nunca inflam o contador. A biblioteca
+ * (originais baixados/importados/publicados) NÃO entra nesta conta.
+ */
+export function contarVideosProgramados(agendamentos) {
+  const videos = new Set();
+  for (const ag of agendamentos || []) {
+    if (!ag || !STATUS_AGENDAMENTO_ATIVO.has(ag.status)) continue;
+    videos.add(ag.finalId || ag.bibliotecaId || ag.id);
+  }
+  return videos.size;
+}
+
 export default function Dashboard() {
-  const [biblioteca, setBiblioteca] = useState([]);
+  const [agendamentos, setAgendamentos] = useState([]);
   const [fila, setFila] = useState([]);
   const [carregando, setCarregando] = useState(true); // 1ª carga
   const [atualizando, setAtualizando] = useState(false); // refresh manual em curso
@@ -53,9 +79,9 @@ export default function Dashboard() {
     buscaEmVoo.current = true;
     if (manual) setAtualizando(true);
     try {
-      const [bib, fl] = await Promise.all([buscarBiblioteca(), buscarFila()]);
-      setBiblioteca(bib || []);
+      const [fl, ags] = await Promise.all([buscarFila(), listarAgendamentos()]);
       setFila(fl || []);
+      setAgendamentos(Array.isArray(ags) ? ags : []);
       setConexao('ok');
     } catch {
       setConexao('falha');
@@ -102,7 +128,8 @@ export default function Dashboard() {
     }
   }
 
-  // NÚMEROS REAIS: fila = estados do pipeline (worker); biblioteca = originais.
+  // NÚMEROS REAIS: fila = estados do pipeline (worker);
+  // agendamentos = vídeos com programação ativa/futura para publicar.
   const contarFila = (status) => contarPorStatus(fila, status);
 
   if (carregando) {
@@ -126,7 +153,7 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           {/* Sistema Ativo — estado REAL: deriva do resultado da última leitura
-             do backend (GET /api/biblioteca + GET /api/fila). Não é decorativo:
+             do backend (GET /api/fila + GET /api/agendamentos). Não é decorativo:
              falha de rede vira "Sem conexão" e mantém os últimos dados válidos. */}
           <div
             title={
@@ -159,7 +186,7 @@ export default function Dashboard() {
 
       {/* Metrics Grid — todos os valores vêm do backend real */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <CartaoEstatistica rotulo="Vídeos" valor={biblioteca.length} corDestaque="#8b5cf6" icon={Film} />
+        <CartaoEstatistica rotulo="Vídeos" valor={contarVideosProgramados(agendamentos)} corDestaque="#8b5cf6" icon={Film} />
         <CartaoEstatistica rotulo="Aguardando" valor={contarFila('aguardando')} corDestaque="#a1a1b0" icon={Clock} />
         <CartaoEstatistica rotulo="Processando" valor={contarFila('processando')} corDestaque="#ec4899" icon={Loader2} />
         <CartaoEstatistica rotulo="Concluídos" valor={contarFila('concluido')} corDestaque="#059669" icon={CheckCircle2} />
