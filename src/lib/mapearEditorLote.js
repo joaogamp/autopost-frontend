@@ -1,5 +1,5 @@
 import { BASE_URL } from './api.js';
-import { areaVideoNormalizada } from './configEditorLote.js';
+import { areaVideoNormalizada, limitarCorte } from './configEditorLote.js';
 
 /**
  * EDITOR EM LOTE — conversão da config COMPARTILHADA (%) para o payload do
@@ -26,9 +26,14 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
 
   // Corte de bordas: superior e inferior são INDEPENDENTES (0..90 cada um).
   // O render COBRE a área cortada com a cor de fundo (drawbox no FFmpeg) —
-  // as faixas podem se sobrepor no extremo (união cobre tudo), igual à prévia.
-  const sup = Math.min(90, Math.max(0, Number(corteBordas?.superior) || 0));
-  const inf = Math.min(90, Math.max(0, Number(corteBordas?.inferior) || 0));
+  // igual à prévia. MESMOS limites do preview (limitarCorte): soma ≤ 90 →
+  // margem mínima de 10% do vídeo SEMPRE visível. PRÉVIA = RENDER, inclusive
+  // nos extremos (nunca área inválida, nunca o vídeo sumindo por completo).
+  const { superior: sup, inferior: inf } = limitarCorte(
+    Number(corteBordas?.superior) || 0,
+    Number(corteBordas?.inferior) || 0,
+    'superior',
+  );
 
   let logoPosicao = null;
   if (logo.visivel && logo.url) {

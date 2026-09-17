@@ -10,7 +10,7 @@
  * NUNCA altera o outro.
  */
 
-import { CORTE_MAXIMO, CANVAS_LARGURA, deslocamentoPorArraste } from '../../lib/configEditorLote';
+import { atualizarCorteNoConfig, CANVAS_LARGURA, deslocamentoPorArraste } from '../../lib/configEditorLote';
 
 /** Aplica `cambios` em uma ruta anidada da config (1 ou 2 niveles). */
 function atualizarRuta(config, ruta, cambios) {
@@ -428,6 +428,9 @@ export function gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig, minPx = 
 /* ---------------------------------------------------------------------------
  * CORTE DE BORDAS — arrastar linhas superior/inferior (em % do canvas).
  * Superior e inferior são INDEPENDENTES: mudar uma linha NUNCA altera a outra.
+ * AMBAS escrevem pela MESMA função do painel (atualizarCorteNoConfig) — slider
+ * ⇄ linha ficam sempre sincronizados e a margem mínima visível é imposta na
+ * escrita (a linha que se move para antes de cruzar a outra).
  * ------------------------------------------------------------------------- */
 
 /** Handler de arrastre da linha de corte SUPERIOR (`data-posy` = % desde o
@@ -447,15 +450,12 @@ export function gerarArrastarCorteSuperior(aoAtualizarConfig, videoId = null) {
     const startY = e.clientY;
 
     function aoMover(ev) {
-      const dy = (ev.clientY - startY) / escala;
+      const dy = (ev.clientY - startY) / Math.max(escala, 0.05);
       const pct = clampPct(inicialPos + percentFromDelta(cH, dy));
-      aoAtualizarConfig((cfg) => ({
-        ...cfg,
-        // Independiente: solo toca `superior` — el valor de `inferior` queda
-        // EXACTAMENTE como estaba.
-        corteBordas: { ...cfg.corteBordas, superior: Math.min(CORTE_MAXIMO, Math.max(0, pct)) },
-        ...(videoId ? { overridesPorVideo: { ...(cfg.overridesPorVideo || {}), [videoId]: { superior: Math.min(CORTE_MAXIMO, Math.max(0, pct)), inferior: Number(cfg.overridesPorVideo?.[videoId]?.inferior ?? cfg.corteBordas?.inferior ?? 0), origem: 'manual', em: Date.now() } } } : null),
-      }));
+      // FONTE ÚNICA (mesma escrita do slider do painel): global + override do
+      // vídeo atual, margem mínima visível imposta. Mover para CIMA aumenta
+      // o corte; `inferior` fica EXATAMENTE como estava.
+      aoAtualizarConfig((cfg) => atualizarCorteNoConfig(cfg, videoId, { superior: pct }));
     }
     function aoSoltar() {
       window.removeEventListener('pointermove', aoMover);
@@ -484,15 +484,13 @@ export function gerarArrastarCorteInferior(aoAtualizarConfig, videoId = null) {
     const startY = e.clientY;
 
     function aoMover(ev) {
-      const dy = (ev.clientY - startY) / escala;
+      const dy = (ev.clientY - startY) / Math.max(escala, 0.05);
       const pos = clampPct(inicialPos + percentFromDelta(cH, dy));
-      const inf = Math.min(CORTE_MAXIMO, Math.max(0, 100 - pos));
-      aoAtualizarConfig((cfg) => ({
-        ...cfg,
-        // Independiente: solo toca `inferior` — `superior` não é alterado.
-        corteBordas: { ...cfg.corteBordas, inferior: inf },
-        ...(videoId ? { overridesPorVideo: { ...(cfg.overridesPorVideo || {}), [videoId]: { inferior: inf, superior: Number(cfg.overridesPorVideo?.[videoId]?.superior ?? cfg.corteBordas?.superior ?? 0), origem: 'manual', em: Date.now() } } } : null),
-      }));
+      const inferior = clampPct(100 - pos);
+      // FONTE ÚNICA (mesma escrita do slider do painel): global + override do
+      // vídeo atual, margem mínima visível imposta. Arrastar para CIMA
+      // aumenta `inferior`; `superior` não é alterado.
+      aoAtualizarConfig((cfg) => atualizarCorteNoConfig(cfg, videoId, { inferior }));
     }
     function aoSoltar() {
       window.removeEventListener('pointermove', aoMover);

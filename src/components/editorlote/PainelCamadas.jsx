@@ -12,6 +12,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { corteEfetivoDoVideo, atualizarCorteNoConfig } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — PAINEL DIREITO: CAMADAS.
@@ -34,7 +35,7 @@ import {
 
 /** Constrói a lista de camadas a partir da config COMPARTILHADA. Exportada
  * pra testes e pra manter UMA única definição da ordem de composição. */
-export function construirCamadas(config) {
+export function construirCamadas(config, idSelecionado = null) {
   if (!config || typeof config !== 'object') return [];
   const camadas = [];
 
@@ -116,15 +117,22 @@ export function construirCamadas(config) {
     alternar: (v) => ({ areaVideo: { ...config.areaVideo, mostrarMarcacao: v } }),
   });
 
+  // FONTE ÚNICA do corte: o olho mostra o estado EFETIVO (override do vídeo
+  // vence o global — o mesmo que o preview recorta) e o clique escreve pela
+  // MESMA função do painel e do arraste das linhas (atualizarCorteNoConfig).
+  // Desligar remove também o override do vídeo atual — o corte desliga DE
+  // VERDADE (preview e render juntos). As linhas permanecem SEMPRE visíveis
+  // como referência; só a máscara (clip-path) e o render se desligam.
+  const corteEfetivo = corteEfetivoDoVideo(config, idSelecionado);
   camadas.push({
     id: 'corte',
     rotulo: 'Corte de borda',
     Icone: Scissors,
     temOlho: true,
-    visivel: !!config.corteBordas?.ativo,
-    // Flag REAL do render: desligar remove o corte do vídeo final.
+    visivel: corteEfetivo.ativo,
+    // Chave REAL do render: desligar remove o corte do vídeo final.
     dicaOlho: 'Ativar/desativar o corte de bordas (vale pro render)',
-    alternar: (v) => ({ corteBordas: { ...config.corteBordas, ativo: v } }),
+    alternar: (v) => atualizarCorteNoConfig(config, idSelecionado, { ativo: v }),
   });
 
   camadas.push({ id: 'video', rotulo: 'Vídeo', Icone: Film, temOlho: false, visivel: true });
@@ -133,8 +141,8 @@ export function construirCamadas(config) {
   return camadas;
 }
 
-export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelecionado, aoSelecionarElemento }) {
-  const camadas = construirCamadas(config);
+export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelecionado, aoSelecionarElemento, idSelecionado = null }) {
+  const camadas = construirCamadas(config, idSelecionado);
 
   return (
     <div className="h-full min-h-0 flex flex-col bg-[color:var(--edl-painel)]">

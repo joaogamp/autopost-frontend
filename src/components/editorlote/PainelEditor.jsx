@@ -7,6 +7,8 @@ import {
   criarIdentidadePadrao,
   criarImagemPadrao,
   CORTE_MAXIMO,
+  corteEfetivoDoVideo,
+  atualizarCorteNoConfig,
   FONTES_TEXTO,
   PESOS_TEXTO,
   ALINEACIONES_TEXTO,
@@ -896,9 +898,14 @@ export default function PainelEditor({
     }
 
     if (sel === 'corte') {
-      const corte = config.corteBordas || {};
+      // FONTE ÚNICA: o painel lê os MESMOS valores que o Preview recorta
+      // (corteEfetivoDoVideo — override do vídeo vence o global) e escreve
+      // pela MESMA função do arraste das linhas (atualizarCorteNoConfig).
+      // SLIDER ⇄ CONFIG ⇄ PREVIEW sincronizados: o % exibido é o mesmo do
+      // clip-path e do render.
+      const corte = corteEfetivoDoVideo(config, idSelecionado);
       const aoMudarCorte = (campo, valor) =>
-        aoAtualizarConfig((cfg) => ({ ...cfg, corteBordas: { ...cfg.corteBordas, [campo]: valor } }));
+        aoAtualizarConfig((cfg) => atualizarCorteNoConfig(cfg, idSelecionado, { [campo]: valor }));
       return (
         <div className="px-3.5 py-3.5 space-y-3">
           <span className="text-[11px] font-extrabold text-white">Corte de bordas</span>

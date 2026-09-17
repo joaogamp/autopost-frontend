@@ -1156,6 +1156,7 @@ export default function EditorLote() {
               aoAtualizarConfig={setConfig}
               elementoSelecionado={elementoSelecionado}
               aoSelecionarElemento={setElementoSelecionado}
+              idSelecionado={idSelecionado}
             />
           </div>
         </aside>

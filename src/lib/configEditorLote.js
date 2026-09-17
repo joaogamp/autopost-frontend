@@ -237,6 +237,28 @@ export const ALINEACIONES_TEXTO = [
 /** Límites suaves do corte de bordas (%). Cada borde é INDEPENDENTE. */
 export const CORTE_MAXIMO = 90;
 
+/** MARGEM MÍNIMA VISÍVEL (% da altura): superior + inferior ≤ CORTE_MAXIMO
+ * (90) → SEMPRE restam ≥ 10% do vídeo original visível. Regra ÚNICA valendo
+ * no preview (corteEfetivoDoVideo), no painel/arraste (atualizarCorteNoConfig)
+ * e no render (mapearEditorLote) — nunca área inválida, nunca vídeo sumido. */
+export const CORTE_MARGEM_MINIMA = 100 - CORTE_MAXIMO;
+
+/** REGRA ÚNICA de limites do corte (preview = painel = render). Limita cada
+ * eixo a 0..CORTE_MAXIMO e a SOMA a CORTE_MAXIMO (margem mínima visível).
+ * `prioridade` decide qual eixo MANTÉM o valor quando a soma estoura — o
+ * outro cede parando exatamente no limite (a linha arrastada nunca cruza a
+ * outra). Leitura (preview/render) usa 'superior' (determinístico); escrita
+ * dá prioridade ao eixo ESTÁTICO (quem se move é quem para antes). */
+export function limitarCorte(superior, inferior, prioridade = 'superior') {
+  let sup = Math.min(CORTE_MAXIMO, Math.max(0, Number(superior) || 0));
+  let inf = Math.min(CORTE_MAXIMO, Math.max(0, Number(inferior) || 0));
+  if (sup + inf > CORTE_MAXIMO) {
+    if (prioridade === 'inferior') sup = Math.max(0, CORTE_MAXIMO - inf);
+    else inf = Math.max(0, CORTE_MAXIMO - sup);
+  }
+  return { superior: sup, inferior: inf };
+}
+
 /** Bloque de texto padrão (usado para superior E inferior — independientes).
  * Opt-in: nasce invisível (`visivel:false`); só aparece no preview depois que
  * o usuário digitar conteúdo e/ou ligar a visibilidade. `onde` = 'superior'
@@ -441,16 +463,82 @@ export function loteTemEdicoesAtivas(cfg) {
 
 /** FASE 2 — corte efetivo de UM vídeo: override individual vence o global.
  * `overridesPorVideo` = { [videoId]: { superior, inferior } }. Fail-open:
- * valores ausentes/inválidos → 0% (vídeo sem corte). */
+ * valores ausentes/inválidos → 0% (vídeo sem corte). Os limites (cada eixo
+ * 0..CORTE_MAXIMO e soma ≤ CORTE_MAXIMO — margem mínima visível) são os
+ * MESMOS que o render aplica no payload (mapearEditorLote → limitarCorte):
+ * PRÉVIA = RENDER. */
 export function corteEfetivoDoVideo(config, videoId) {
   const global = config?.corteBordas || {};
   const over = videoId ? config?.overridesPorVideo?.[videoId] : null;
   const supRaw = over?.superior ?? global.superior ?? 0;
   const infRaw = over?.inferior ?? global.inferior ?? 0;
-  const superior = Math.min(CORTE_MAXIMO, Math.max(0, Number(supRaw) || 0));
-  const inferior = Math.min(CORTE_MAXIMO, Math.max(0, Number(infRaw) || 0));
+  const { superior, inferior } = limitarCorte(supRaw, infRaw, 'superior');
   const ativo = !!global.ativo || !!over;
   return { ativo, superior, inferior };
+}
+
+/** FONTE ÚNICA DE ESCRITA do corte de bordas (painel ⇄ preview ⇄ render).
+ * Slider do painel, arraste das linhas no Preview e o olho da camada usam
+ * ESTA função — nunca estados separados:
+ *
+ * · { superior | inferior } (slider OU linha arrastada): escreve o eixo no
+ *   GLOBAL (config compartilhada do lote) E no override do vídeo atual
+ *   (origem 'manual') — os MESMOS valores que o preview recorta (clip-path
+ *   via corteEfetivoDoVideo) e que o render materializa (payload com override
+ *   → ativo:true). A margem mínima é imposta por `limitarCorte` com
+ *   prioridade ao eixo ESTÁTICO: a linha que se move para antes de cruzar a
+ *   outra (nunca área inválida, nunca o vídeo desaparecendo).
+ * · { ativo: true } (toggle/olho): liga a chave REAL do render (global).
+ * · { ativo: false }: desliga a chave do render E remove o override do vídeo
+ *   atual — o corte deste vídeo desliga DE VERDADE (preview e render juntos;
+ *   as linhas permanecem só como referência visual). */
+export function atualizarCorteNoConfig(cfg, videoId, cambios) {
+  const base = cfg && typeof cfg === 'object' ? cfg : {};
+  const efetivo = corteEfetivoDoVideo(base, videoId || null);
+  const globalAntes = base.corteBordas || {};
+  const overAntes = (videoId && base.overridesPorVideo?.[videoId]) || null;
+
+  if (!('superior' in cambios) && !('inferior' in cambios)) {
+    // TOGGLE (chave real do render): ativo/desativo + override do vídeo fora.
+    const global = { ...globalAntes, ativo: !!cambios.ativo };
+    if (!cambios.ativo && videoId && base.overridesPorVideo?.[videoId]) {
+      const overrides = { ...(base.overridesPorVideo || {}) };
+      delete overrides[videoId];
+      return { ...base, corteBordas: global, overridesPorVideo: overrides };
+    }
+    return { ...base, corteBordas: global };
+  }
+
+  // MUDANÇA DE VALOR (slider do painel OU arraste da linha no preview).
+  const mudaSuperior = 'superior' in cambios;
+  const par = {
+    superior: mudaSuperior ? Number(cambios.superior) || 0 : efetivo.superior,
+    inferior: 'inferior' in cambios ? Number(cambios.inferior) || 0 : efetivo.inferior,
+  };
+  // A linha que se move PARA no limite: o eixo ESTÁTICO mantém o valor, o
+  // eixo mexido cede (margem mínima visível garantida nos DOIS destinos).
+  const prioridade = mudaSuperior && !('inferior' in cambios) ? 'inferior' : 'superior';
+  const limitado = limitarCorte(par.superior, par.inferior, prioridade);
+
+  const global = {
+    ...globalAntes,
+    ...(mudaSuperior ? { superior: limitado.superior } : {}),
+    ...('inferior' in cambios ? { inferior: limitado.inferior } : {}),
+  };
+  const overridesPorVideo = { ...(base.overridesPorVideo || {}) };
+  if (videoId) {
+    // Override do vídeo atual = MESMOS valores do preview (a linha corta o
+    // vídeo ORIGINAL naquela posição; o render recebe este override com
+    // ativo:true — prévia e vídeo final idênticos).
+    overridesPorVideo[videoId] = {
+      ...(overAntes || {}),
+      superior: limitado.superior,
+      inferior: limitado.inferior,
+      origem: 'manual',
+      em: Date.now(),
+    };
+  }
+  return { ...base, corteBordas: global, overridesPorVideo };
 }
 
 export function criarConfigPadrao() {

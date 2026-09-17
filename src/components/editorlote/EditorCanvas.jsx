@@ -277,7 +277,6 @@ export default function EditorCanvas({
   const logo = config.logo || {};
   const identidade = config.identidade || null;
   const corte = corteEfetivoDoVideo(config, itemSelecionado?.id);
-  const corteGlobal = config.corteBordas || {};
   const corteAtivo = !!corte.ativo || !!(itemSelecionado?.id && config?.overridesPorVideo?.[itemSelecionado.id]);
   const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.superior) || 0));
   const corteInf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.inferior) || 0));
@@ -288,10 +287,11 @@ export default function EditorCanvas({
   const corteMostraClip = corteAtivo && (corteSup > 0 || corteInf > 0);
   const corteSupEfetivo = corteSup;
   const corteInfEfetivo = corteInf;
-  // Linha inferior vive em 100%−inf. Evita que cruce la superior si el usuario
-  // força valores extremos (superior + inferior ≥ 100) — los valores siguen
-  // sendo independentes en la config.
-  const posLinhaInferior = Math.max(corteSup + 1, 100 - corteInf);
+  // Linha inferior vive em `top: (100 − inferior)%` — EXATAMENTE o mesmo
+  // percentual efetivo do clip-path e do render (NENHUM cálculo visual à
+  // parte). Com a margem mínima imposta na fonte única (superior + inferior
+  // ≤ 90), a linha nunca cruza a superior e o vídeo nunca desaparece inteiro.
+  const posLinhaInferior = 100 - corteInf;
   const item = itemSelecionado;
   // NOTA: `area.fit` (cobrir/ajustar) é usado na prévia E no vídeo final —
   // o mesmo valor viaja no template (scale/crop/pad do FFmpeg). O enquadramento

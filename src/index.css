@@ -263,6 +263,19 @@ select option {
   color: #f87171;
 }
 
+/* Linhas de corte de bordas — PERMANENTES no preview (referência visual do
+   corte; nunca somem ao selecionar Logo/Texto/Imagem/Selo/Vídeo/Fundo — a
+   seleção só muda os CONTROLES de edição). A máscara real é o clip-path da
+   camada do vídeo. Aqui só o affordance: no hover a linha acende e a alça
+   central cresce — indicando que é arrastável com o mouse. */
+.edl-corredor-corte:hover {
+  border-top-color: rgba(226, 232, 240, 0.95) !important;
+  border-bottom-color: rgba(226, 232, 240, 0.95) !important;
+}
+.edl-corredor-corte:hover > span {
+  transform: translate(-50%, -50%) scale(1.25);
+}
+
 /* Logo arrastável */
 .edl-logo {
   cursor: grab;
