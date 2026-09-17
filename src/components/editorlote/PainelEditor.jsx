@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, Check, BadgeCheck, ImagePlus, Scan, Image as ImageIcon } from 'lucide-react';
+import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, BadgeCheck, ImagePlus, Scan, Image as ImageIcon } from 'lucide-react';
 import BotaoEmoji from './BotaoEmoji';
 import {
   CORES_FUNDO,
@@ -210,16 +210,27 @@ function SelecaoTipografia({ t, aoMudar }) {
   );
 }
 
-/** Bloco de TEXTO da arte (superior/inferior). */
-function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig, aoAbrirPopupTexto }) {
+/** Bloco de TEXTO da arte (superior/inferior) — CONTAINER ÚNICO da ferramenta.
+ * Contém o ÚNICO textarea + todos os controles (emoji, fonte, peso,
+ * alinhamento, cor, tamanho, largura, opacidade, visibilidade). Usado tanto
+ * no popup de texto quanto na configuração inline — nunca os dois ao mesmo
+ * tempo (o painel principal esconde quando há popup). Edição é live via
+ * `mudarTexto` (prévia atualiza na hora). */
+function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig }) {
   const aoMudar = (campo, valor) => mudarTexto(aoAtualizarConfig, chave, campo, valor);
   return (
     <div className="px-3.5 py-3.5 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-extrabold text-white">{rotulo}</span>
-        <BotaoPequeno icone={Type} onClick={aoAbrirPopupTexto} title="Escrever/editar o texto num popup pequeno (o Preview continua visível)">Editar texto</BotaoPequeno>
+      <span className="text-[11px] font-extrabold text-white">{rotulo}</span>
+      <div>
+        <Rotulo>Escrever texto</Rotulo>
+        <textarea
+          rows={4}
+          value={t.conteudo || ''}
+          onChange={(e) => aoMudar('conteudo', e.target.value)}
+          placeholder="Escreva aqui…"
+          className="edl-input w-full text-[11px] font-semibold px-2.5 py-2 rounded-lg resize-y outline-none"
+        />
       </div>
-      <p className="text-[11px] break-words text-white/70">{t.conteudo || 'Sem texto. Clique em Editar texto.'}</p>
       <div className="flex items-center justify-between">
         <Rotulo>Emoji</Rotulo>
         <BotaoEmoji aoInserir={(emoji) => aoMudar('conteudo', `${t.conteudo || ''}${emoji}`)} />
@@ -473,7 +484,6 @@ export default function PainelEditor({
 }) {
   const [popup, setPopup] = useState(null); // 'logo' | 'texto' | 'imagem' | 'video' | 'fundo' | 'identidade' | 'selo' | null
   const [alvoTexto, setAlvoTexto] = useState('superior');
-  const [rascunhoTexto, setRascunhoTexto] = useState({ conteudo: '', visivel: false });
   const [erroPopup, setErroPopup] = useState('');
   /** Última seleção já processada pela auto-abertura (Camadas ⇄ Preview). */
   const ultimaSelecaoRef = useRef(null);
@@ -721,13 +731,13 @@ export default function PainelEditor({
     }));
   }
 
-  /* ---------------- POPUP PEQUENO DE TEXTO (Preview continua visível) ---------------- */
+  /* ---------------- POPUP DE TEXTO: container ÚNICO (config completa imediata).
+   * Edição 100% live via `mudarTexto` — sem Cancelar/Confirmar. O toggle troca
+   * TUDO junto via `trocarAlvoTexto` (textarea + controles + seleção). ------ */
 
   function abrirPopupTexto(alvo = null) {
     const escolhido = alvo || (elementoSelecionado === 'textoInferior' ? 'inferior' : 'superior');
-    const t = textos[escolhido] || {};
     setAlvoTexto(escolhido);
-    setRascunhoTexto({ conteudo: t.conteudo || '', visivel: !!t.visivel });
     setErroPopup('');
     setPopup('texto');
     if (typeof aoSelecionarElemento === 'function') {
@@ -735,25 +745,12 @@ export default function PainelEditor({
     }
   }
 
-  /** Troca o alvo (principal/inferior) guardando novo ponto de restauração. */
+  /** Troca o alvo (superior/inferior): textarea + controles + seleção juntos. */
   function trocarAlvoTexto(alvo) {
-    const t = textos[alvo] || {};
     setAlvoTexto(alvo);
-    setRascunhoTexto({ conteudo: t.conteudo || '', visivel: !!t.visivel });
     if (typeof aoSelecionarElemento === 'function') {
       aoSelecionarElemento(alvo === 'inferior' ? 'textoInferior' : 'textoSuperior');
     }
-  }
-
-  /** Cancelar = volta exatamente o que havia quando o popup abriu. */
-  function cancelarPopupTexto() {
-    const { conteudo, visivel } = rascunhoTexto;
-    const chave = alvoTexto;
-    fecharPopup();
-    aoAtualizarConfig((cfg) => ({
-      ...cfg,
-      textos: { ...cfg.textos, [chave]: { ...(cfg.textos?.[chave] || {}), conteudo, visivel } },
-    }));
   }
 
   /* ---------------- BOTÕES "ADICIONAR ELEMENTOS" ---------------- */
@@ -811,7 +808,6 @@ export default function PainelEditor({
           rotulo={sel === 'textoSuperior' ? 'Texto principal' : 'Texto inferior'}
           t={textos[chave] || {}}
           aoAtualizarConfig={aoAtualizarConfig}
-          aoAbrirPopupTexto={() => abrirPopupTexto(chave)}
         />
       );
     }
@@ -1058,7 +1054,9 @@ export default function PainelEditor({
         </div>
       </div>
 
-      {/* CONFIGURAÇÃO do elemento selecionado (context panel) */}
+      {/* CONFIGURAÇÃO do elemento selecionado (context panel).
+          Escondida quando há popup — o popup 'texto' contém o BlocoTexto
+          completo, então há sempre UMA única instância visível. */}
       {!popup && (
         <div className="min-h-0 overflow-y-auto overflow-x-hidden" role={elementoSelecionado ? 'dialog' : undefined} aria-label={elementoSelecionado ? 'Configuração do elemento' : undefined}>
           {elementoSelecionado && <button type="button" className="edl-botao-fantasma text-xs m-2 p-2 rounded-lg" onClick={() => aoSelecionarElemento(null)}>Fechar configuração</button>}
@@ -1117,7 +1115,9 @@ export default function PainelEditor({
         </div>
       ) : null}
 
-      {/* POPUP PEQUENO — TEXTO (o Preview continua visível atrás, atualizando) */}
+      {/* POPUP — TEXTO: container ÚNICO com configuração COMPLETA imediata.
+          Toggle Superior/Inferior troca TUDO junto (textarea + controles +
+          elementoSelecionado). Edição live — fecha só com X. Preview visível. */}
 
 {popup === 'texto' ? (
         <div
@@ -1127,7 +1127,7 @@ export default function PainelEditor({
           aria-label="Editar texto"
         >
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-extrabold text-white">Escrever texto</span>
+            <span className="text-[11px] font-extrabold text-white">Texto</span>
             <button
               type="button"
               onClick={fecharPopup}
@@ -1139,8 +1139,8 @@ export default function PainelEditor({
           </div>
           <div className="flex gap-1.5 mt-2.5">
             {[
-              { id: 'superior', rotulo: 'Principal' },
-              { id: 'inferior', rotulo: 'Inferior' },
+              { id: 'superior', rotulo: 'Texto superior' },
+              { id: 'inferior', rotulo: 'Texto inferior' },
             ].map((o) => (
               <button
                 key={o.id}
@@ -1157,20 +1157,16 @@ export default function PainelEditor({
               </button>
             ))}
           </div>
-          <textarea
-            autoFocus
-            rows={4}
-            value={textos[alvoTexto]?.conteudo || ''}
-            onChange={(e) => mudarTexto(aoAtualizarConfig, alvoTexto, 'conteudo', e.target.value)}
-            placeholder="Escreva aqui…"
-            className="edl-input w-full mt-2 text-[11px] font-semibold px-2.5 py-2 rounded-lg resize-y outline-none"
-          />
-          <div className="flex justify-end gap-1.5 mt-2.5">
-            <BotaoPequeno onClick={cancelarPopupTexto}>Cancelar</BotaoPequeno>
-            <BotaoPequeno icone={Check} tom="destaque" onClick={fecharPopup}>Confirmar</BotaoPequeno>
+          <div className="mt-2 -mx-3.5 -mb-3.5">
+            <BlocoTexto
+              chave={alvoTexto}
+              rotulo={alvoTexto === 'inferior' ? 'Texto inferior' : 'Texto principal'}
+              t={textos[alvoTexto] || {}}
+              aoAtualizarConfig={aoAtualizarConfig}
+            />
           </div>
           <p className="text-[9px] font-semibold leading-relaxed mt-2" style={{ color: 'var(--edl-texto-mut)' }}>
-            O Preview atualiza em tempo real. “Cancelar” volta o texto anterior.
+            O Preview atualiza em tempo real.
           </p>
         </div>
       ) : null}
