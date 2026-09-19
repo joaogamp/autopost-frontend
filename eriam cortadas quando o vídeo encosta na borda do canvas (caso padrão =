@@ -1,0 +1,312 @@
+[1mdiff --git a/src/components/editorlote/EditorCanvas.jsx b/src/components/editorlote/EditorCanvas.jsx[m
+[1mindex 3689a7f..4739d2c 100644[m
+[1m--- a/src/components/editorlote/EditorCanvas.jsx[m
+[1m+++ b/src/components/editorlote/EditorCanvas.jsx[m
+[36m@@ -175,6 +175,13 @@[m [mexport default function EditorCanvas({[m
+   // quadro = área × zoom, posicionado pela folga com deslocamentoX/Y.[m
+   const caixa = caixaEnquadramentoVideo(area);[m
+   const enquadramentoEditado = enquadramentoVideoEditado(area);[m
+[32m+[m[32m  // OBJETO de vídeo fora do "canvas inteiro"? (redimensionado/movido pelas[m
+[32m+[m[32m  // alças do Preview) — só para o botão discreto de redefinir aparecer.[m
+[32m+[m[32m  const videoRedimensionado = Math.round(Number(area.largura) || 0) !== CANVAS_LARGURA[m
+[32m+[m[32m    || Math.round(Number(area.altura) || 0) !== CANVAS_ALTURA[m
+[32m+[m[32m    || Math.round(Number(area.x) || 0) !== 0[m
+[32m+[m[32m    || Math.round(Number(area.y) || 0) !== 0;[m
+[32m+[m[32m  const videoEditadoNoPreview = enquadramentoEditado || videoRedimensionado;[m
+   // Dimensões reais do vídeo (reportadas pelo <video> no onLoadedMetadata).[m
+   const aoDimensoesVideo = useCallback((d) => {[m
+     if (d && Number(d.largura) > 0 && Number(d.altura) > 0) dimsVideoRef.current = d;[m
+[36m@@ -228,6 +235,46 @@[m [mexport default function EditorCanvas({[m
+     else arrastarVideoNoCanvas(e);[m
+   };[m
+ [m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * REDIMENSIONAR O OBJETO DE VÍDEO (alças do Preview, estilo Canva) — MESMO[m
+[32m+[m[32m   * mecanismo já existente da área (`gerarRedimensionarArea`), agora também[m
+[32m+[m[32m   * usado pelo VÍDEO selecionado. Muda só `areaVideo.largura/altura` (+ `x`/`y`[m
+[32m+[m[32m   * quando a alça é da borda esquerda/superior) — a MESMA geometria que o[m
+[32m+[m[32m   * render materializa (scale/crop/pad do FFmpeg): prévia = render. Cantos[m
+[32m+[m[32m   * mantêm a PROPORÇÃO; as laterais ajustam uma dimensão. NÃO mexe em[m
+[32m+[m[32m   * `zoom`/`deslocamentoX/Y` (roda do mouse = enquadramento interno) nem em[m
+[32m+[m[32m   * `corteBordas` (linhas tracejadas permanentes).[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const aoRedimensionarVideo = (eixo) => gerarRedimensionarArea(eixo, atualizador, {[m
+[32m+[m[32m    aoInteragir: () => mostrarDicaEnquadramento('Redimensionando o vídeo…'),[m
+[32m+[m[32m  });[m
+[32m+[m[32m  const redimVideoDireita = aoRedimensionarVideo('direita');[m
+[32m+[m[32m  const redimVideoEsquerda = aoRedimensionarVideo('esquerda');[m
+[32m+[m[32m  const redimVideoAbaixo = aoRedimensionarVideo('abaixo');[m
+[32m+[m[32m  const redimVideoAcima = aoRedimensionarVideo('acima');[m
+[32m+[m[32m  const redimVideoCantoSD = aoRedimensionarVideo('canto-sudeste');[m
+[32m+[m[32m  const redimVideoCantoSE = aoRedimensionarVideo('canto-sudoeste');[m
+[32m+[m[32m  const redimVideoCantoNE = aoRedimensionarVideo('canto-nordeste');[m
+[32m+[m[32m  const redimVideoCantoNO = aoRedimensionarVideo('canto-noroeste');[m
+[32m+[m
+[32m+[m[32m  /**[m
+[32m+[m[32m   * ALÇAS do objeto de vídeo (Preview, estilo Canva): 4 CANTOS (mantêm a[m
+[32m+[m[32m   * proporção) + 4 LATERAIS (largura/altura). Ficam DENTRO do objeto (inset[m
+[32m+[m[32m   * 2px) porque o canvas tem `overflow-hidden`: alças centradas na borda[m
+[32m+[m[32m   * seriam cortadas quando o vídeo encosta na borda do canvas (caso padrão =[m
+[32m+[m[32m   * vídeo ocupando o canvas inteiro). Só aparecem com o vídeo SELECIONADO.[m
+[32m+[m[32m   */[m
+[32m+[m[32m  const alcasDoVideo = [[m
+[32m+[m[32m    { rotulo: 'canto superior esquerdo', largura: 14, altura: 14, estilo: { left: 2, top: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoNO },[m
+[32m+[m[32m    { rotulo: 'canto superior direito', largura: 14, altura: 14, estilo: { right: 2, top: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoNE },[m
+[32m+[m[32m    { rotulo: 'canto inferior esquerdo', largura: 14, altura: 14, estilo: { left: 2, bottom: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoSE },[m
+[32m+[m[32m    { rotulo: 'canto inferior direito', largura: 14, altura: 14, estilo: { right: 2, bottom: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoSD },[m
+[32m+[m[32m    { rotulo: 'lateral esquerda', largura: 12, altura: 26, estilo: { left: 2, top: '50%', transform: 'translateY(-50%)' }, cursor: 'ew-resize', onPointerDown: redimVideoEsquerda },[m
+[32m+[m[32m    { rotulo: 'lateral direita', largura: 12, altura: 26, estilo: { right: 2, top: '50%', transform: 'translateY(-50%)' }, cursor: 'ew-resize', onPointerDown: redimVideoDireita },[m
+[32m+[m[32m    { rotulo: 'lateral superior', largura: 26, altura: 12, estilo: { top: 2, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize', onPointerDown: redimVideoAcima },[m
+[32m+[m[32m    { rotulo: 'lateral inferior', largura: 26, altura: 12, estilo: { bottom: 2, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize', onPointerDown: redimVideoAbaixo },[m
+[32m+[m[32m  ];[m
+[32m+[m
+   // Alternativa touch à roda: mesma geometria, ancorada no centro do vídeo.[m
+   const zoomTouch = (sentido) => {[m
+     atualizador((cfg) => {[m
+[36m@@ -245,7 +292,16 @@[m [mexport default function EditorCanvas({[m
+   const redefinirEnquadramento = useCallback(() => {[m
+     atualizador((cfg) => ({[m
+       ...cfg,[m
+[31m-      areaVideo: { ...(cfg.areaVideo || {}), ...enquadramentoVideoOriginal() },[m
+[32m+[m[32m      areaVideo: {[m
+[32m+[m[32m        ...(cfg.areaVideo || {}),[m
+[32m+[m[32m        ...enquadramentoVideoOriginal(),[m
+[32m+[m[32m        // TAMANHO do objetivo de vídeo volta a ser o canvas inteiro (a[m
+[32m+[m[32m        // geometria passou a ser redimensionável pelas alças do Preview).[m
+[32m+[m[32m        x: 0,[m
+[32m+[m[32m        y: 0,[m
+[32m+[m[32m        largura: CANVAS_LARGURA,[m
+[32m+[m[32m        altura: CANVAS_ALTURA,[m
+[32m+[m[32m      },[m
+     }));[m
+     mostrarDicaEnquadramento('Enquadramento redefinido');[m
+   }, [atualizador, mostrarDicaEnquadramento]);[m
+[36m@@ -528,9 +584,53 @@[m [mexport default function EditorCanvas({[m
+           </div>[m
+         </div>[m
+ [m
+[32m+[m[32m        {/* CAIXA DE SELEÇÃO + ALÇAS DO OBJETO DE VÍDEO (vídeo selecionado).[m
+[32m+[m[32m            Vive FORA do clip-path (o corte nunca recorta as alças) e FORA da[m
+[32m+[m[32m            camada do vídeo (não bloqueia o arraste do corpo: o contêiner é[m
+[32m+[m[32m            `pointer-events-none` e SÓ as alças capturam o ponteiro). Arrastar[m
+[32m+[m[32m            o corpo move; roda do mouse = zoom interno; linha tracejada =[m
+[32m+[m[32m            corte; ALÇA = redimensiona o OBJETO (mesma geometria do render). */}[m
+[32m+[m[32m        {podeEditar && urlVideoAtiva && elementoSelecionado === 'video' && ([m
+[32m+[m[32m          <div[m
+[32m+[m[32m            data-elemento="video"[m
+[32m+[m[32m            className="edl-elemento-selecionado absolute z-30"[m
+[32m+[m[32m            style={{[m
+[32m+[m[32m              left: area.x * escala,[m
+[32m+[m[32m              top: area.y * escala,[m
+[32m+[m[32m              width: Math.max(2, area.largura) * escala,[m
+[32m+[m[32m              height: Math.max(2, area.altura) * escala,[m
+[32m+[m[32m              pointerEvents: 'none',[m
+[32m+[m[32m            }}[m
+[32m+[m[32m          >[m
+[32m+[m[32m            {alcasDoVideo.map((alca) => ([m
+[32m+[m[32m              <span[m
+[32m+[m[32m                key={alca.rotulo}[m
+[32m+[m[32m                role="slider"[m
+[32m+[m[32m                aria-label={`Redimensionar vídeo (${alca.rotulo})`}[m
+[32m+[m[32m                data-x={String(area.x)}[m
+[32m+[m[32m                data-y={String(area.y)}[m
+[32m+[m[32m                data-largura={String(area.largura)}[m
+[32m+[m[32m                data-altura={String(area.altura)}[m
+[32m+[m[32m                onPointerDown={alca.onPointerDown}[m
+[32m+[m[32m                className="absolute z-30 rounded-sm border-2 border-white shadow"[m
+[32m+[m[32m                style={{[m
+[32m+[m[32m                  ...alca.estilo,[m
+[32m+[m[32m                  width: alca.largura,[m
+[32m+[m[32m                  height: alca.altura,[m
+[32m+[m[32m                  background: '#94a3b8',[m
+[32m+[m[32m                  cursor: alca.cursor,[m
+[32m+[m[32m                  touchAction: 'none',[m
+[32m+[m[32m                  pointerEvents: 'auto',[m
+[32m+[m[32m                }}[m
+[32m+[m[32m              />[m
+[32m+[m[32m            ))}[m
+[32m+[m[32m          </div>[m
+[32m+[m[32m        )}[m
+[32m+[m
+         {/* REDEFINIR — discreto, aparece SÓ quando o usuário mexeu no[m
+[31m-            enquadramento. Volta tamanho e posição originais (zoom 1, centro). */}[m
+[31m-        {podeEditar && urlVideoAtiva && enquadramentoEditado && ([m
+[32m+[m[32m            enquadramento ou no TAMANHO/POSIÇÃO do objeto de vídeo. Volta[m
+[32m+[m[32m            tamanho e posição originais (zoom 1, centro, canvas inteiro). */}[m
+[32m+[m[32m        {podeEditar && urlVideoAtiva && videoEditadoNoPreview && ([m
+           <button[m
+             type="button"[m
+             onClick={redefinirEnquadramento}[m
+[1mdiff --git a/src/components/editorlote/arraste.js b/src/components/editorlote/arraste.js[m
+[1mindex 2853335..5942f73 100644[m
+[1m--- a/src/components/editorlote/arraste.js[m
+[1m+++ b/src/components/editorlote/arraste.js[m
+[36m@@ -10,7 +10,7 @@[m
+  * NUNCA altera o outro.[m
+  */[m
+ [m
+[31m-import { atualizarCorteNoConfig, CANVAS_LARGURA, deslocamentoPorArraste } from '../../lib/configEditorLote';[m
+[32m+[m[32mimport { atualizarCorteNoConfig, CANVAS_LARGURA, CANVAS_ALTURA, deslocamentoPorArraste } from '../../lib/configEditorLote';[m
+ [m
+ /** Aplica `cambios` em uma ruta anidada da config (1 ou 2 niveles). */[m
+ function atualizarRuta(config, ruta, cambios) {[m
+[36m@@ -162,47 +162,144 @@[m [mexport function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {[m
+     window.addEventListener('pointercancel', aoSoltar);[m
+   };[m
+ }[m
+[31m-/** Redimensiona la ÁREA DEL VÍDEO desde las manijas ('direita'|'abaixo'|'canto'). */[m
+[31m-export function gerarRedimensionarArea(eixo, aoAtualizarConfig) {[m
+[32m+[m[32m/* ---------------------------------------------------------------------------[m
+[32m+[m[32m * OBJETO DE VÍDEO — REDIMENSIONAR pelas ALÇAS do Preview (estilo Canva).[m
+[32m+[m[32m *[m
+[32m+[m[32m * A geometria do OBJETO é `areaVideo` (x/y/largura/altura em px do canvas) —[m
+[32m+[m[32m * EXATAMENTE a que o render usa no scale/crop/pad do FFmpeg. Redimensionar[m
+[32m+[m[32m * muda só `largura`/`altura` (e `x`/`y` quando a alça é da borda esquerda/[m
+[32m+[m[32m * superior, mantendo a borda oposta ANCORADA). As outras três operações[m
+[32m+[m[32m * seguem intocadas e independentes:[m
+[32m+[m[32m *   · RODA do mouse    → `zoom`/`deslocamentoX/Y` (enquadramento interno);[m
+[32m+[m[32m *   · ARRASTAR o corpo → `areaVideo.x/y` (posição) ou o enquadramento;[m
+[32m+[m[32m *   · CORTE de bordas  → `corteBordas` (linhas tracejadas permanentes).[m
+[32m+[m[32m * ------------------------------------------------------------------------- */[m
+[32m+[m
+[32m+[m[32m/** Menor OBJETO DE VÍDEO permitido (px do canvas): segue visível e editável. */[m
+[32m+[m[32mconst MIN_AREA_VIDEO = 100;[m
+[32m+[m[32m/** Teto de segurança contra canvas/dataset inválidos (nunca NaN/Infinity). */[m
+[32m+[m[32mconst MAX_AREA_VIDEO = 100000;[m
+[32m+[m
+[32m+[m[32m/** Número finito vindo do dataset (vazio/estranho → padrão). */[m
+[32m+[m[32mfunction numeroFinito(valor, padrao) {[m
+[32m+[m[32m  const n = parseFloat(valor);[m
+[32m+[m[32m  return Number.isFinite(n) ? n : padrao;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/** Direção de cada CANTO: borda que se move em x (+1 direita, -1 esquerda) e[m
+[32m+[m[32m * em y (+1 abaixo, -1 acima). A borda OPOSTA fica ancorada durante o resize. */[m
+[32m+[m[32mconst DIRECOES_CANTO = {[m
+[32m+[m[32m  canto: { x: 1, y: 1 }, // compatibilidade: canto inferior direito[m
+[32m+[m[32m  'canto-sudeste': { x: 1, y: 1 },[m
+[32m+[m[32m  'canto-sudoeste': { x: -1, y: 1 },[m
+[32m+[m[32m  'canto-nordeste': { x: 1, y: -1 },[m
+[32m+[m[32m  'canto-noroeste': { x: -1, y: -1 },[m
+[32m+[m[32m};[m
+[32m+[m
+[32m+[m[32m/**[m
+[32m+[m[32m * Redimensiona o OBJETO DE VÍDEO (`areaVideo.x/y/largura/altura`, px do canvas)[m
+[32m+[m[32m * a partir das alças do Preview.[m
+[32m+[m[32m *[m
+[32m+[m[32m * `eixo`: 'direita' | 'esquerda' | 'abaixo' | 'acima' (uma dimensão) ou um[m
+[32m+[m[32m * CANTO ('canto' | 'canto-sudeste' | 'canto-sudoeste' | 'canto-nordeste' |[m
+[32m+[m[32m * 'canto-noroeste'). Nos cantos, `opcoes.proporcional` (padrão **true**) mantém[m
+[32m+[m[32m * a proporção do objeto; as laterais ajustam uma única dimensão.[m
+[32m+[m[32m *[m
+[32m+[m[32m * Limites: nunca abaixo de `MIN_AREA_VIDEO` e nunca com a borda ancorada fora[m
+[32m+[m[32m * do canvas — nenhum valor inválido (NaN/Infinity) chega à config.[m
+[32m+[m[32m */[m
+[32m+[m[32mexport function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {[m
+[32m+[m[32m  const proporcional = opcoes?.proporcional !== false;[m
+[32m+[m[32m  const aoInteragir = opcoes?.aoInteragir || null;[m
+[32m+[m[32m  const aoFinalizar = opcoes?.aoFinalizar || null;[m
+   return function aoPointerDown(e) {[m
+[32m+[m[32m    if (!aoAtualizarConfig) return;[m
+[32m+[m[32m    if (typeof e.button === 'number' && e.button !== 0) return;[m
+     e.preventDefault();[m
+     e.stopPropagation();[m
+     const canvasEl = encontrarCanvas(e.currentTarget);[m
+     if (!canvasEl) return;[m
+[31m-    const escala = parseFloat(canvasEl.dataset.escala || '1');[m
+[31m-    const cW = parseFloat(canvasEl.dataset.canvasLargura || '1080');[m
+[31m-    const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');[m
+[32m+[m[32m    const escala = Math.max(numeroFinito(canvasEl.dataset.escala, 1), 0.05);[m
+[32m+[m[32m    const cW = Math.max(MIN_AREA_VIDEO, numeroFinito(canvasEl.dataset.canvasLargura, CANVAS_LARGURA));[m
+[32m+[m[32m    const cH = Math.max(MIN_AREA_VIDEO, numeroFinito(canvasEl.dataset.canvasAltura, CANVAS_ALTURA));[m
+ [m
+     const el = e.currentTarget;[m
+     const inicial = {[m
+[31m-      x: parseFloat(el.dataset.x) || 0,[m
+[31m-      y: parseFloat(el.dataset.y) || 0,[m
+[31m-      largura: parseFloat(el.dataset.largura) || 0,[m
+[31m-      altura: parseFloat(el.dataset.altura) || 0,[m
+[32m+[m[32m      x: numeroFinito(el.dataset.x, 0),[m
+[32m+[m[32m      y: numeroFinito(el.dataset.y, 0),[m
+[32m+[m[32m      largura: Math.max(MIN_AREA_VIDEO, numeroFinito(el.dataset.largura, MIN_AREA_VIDEO)),[m
+[32m+[m[32m      altura: Math.max(MIN_AREA_VIDEO, numeroFinito(el.dataset.altura, MIN_AREA_VIDEO)),[m
+     };[m
+[32m+[m[32m    const direcao = DIRECOES_CANTO[eixo] || null;[m
+[32m+[m[32m    // Bordas ANCORADAS (opostas à alça) — ficam fixas durante o resize.[m
+[32m+[m[32m    const direita0 = inicial.x + inicial.largura;[m
+[32m+[m[32m    const base0 = inicial.y + inicial.altura;[m
+     const startX = e.clientX;[m
+     const startY = e.clientY;[m
+ [m
+[32m+[m[32m    if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });[m
+[32m+[m
+     function aoMover(ev) {[m
+       const dx = (ev.clientX - startX) / escala;[m
+       const dy = (ev.clientY - startY) / escala;[m
+       aoAtualizarConfig((cfg) => {[m
+[31m-        const area = { ...cfg.areaVideo };[m
+[31m-        if (eixo === 'direita' || eixo === 'canto') {[m
+[31m-          area.largura = Math.min(cW - area.x, Math.max(100, inicial.largura + dx));[m
+[31m-        }[m
+[31m-        if (eixo === 'abaixo' || eixo === 'canto') {[m
+[31m-          area.altura = Math.min(cH - area.y, Math.max(100, inicial.altura + dy));[m
+[32m+[m[32m        const area = { ...(cfg.areaVideo || {}) };[m
+[32m+[m[32m        if (direcao && proporcional) {[m
+[32m+[m[32m          // CANTO PROPORCIONAL: a escala sai do eixo que mais se moveu.[m
+[32m+[m[32m          const alvoLargura = Math.max(MIN_AREA_VIDEO, inicial.largura + dx * direcao.x);[m
+[32m+[m[32m          const alvoAltura = Math.max(MIN_AREA_VIDEO, inicial.altura + dy * direcao.y);[m
+[32m+[m[32m          const relX = (alvoLargura - inicial.largura) / inicial.largura;[m
+[32m+[m[32m          const relY = (alvoAltura - inicial.altura) / inicial.altura;[m
+[32m+[m[32m          const rel = Math.abs(relX) >= Math.abs(relY) ? relX : relY;[m
+[32m+[m[32m          const fatorMin = Math.max(MIN_AREA_VIDEO / inicial.largura, MIN_AREA_VIDEO / inicial.altura);[m
+[32m+[m[32m          const fatorTeto = Math.min([m
+[32m+[m[32m            direcao.x > 0 ? (cW - inicial.x) / inicial.largura : direita0 / inicial.largura,[m
+[32m+[m[32m            direcao.y > 0 ? (cH - inicial.y) / inicial.altura : base0 / inicial.altura,[m
+[32m+[m[32m          );[m
+[32m+[m[32m          // Intervalo SEMPRE válido: teto nunca abaixo do mínimo (anti-NaN).[m
+[32m+[m[32m          const teto = Math.max([m
+[32m+[m[32m            fatorMin,[m
+[32m+[m[32m            Math.min(fatorTeto, MAX_AREA_VIDEO / Math.max(inicial.largura, inicial.altura), 1000),[m
+[32m+[m[32m          );[m
+[32m+[m[32m          const fator = Math.min(Math.max(1 + rel, fatorMin), teto);[m
+[32m+[m[32m          const largura = Math.round(inicial.largura * fator);[m
+[32m+[m[32m          const altura = Math.round(inicial.altura * fator);[m
+[32m+[m[32m          area.largura = largura;[m
+[32m+[m[32m          area.altura = altura;[m
+[32m+[m[32m          area.x = Math.round(direcao.x > 0 ? inicial.x : direita0 - largura);[m
+[32m+[m[32m          area.y = Math.round(direcao.y > 0 ? inicial.y : base0 - altura);[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          if (eixo === 'direita' || eixo === 'esquerda') {[m
+[32m+[m[32m            // A borda oposta fica ANCORADA e dentro do canvas.[m
+[32m+[m[32m            const maxLargura = Math.max(MIN_AREA_VIDEO, eixo === 'direita' ? cW - inicial.x : direita0);[m
+[32m+[m[32m            const largura = Math.round([m
+[32m+[m[32m              Math.min(maxLargura, Math.max(MIN_AREA_VIDEO, inicial.largura + (eixo === 'direita' ? dx : -dx))),[m
+[32m+[m[32m            );[m
+[32m+[m[32m            area.largura = largura;[m
+[32m+[m[32m            if (eixo === 'esquerda') area.x = Math.round(direita0 - largura);[m
+[32m+[m[32m          }[m
+[32m+[m[32m          if (eixo === 'abaixo' || eixo === 'acima') {[m
+[32m+[m[32m            const maxAltura = Math.max(MIN_AREA_VIDEO, eixo === 'abaixo' ? cH - inicial.y : base0);[m
+[32m+[m[32m            const altura = Math.round([m
+[32m+[m[32m              Math.min(maxAltura, Math.max(MIN_AREA_VIDEO, inicial.altura + (eixo === 'abaixo' ? dy : -dy))),[m
+[32m+[m[32m            );[m
+[32m+[m[32m            area.altura = altura;[m
+[32m+[m[32m            if (eixo === 'acima') area.y = Math.round(base0 - altura);[m
+[32m+[m[32m          }[m
+         }[m
+         return { ...cfg, areaVideo: area };[m
+       });[m
+[32m+[m[32m      if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });[m
+     }[m
+     function aoSoltar() {[m
+       window.removeEventListener('pointermove', aoMover);[m
+       window.removeEventListener('pointerup', aoSoltar);[m
+[32m+[m[32m      window.removeEventListener('pointercancel', aoSoltar);[m
+[32m+[m[32m      if (typeof aoFinalizar === 'function') aoFinalizar();[m
+     }[m
+     window.addEventListener('pointermove', aoMover);[m
+     window.addEventListener('pointerup', aoSoltar);[m
+[32m+[m[32m    window.addEventListener('pointercancel', aoSoltar);[m
+   };[m
+ }[m
+ [m

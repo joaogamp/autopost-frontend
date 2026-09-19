@@ -175,6 +175,13 @@ export default function EditorCanvas({
   // quadro = área × zoom, posicionado pela folga com deslocamentoX/Y.
   const caixa = caixaEnquadramentoVideo(area);
   const enquadramentoEditado = enquadramentoVideoEditado(area);
+  // OBJETO de vídeo fora do "canvas inteiro"? (redimensionado/movido pelas
+  // alças do Preview) — só para o botão discreto de redefinir aparecer.
+  const videoRedimensionado = Math.round(Number(area.largura) || 0) !== CANVAS_LARGURA
+    || Math.round(Number(area.altura) || 0) !== CANVAS_ALTURA
+    || Math.round(Number(area.x) || 0) !== 0
+    || Math.round(Number(area.y) || 0) !== 0;
+  const videoEditadoNoPreview = enquadramentoEditado || videoRedimensionado;
   // Dimensões reais do vídeo (reportadas pelo <video> no onLoadedMetadata).
   const aoDimensoesVideo = useCallback((d) => {
     if (d && Number(d.largura) > 0 && Number(d.altura) > 0) dimsVideoRef.current = d;
@@ -228,6 +235,46 @@ export default function EditorCanvas({
     else arrastarVideoNoCanvas(e);
   };
 
+  /**
+   * REDIMENSIONAR O OBJETO DE VÍDEO (alças do Preview, estilo Canva) — MESMO
+   * mecanismo já existente da área (`gerarRedimensionarArea`), agora também
+   * usado pelo VÍDEO selecionado. Muda só `areaVideo.largura/altura` (+ `x`/`y`
+   * quando a alça é da borda esquerda/superior) — a MESMA geometria que o
+   * render materializa (scale/crop/pad do FFmpeg): prévia = render. Cantos
+   * mantêm a PROPORÇÃO; as laterais ajustam uma dimensão. NÃO mexe em
+   * `zoom`/`deslocamentoX/Y` (roda do mouse = enquadramento interno) nem em
+   * `corteBordas` (linhas tracejadas permanentes).
+   */
+  const aoRedimensionarVideo = (eixo) => gerarRedimensionarArea(eixo, atualizador, {
+    aoInteragir: () => mostrarDicaEnquadramento('Redimensionando o vídeo…'),
+  });
+  const redimVideoDireita = aoRedimensionarVideo('direita');
+  const redimVideoEsquerda = aoRedimensionarVideo('esquerda');
+  const redimVideoAbaixo = aoRedimensionarVideo('abaixo');
+  const redimVideoAcima = aoRedimensionarVideo('acima');
+  const redimVideoCantoSD = aoRedimensionarVideo('canto-sudeste');
+  const redimVideoCantoSE = aoRedimensionarVideo('canto-sudoeste');
+  const redimVideoCantoNE = aoRedimensionarVideo('canto-nordeste');
+  const redimVideoCantoNO = aoRedimensionarVideo('canto-noroeste');
+
+  /**
+   * ALÇAS do objeto de vídeo (Preview, estilo Canva): 4 CANTOS (mantêm a
+   * proporção) + 4 LATERAIS (largura/altura). Ficam DENTRO do objeto (inset
+   * 2px) porque o canvas tem `overflow-hidden`: alças centradas na borda
+   * seriam cortadas quando o vídeo encosta na borda do canvas (caso padrão =
+   * vídeo ocupando o canvas inteiro). Só aparecem com o vídeo SELECIONADO.
+   */
+  const alcasDoVideo = [
+    { rotulo: 'canto superior esquerdo', largura: 14, altura: 14, estilo: { left: 2, top: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoNO },
+    { rotulo: 'canto superior direito', largura: 14, altura: 14, estilo: { right: 2, top: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoNE },
+    { rotulo: 'canto inferior esquerdo', largura: 14, altura: 14, estilo: { left: 2, bottom: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoSE },
+    { rotulo: 'canto inferior direito', largura: 14, altura: 14, estilo: { right: 2, bottom: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoSD },
+    { rotulo: 'lateral esquerda', largura: 12, altura: 26, estilo: { left: 2, top: '50%', transform: 'translateY(-50%)' }, cursor: 'ew-resize', onPointerDown: redimVideoEsquerda },
+    { rotulo: 'lateral direita', largura: 12, altura: 26, estilo: { right: 2, top: '50%', transform: 'translateY(-50%)' }, cursor: 'ew-resize', onPointerDown: redimVideoDireita },
+    { rotulo: 'lateral superior', largura: 26, altura: 12, estilo: { top: 2, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize', onPointerDown: redimVideoAcima },
+    { rotulo: 'lateral inferior', largura: 26, altura: 12, estilo: { bottom: 2, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize', onPointerDown: redimVideoAbaixo },
+  ];
+
   // Alternativa touch à roda: mesma geometria, ancorada no centro do vídeo.
   const zoomTouch = (sentido) => {
     atualizador((cfg) => {
@@ -245,7 +292,16 @@ export default function EditorCanvas({
   const redefinirEnquadramento = useCallback(() => {
     atualizador((cfg) => ({
       ...cfg,
-      areaVideo: { ...(cfg.areaVideo || {}), ...enquadramentoVideoOriginal() },
+      areaVideo: {
+        ...(cfg.areaVideo || {}),
+        ...enquadramentoVideoOriginal(),
+        // TAMANHO do objetivo de vídeo volta a ser o canvas inteiro (a
+        // geometria passou a ser redimensionável pelas alças do Preview).
+        x: 0,
+        y: 0,
+        largura: CANVAS_LARGURA,
+        altura: CANVAS_ALTURA,
+      },
     }));
     mostrarDicaEnquadramento('Enquadramento redefinido');
   }, [atualizador, mostrarDicaEnquadramento]);
@@ -528,9 +584,53 @@ export default function EditorCanvas({
           </div>
         </div>
 
+        {/* CAIXA DE SELEÇÃO + ALÇAS DO OBJETO DE VÍDEO (vídeo selecionado).
+            Vive FORA do clip-path (o corte nunca recorta as alças) e FORA da
+            camada do vídeo (não bloqueia o arraste do corpo: o contêiner é
+            `pointer-events-none` e SÓ as alças capturam o ponteiro). Arrastar
+            o corpo move; roda do mouse = zoom interno; linha tracejada =
+            corte; ALÇA = redimensiona o OBJETO (mesma geometria do render). */}
+        {podeEditar && urlVideoAtiva && elementoSelecionado === 'video' && (
+          <div
+            data-elemento="video"
+            className="edl-elemento-selecionado absolute z-30"
+            style={{
+              left: area.x * escala,
+              top: area.y * escala,
+              width: Math.max(2, area.largura) * escala,
+              height: Math.max(2, area.altura) * escala,
+              pointerEvents: 'none',
+            }}
+          >
+            {alcasDoVideo.map((alca) => (
+              <span
+                key={alca.rotulo}
+                role="slider"
+                aria-label={`Redimensionar vídeo (${alca.rotulo})`}
+                data-x={String(area.x)}
+                data-y={String(area.y)}
+                data-largura={String(area.largura)}
+                data-altura={String(area.altura)}
+                onPointerDown={alca.onPointerDown}
+                className="absolute z-30 rounded-sm border-2 border-white shadow"
+                style={{
+                  ...alca.estilo,
+                  width: alca.largura,
+                  height: alca.altura,
+                  background: '#94a3b8',
+                  cursor: alca.cursor,
+                  touchAction: 'none',
+                  pointerEvents: 'auto',
+                }}
+              />
+            ))}
+          </div>
+        )}
+
         {/* REDEFINIR — discreto, aparece SÓ quando o usuário mexeu no
-            enquadramento. Volta tamanho e posição originais (zoom 1, centro). */}
-        {podeEditar && urlVideoAtiva && enquadramentoEditado && (
+            enquadramento ou no TAMANHO/POSIÇÃO do objeto de vídeo. Volta
+            tamanho e posição originais (zoom 1, centro, canvas inteiro). */}
+        {podeEditar && urlVideoAtiva && videoEditadoNoPreview && (
           <button
             type="button"
             onClick={redefinirEnquadramento}
