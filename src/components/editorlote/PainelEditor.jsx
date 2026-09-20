@@ -978,11 +978,19 @@ export default function PainelEditor({
             Arraste as linhas tracejadas no Preview pra ajustar o corte (sem
             X/Y). O corte usa o MESMO valor no FFmpeg — prévia = render.
           </p>
+          {/* DETECÇÃO AUTOMÁTICA POR VÍDEO — DESATIVADA neste fluxo. O lote é
+              renderizado com UM ÚNICO template BASE (o MESMO corte de bordas
+              para todos os vídeos), então um resultado POR VÍDEO nunca
+              chegaria ao vídeo final: só faria a prévia mostrar um corte
+              diferente do render. O corte continua 100% definido pelo usuário
+              (toggle + sliders aqui + linhas no Preview) e vale pro render. */}
           {typeof aoDetectarBordas === 'function' ? (
             <button
               type="button"
               onClick={aoDetectarBordas}
-              disabled={detectandoBordas}
+              disabled
+              aria-disabled="true"
+              title="Indisponível neste fluxo: o lote inteiro usa UM template BASE — o mesmo corte de bordas para todos os vídeos. Ajuste o corte pelo toggle/sliders/linhas (vale pro render)."
               className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2.5 rounded-lg disabled:opacity-50"
             >
               <Scan className="w-3.5 h-3.5 edl-icone-b" />

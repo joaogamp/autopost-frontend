@@ -64,6 +64,27 @@ export async function enviarVideos(arquivos) {
 }
 
 export async function processarLote(templateId, videos) {
+  // CONTRATO ATUAL (fluxo Editor em duas fases): videos = [{ bibliotecaId,
+  // tituloIA }]. Bloqueia payload inválido ANTES do fetch — nenhuma fila pode
+  // nascer com biblioteca_id NULL (o worker rejeitaria em
+  // POST /api/finais/receber-processado e o MP4 seria descartado).
+  if (!templateId || typeof templateId !== 'string' || !templateId.trim()) {
+    throw new Error('templateId é obrigatório para processar o lote.');
+  }
+  if (!Array.isArray(videos) || videos.length === 0) {
+    throw new Error('videos[] é obrigatório e não pode estar vazio.');
+  }
+  const invalidos = [];
+  videos.forEach((v, i) => {
+    if (!v || typeof v.bibliotecaId !== 'string' || !v.bibliotecaId.trim()) invalidos.push(i);
+  });
+  if (invalidos.length > 0) {
+    // eslint-disable-next-line no-console
+    console.error('[processarLote] vídeos sem bibliotecaId válido (índices):', invalidos, videos);
+    throw new Error(
+      `bibliotecaId é obrigatório em cada vídeo (inválidos: ${invalidos.join(', ')}). POST /api/lote não enviado.`
+    );
+  }
   const r = await fetch(`${BASE_URL}/api/lote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -104,11 +125,13 @@ export async function excluirTemplate(id) {
   await fetch(`${BASE_URL}/api/templates/${id}`, { method: 'DELETE' });
 }
 
-export async function importarTemplateCanva({ nome, arquivoOverlay, corMarcadorTexto }) {
+export async function importarTemplateCanva({ nome, arquivoOverlay, corMarcadorTexto, corMarcadorVideo }) {
   const formData = new FormData();
   formData.append('nome', nome);
   formData.append('overlay', arquivoOverlay);
   if (corMarcadorTexto) formData.append('corMarcadorTexto', corMarcadorTexto);
+  // Marcador do VÍDEO: retângulo sólido desenhado pelo usuário (padrão #00FF00).
+  if (corMarcadorVideo) formData.append('corMarcadorVideo', corMarcadorVideo);
   const r = await fetch(`${BASE_URL}/api/templates/importar-canva`, { method: 'POST', body: formData });
   return r.json();
 }

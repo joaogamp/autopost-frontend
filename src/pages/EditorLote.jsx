@@ -14,7 +14,9 @@ import {
   normalizarConfigEditor,
 } from '../lib/configEditorLote';
 import { detectarBordasDoVideo } from '../lib/detectorBordas.js';
-import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo, listarFinais } from '../lib/api';
+import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo, listarFinais, enviarVideos } from '../lib/api';
+import ModalSelecionarTemplate from '../components/editorlote/ModalSelecionarTemplate';
+import { templateParaConfigEditor, metaDoTemplate } from '../lib/templateParaConfigEditor';
 import {
   configParaTemplatePayload,
   assinarConfig,
@@ -56,12 +58,19 @@ import {
  * original da Biblioteca/Oracle, sem tocar na fila/worker e sem afetar os
  * demais vídeos nem a config compartilhada (logo/texto/template).
  *
- * "Processar vídeos" (REAL): salva a config compartilhada como TEMPLATE no
+ * "IMPLEMENTAR VÍDEO" (REAL): salva a config compartilhada como TEMPLATE no
  * servidor (POST /api/templates, multipart com a logo) → enfileira os vídeos
  * (POST /api/lote → Supabase fila_processamento) → a Oracle e/ou o WORKER
  * LOCAL (node worker-local.js, reserva atômica) processam → a UI acompanha o
  * progresso REAL via GET /api/fila (percentual por card, thumbnail e MP4 do
- * final quando concluído).
+ * final quando concluído). TODO o lote usa o MESMO template BASE — a mesma
+ * areaVideo definida pelo usuário vale para todos os vídeos (sem posição por
+ * vídeo).
+ *
+ * "PROCESSAR VÍDEOS" (encaminhamento): NÃO renderiza nada — valida que
+ * existem vídeos PRONTOS (status concluido, MP4 final em
+ * /arquivos/publicados/), remove-os da lista do Editor e navega para o
+ * AGENDAR, onde os finais já aparecem disponíveis (mecanismo existente).
  *
  * Pool (usePoolDeVideos): no máximo 3 vídeos completos carregando ao mesmo
  * tempo; os demais cards ficam só na thumbnail.
@@ -70,7 +79,11 @@ import {
  * flush no unmount + `pagehide` (reload/fechar aba) + retomada do polling.
  * Persiste vídeos importados (metadados + URLs absolutas), vídeo selecionado,
  * templateId e TODA a config compartilhada — incluindo a logo (como dataURL,
- * pois File/blob: não sobrevivem).
+ * pois File/blob: não sobrevivem). Os VÍDEOS PRONTOS também são persistidos
+ * com filaId + status 'concluido' + percentual 100 (estado ESTÁVEL: o MP4
+ * final já existe no servidor) — o PRONTO e o botão "Processar vídeos"
+ * sobrevivem a F5/reload. Estado transitório (aguardando/processando) não é
+ * persistido.
  *
  * REGRA DEFINITIVA anti-herança (sessão/lote): a config pertence a um lote
  * (`config.loteId`). A marca do lote atual vive no sessionStorage — morre
@@ -102,7 +115,7 @@ const EXTENSAO_POR_TIPO_LOGO = {
 
 /**
  * Reconstrói um File a partir de um dataURL (SÍNCRONO — usado ao restaurar a
- * logo, para que "Processar vídeos" reenvie a imagem sem re-escolher o arquivo).
+ * logo, para que "Implementar vídeo" reenvie a imagem sem re-escolher o arquivo).
  */
 function arquivoDeDataUrl(dataUrl) {
   try {
@@ -119,28 +132,31 @@ function arquivoDeDataUrl(dataUrl) {
 }
 
 /** Sanitiza os vídeos para persistência (SÓ metadados serializáveis).
- * filaId/status/percentual/erro NUNCA são persistidos: o estado de fila é
- * sempre revalidado contra o backend (retomada de polling no mount). Isso
- * também garante que um vídeo removido após concluir NÃO reaparece no reload
- * (não há como "ressuscitar" sem filaId salvo). */
+ * Estado de fila TRANSITÓRIO (aguardando/processando/erro) NUNCA é persistido:
+ * é sempre revalidado contra o backend (retomada de polling no mount).
+ * EXCEÇÃO — VÍDEO PRONTO (filaId + status 'concluido' + 100%): esse estado é
+ * ESTÁVEL (o MP4 final já existe em /arquivos/publicados/{filaId}.mp4, a
+ * thumbnail em /arquivos/thumbnails/{filaId}.jpg) e é exatamente o que o card
+ * "✓ Pronto", o contador `prontos` e o botão "Processar vídeos" leem. Por isso
+ * o PRONTO é persistido com filaId + status + percentual e SOBREVIVE a
+ * F5/reload — o usuário confere o final no Editor antes de encaminhar. */
 function itensParaSalvar(itens) {
   return (Array.isArray(itens) ? itens : [])
-    .filter(
-      (it) =>
-        it &&
-        it.id &&
-        (it.urlFonte || it.thumbnail) &&
-        !(it.filaId && it.status === 'concluido' && Number(it.percentual) === 100)
-    )
-    .map((it) => ({
-      id: it.id,
-      bibliotecaId: it.bibliotecaId || it.id,
-      nome: it.nome ?? null,
-      thumbnail: it.thumbnail ?? null,
-      urlFonte: it.urlFonte ?? null,
-      duracao: it.duracao ?? null,
-      filaId: it.filaId ?? null,
-    }));
+    .filter((it) => it && it.id && (it.urlFonte || it.thumbnail))
+    .map((it) => {
+      // PRONTO = concluído DE VERDADE (mesmo predicado do polling/contador).
+      const pronto = !!(it.filaId && it.status === 'concluido' && Number(it.percentual) === 100);
+      const dados = {
+        id: it.id,
+        bibliotecaId: it.bibliotecaId || it.id,
+        nome: it.nome ?? null,
+        thumbnail: it.thumbnail ?? null,
+        urlFonte: it.urlFonte ?? null,
+        duracao: it.duracao ?? null,
+        filaId: it.filaId ?? null,
+      };
+      return pronto ? { ...dados, status: 'concluido', percentual: 100 } : dados;
+    });
 }
 
 /** Chave do lote no localStorage (sessão atual). */
@@ -351,45 +367,48 @@ function carregarLoteSalvo() {
       };
     }
     // VÍDEOS: só metadados serializáveis (id + URLs ABSOLUTAS do servidor —
-    // continuam válidas após sair/voltar). filaId NÃO é restaurado (o
-    // itensParaSalvar não o persiste): todo item volta 'pronto' e o
-    // acompanhamento recomeça do zero no próximo "Processar vídeos". Itens
-    // concluídos que porventura estejam no estado no momento do save são
-    // filtrados na escrita — nunca reaparecem após reload.
+    // continuam válidas após sair/voltar). Estado de fila TRANSITÓRIO
+    // (aguardando/processando/erro) continua voltando como 'pronto' — o
+    // acompanhamento recomeça do zero no próximo "Implementar vídeo". EXCEÇÃO:
+    // VÍDEO PRONTO (filaId + 'concluido' + 100%) volta EXATAMENTE como estava —
+    // filaId preservado, status 'concluido' e percentual 100 — para o card
+    // "✓ Pronto" (com o MP4 final) e o botão "Processar vídeos" continuarem
+    // válidos depois de um F5/reload.
     const itens = dados.itens
-      .filter(
-        (v) =>
-          v &&
-          v.id &&
-          (v.urlFonte || v.url || v.thumbnail) &&
-          !(v.filaId && v.status === 'concluido' && Number(v.percentual) === 100)
-      )
-      .map((v) => ({
-        id: v.id,
-        bibliotecaId: v.bibliotecaId || v.id || null,
-        nome: v.nome ?? null,
-        thumbnail: v.thumbnail ?? null,
-        urlFonte: v.urlFonte || v.url || null,
-        duracao: v.duracao ?? null,
-        filaId: null,
-        status: 'pronto',
-        percentual: 0,
-        erroMensagem: null,
-      }));
+      .filter((v) => v && v.id && (v.urlFonte || v.url || v.thumbnail))
+      .map((v) => {
+        // PRONTO = concluído DE VERDADE (mesmo predicado do polling/contador).
+        const pronto = !!(v.filaId && v.status === 'concluido' && Number(v.percentual) === 100);
+        return {
+          id: v.id,
+          bibliotecaId: v.bibliotecaId || v.id || null,
+          nome: v.nome ?? null,
+          thumbnail: v.thumbnail ?? null,
+          urlFonte: v.urlFonte || v.url || null,
+          duracao: v.duracao ?? null,
+          filaId: pronto ? v.filaId : null,
+          status: pronto ? 'concluido' : 'pronto',
+          percentual: pronto ? 100 : 0,
+          erroMensagem: null,
+        };
+      });
     // Seleção consistente: o id restaurado tem prioridade; se sumiu, null
     // (o efeito abaixo abre o primeiro da lista).
     const idSelecionado = itens.some((it) => it.id === dados.idSelecionado)
       ? dados.idSelecionado
       : null;
-    // templateId/assinatura pertencem ao LOTE: só voltam em continuação da
-    // mesma sessão. Sessão nova começa sem template — o próximo "Processar"
-    // salva um template NOVO com a config limpa (reutilização nunca automática).
+    // templateId/assinatura/templateBase pertencem ao LOTE: só voltam em
+    // continuação da mesma sessão. Sessão nova começa sem template — o próximo
+    // "Processar" salva um template NOVO com a config limpa.
+    // templateBase = { id, nome } — metadados do template BASE escolhido via
+    // "Adicionar template" (só exibição; o contrato /api/lote usa templateId).
     return {
       itens,
       config,
       idSelecionado,
       templateId: mesmaSessao ? dados.templateId || null : null,
       assinatura: mesmaSessao ? dados.assinatura || null : null,
+      templateBase: mesmaSessao && dados.templateBase && dados.templateBase.id ? dados.templateBase : null,
     };
   } catch {
     return null;
@@ -397,7 +416,7 @@ function carregarLoteSalvo() {
 }
 
 /** GRAVA o estado atual do editor no localStorage (autosave + botão Salvar). */
-function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura, logoDataUrl }) {
+function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura, logoDataUrl, templateBase }) {
   try {
     const carga = JSON.stringify({
       itens: itensParaSalvar(itens),
@@ -405,6 +424,7 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
       idSelecionado: idSelecionado || null,
       templateId: templateId || null,
       assinatura: assinatura || null,
+      templateBase: templateBase && templateBase.id ? templateBase : null,
     });
     try {
       localStorage.setItem(CHAVE_LOTE, carga);
@@ -421,6 +441,7 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
               idSelecionado: idSelecionado || null,
               templateId: templateId || null,
               assinatura: assinatura || null,
+              templateBase: templateBase && templateBase.id ? templateBase : null,
             })
           );
         } catch {
@@ -433,7 +454,7 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
   }
 }
 
-export default function EditorLote() {
+export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
   const loteSalvo = useMemo(() => carregarLoteSalvo(), []);
   const [itens, setItens] = useState(() => loteSalvo?.itens || []);
   const [config, setConfig] = useState(() => loteSalvo?.config || criarConfigLimpaDeLote());
@@ -443,6 +464,12 @@ export default function EditorLote() {
   const [enfileirando, setEnfileirando] = useState(false);
   const [templateIdSalvo, setTemplateIdSalvo] = useState(() => loteSalvo?.templateId || null);
   const [assinaturaSalva, setAssinaturaSalva] = useState(() => loteSalvo?.assinatura || null);
+  // FLUXO NOVO — template BASE escolhido via "Adicionar template" (UM por vez).
+  // { id, nome } — só metadados p/ exibição; o contrato /api/lote usa templateIdSalvo.
+  const [templateBase, setTemplateBase] = useState(() => loteSalvo?.templateBase || null);
+  const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
+  const [enviandoVideoTemplate, setEnviandoVideoTemplate] = useState(false);
+  const inputVideoTemplateRef = useRef(null);
   const [toast, setToast] = useState(null);
   // ELEMENTO SELECIONADO no Preview (Camadas ⇄ Preview ⇄ configuração à
   // esquerda): 'logo' | 'textoSuperior' | 'textoInferior' | 'identidadeNome' |
@@ -515,44 +542,36 @@ export default function EditorLote() {
     setConfig((atual) => (loteTemEdicoesAtivas(atual) ? criarConfigLimpaDeLote() : atual));
   }, [itens.length]);
 
-  // REMOÇÃO AUTOMÁTICA DE CONCLUÍDOS — vídeos do Editor em Lote saem da lista
-  // de importados SOMENTE após confirmação real do backend (GET /api/fila com
-  // status === 'concluido' E percentual === 100, refletidos no item pelo
-  // polling). Remoção individual (cada vídeo sai assim que termina, mesmo em
-  // lote). NÃO toca na Biblioteca, no Oracle nem nos finais gerados — apenas
-  // filtra o estado local `itens`; o AUTOSAVE (effect, 350ms) + flush de
-  // unmount/pagehide regravam `autopost:editorlote:v1` sem o item, então ele
-  // não reaparece após reload. Itens 'aguardando'/'processando'/'erro' nunca
-  // são removidos. A seleção (effect acima) e o pool (usePoolDeVideos) se
-  // ajustam sozinhos quando um item sai.
+  // VÍDEOS PRONTOS PERMANECEM NO EDITOR — novo fluxo: concluído NÃO é mais
+  // removido automaticamente. O item continua na lista com status 'concluido'
+  // e o polling já troca thumbnail/URL para o MP4 FINAL do servidor
+  // (/arquivos/publicados/{filaId}.mp4) — o card "✓ Pronto" reproduz o
+  // resultado REAL para conferência antes do encaminhamento. O autosave
+  // persiste o item (URLs estáveis), então o PRONTO sobrevive ao reload.
+  // O usuário encaminha os prontos ao Agendar no botão "Processar vídeos"
+  // (aoEncaminhar). Itens 'aguardando'/'processando'/'erro' nunca são tocados.
   const concluidosAvisadosRef = useRef(new Set());
-  const concluidosRemovidosRef = useRef(0);
+  const prontosContadosRef = useRef(0);
   useEffect(() => {
     const prontos = itens.filter(
       (it) => it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100
     );
     if (prontos.length === 0) return;
     const novos = prontos.filter((it) => !concluidosAvisadosRef.current.has(it.filaId));
+    if (novos.length === 0) return;
     novos.forEach((it) => concluidosAvisadosRef.current.add(it.filaId));
-    concluidosRemovidosRef.current += prontos.length;
-    // Restam itens ativos (aguardando/processando)? Se sim, avisa a remoção
+    prontosContadosRef.current += novos.length;
+    // Restam itens ativos (aguardando/processando)? Se sim, avisa o PRONTO
     // agora; se não, o effect "Fila vazia" (abaixo) mostra a mensagem final
     // combinada ao parar o polling — sem toast duplicado.
     const restamAtivos = itens.some(
-      (it) =>
-        !(it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100) &&
-        (it.status === 'aguardando' || it.status === 'processando')
+      (it) => it.status === 'aguardando' || it.status === 'processando'
     );
-    setItens((atual) =>
-      (Array.isArray(atual) ? atual : []).filter(
-        (it) => !(it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100)
-      )
-    );
-    if (restamAtivos && novos.length > 0) {
+    if (restamAtivos) {
       mostrarToast(
         novos.length === 1
-          ? 'Vídeo concluído removido da lista do Editor (final salvo na Biblioteca).'
-          : `${novos.length} vídeos concluídos removidos da lista do Editor (finais salvos na Biblioteca).`
+          ? 'Vídeo PRONTO no Editor — confira o resultado no card antes de encaminhar.'
+          : `${novos.length} vídeos PRONTOS no Editor — confira os resultados antes de encaminhar.`
       );
     }
   }, [itens, mostrarToast]);
@@ -573,6 +592,7 @@ export default function EditorLote() {
     idSelecionado,
     templateId: templateIdSalvo,
     assinatura: assinaturaSalva,
+    templateBase,
   };
 
   // VALIDAÇÃO DA RESTAURAÇÃO (1× por mount): confere o `bibliotecaId` de cada
@@ -668,12 +688,13 @@ export default function EditorLote() {
           idSelecionado,
           templateId: templateIdSalvo,
           assinatura: assinaturaSalva,
+          templateBase,
           logoDataUrl: logoDataUrlRef.current?.dataUrl || null,
         }),
       350
     );
     return () => clearTimeout(timer);
-  }, [itens, config, idSelecionado, templateIdSalvo, assinaturaSalva]);
+  }, [itens, config, idSelecionado, templateIdSalvo, assinaturaSalva, templateBase]);
 
   // Flush no unmount: garante que o ÚLTIMO estado vá pro localStorage mesmo
   // que o usuário saia da aba dentro da janela do debounce (trocar de página
@@ -713,11 +734,58 @@ export default function EditorLote() {
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
 
+  // FLUXO NOVO — "Adicionar template": aplica UM template existente como BASE.
+  // Substitui a config COMPARTILHADA (conversao template -> config, sem criar
+  // segundo sistema), invalida o templateIdSalvo (proximo "Implementar" salva
+  // um template NOVO com a config aplicada) e guarda { id, nome } p/ exibicao.
+  const aplicarTemplateBase = useCallback((template) => {
+    if (!template || !template.id) return;
+    setConfig((cfg) => templateParaConfigEditor(template, { loteId: cfg?.loteId || null, loteCriadoEm: cfg?.loteCriadoEm || null }));
+    setTemplateIdSalvo(null);
+    setAssinaturaSalva(null);
+    setTemplateBase(metaDoTemplate(template));
+    setModalTemplateAberto(false);
+    mostrarToast(`Template "${template.nome || 'template'}" aplicado como BASE do lote.`);
+  }, [mostrarToast]);
+
+  // FLUXO NOVO — "Adicionar video ao template": upload REAL via POST
+  // /api/upload (enviarVideos, MESMO fluxo do PainelDownloads) e o video entra
+  // na LISTA do Editor com bibliotecaId/thumbnail/duracao — o centro (AreaCentral
+  // -> EditorCanvas) mostra o video DENTRO da areaVideo do template BASE.
+  const aoEscolherVideoTemplate = useCallback(async (e) => {
+    const arquivos = Array.from(e?.target?.files || []);
+    if (e?.target) e.target.value = '';
+    if (arquivos.length === 0 || enviandoVideoTemplate) return;
+    setEnviandoVideoTemplate(true);
+    try {
+      const resp = await enviarVideos(arquivos.slice(0, 1));
+      const v = resp && Array.isArray(resp.videos) ? resp.videos[0] : null;
+      if (!v || !v.id) throw new Error('Upload sem retorno de id — tente novamente.');
+      const ext = (/(\.[A-Za-z0-9]{1,8})$/.exec(String(v.nomeOriginal || '')) || [])[1] || '.mp4';
+      preservarSemBaseRef.current = false;
+      aoAdicionarVideo({
+        id: v.id,
+        bibliotecaId: v.id,
+        nome: v.nomeOriginal || arquivos[0].name || null,
+        thumbnail: v.thumbnailUrl ? urlArquivo(v.thumbnailUrl) : null,
+        urlFonte: urlArquivo(`/arquivos/uploads/${v.id}${ext}`),
+        duracao: v.duracaoSegundos ? `${v.duracaoSegundos}s` : null,
+        status: 'pronto',
+      });
+      mostrarToast('Video adicionado ao template — confira no centro do Editor.');
+    } catch (erro) {
+      mostrarToast(erro?.message || 'Falha no upload do video.', 'erro');
+    } finally {
+      setEnviandoVideoTemplate(false);
+    }
+  }, [aoAdicionarVideo, enviandoVideoTemplate, mostrarToast]);
+
+
   // ACAO "Corte automatico de bordas" — ÚNICO momento de detecção (regra
   // definitiva): analisa cada vídeo importado individualmente (20 frames
   // amostrados 16–24 pelo detector ESTRUTURAL, sem MP4, sem tocar o original),
   // guarda o resultado em `overridesPorVideo` e o preview mostra na hora via
-  // clip. "Processar vídeos" NÃO detecta nada: apenas materializa o que está
+  // clip. "Implementar vídeo" NÃO detecta nada: apenas materializa o que está
   // salvo aqui. Fail-open por vídeo: sem confiança, fica 0/0 (vídeo NORMAL).
   const [detectandoBordas, setDetectandoBordas] = useState(false);
   const [progressoBordas, setProgressoBordas] = useState(null);
@@ -917,11 +985,12 @@ export default function EditorLote() {
 
   useEffect(() => () => pararPolling(), [pararPolling]);
 
-  // Ao VOLTAR pro editor: o estado de fila NÃO é restaurado do localStorage
-  // (filaId não é persistido — ver itensParaSalvar). Se o usuário saiu no
-  // meio de um processamento e voltou, os itens voltam 'pronto' e o
-  // acompanhamento recomeça no próximo "Processar vídeos" (a fila REAL
-  // continua na Oracle/worker — só a UI tinha parado de olhar).
+  // Ao VOLTAR pro editor: o estado de fila TRANSITÓRIO (aguardando/processando)
+  // não é restaurado do localStorage — apenas os itens PRONTOS (concluido +
+  // 100%, URLs estáveis do MP4 final) voltam como PRONTO (ver itensParaSalvar).
+  // Se o usuário saiu no meio de uma implementação e voltou, o acompanhamento
+  // recomeça no próximo "Implementar vídeo" (a fila REAL continua na
+  // Oracle/worker — só a UI tinha parado de olhar).
   const filaRetomadaRef = useRef(false);
   useEffect(() => {
     if (filaRetomadaRef.current) return;
@@ -936,14 +1005,14 @@ export default function EditorLote() {
     const temAtivos = itens.some((it) => it.status === 'aguardando' || it.status === 'processando');
     if (!temAtivos && pollRef.current) {
       pararPolling();
-      const n = concluidosRemovidosRef.current;
-      concluidosRemovidosRef.current = 0;
+      const n = prontosContadosRef.current;
+      prontosContadosRef.current = 0;
       mostrarToast(
         n > 0
           ? n === 1
-            ? 'Processamento concluído — vídeo removido da lista do Editor (final salvo na Biblioteca).'
-            : `Processamento concluído — ${n} vídeos removidos da lista do Editor (finais salvos na Biblioteca).`
-          : 'Processamento concluído.'
+            ? 'Implementação concluída — 1 vídeo PRONTO no Editor para conferir (botão "Processar vídeos" encaminha ao Agendar).'
+            : `Implementação concluída — ${n} vídeos PRONTOS no Editor para conferir (botão "Processar vídeos" encaminha ao Agendar).`
+          : 'Implementação concluída.'
       );
     }
     const temAguardando = itens.some((it) => it.status === 'aguardando');
@@ -992,9 +1061,17 @@ export default function EditorLote() {
 
   const aoProcessar = useCallback(async () => {
     if (enfileirando) return;
+    // REGRA DO FLUXO: "Implementar vídeo" é a ÚNICA ação que renderiza. Itens
+    // PRONTOS (concluido + 100%) NUNCA são reenfileirados — já têm MP4 final
+    // em /arquivos/publicados/ e apenas esperam o encaminhamento.
     const enfileiraveis = itens.filter((it) => it.bibliotecaId && it.status !== 'concluido');
     if (enfileiraveis.length === 0) {
-      mostrarToast('Importe vídeos pela central de downloads antes de processar.', 'erro');
+      mostrarToast(
+        itens.length > 0
+          ? 'Todos os vídeos deste lote já estão PRONTOS — use "Processar vídeos" para encaminhar ao Agendar.'
+          : 'Importe vídeos pela central de downloads antes de implementar.',
+        'erro'
+      );
       return;
     }
     if (itens.some((it) => it.status === 'aguardando' || it.status === 'processando')) {
@@ -1002,63 +1079,46 @@ export default function EditorLote() {
       return;
     }
 
+    // VALIDAÇÃO EXPLÍCITA (contrato videos=[{ bibliotecaId, tituloIA }]):
+    // nenhum vídeo sem bibliotecaId válido pode gerar POST /api/lote — sem
+    // fallback para caminhoVideo, sem fila com biblioteca_id NULL.
+    const semBiblioteca = enfileiraveis.filter(
+      (it) => !it || typeof it.bibliotecaId !== 'string' || !it.bibliotecaId.trim()
+    );
+    if (semBiblioteca.length > 0) {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[EditorLote] Implementar bloqueado — vídeos sem bibliotecaId:',
+        semBiblioteca.map((it) => ({ id: it?.id, nome: it?.nome, bibliotecaId: it?.bibliotecaId }))
+      );
+      mostrarToast(
+        `Não foi possível implementar: ${semBiblioteca.length} vídeo(s) sem bibliotecaId válido. Reimporte os vídeos pela central de downloads. POST /api/lote não enviado.`,
+        'erro'
+      );
+      return;
+    }
+
     setEnfileirando(true);
-    // Cache LOCAL da sessão de processamento: UMA chamada por assinatura
-    // distinta (garantirTemplate já tem o seu próprio cache por assinatura —
-    // cada corte diferente recebe um template NOVO e próprio, CORREÇÃO).
-    const cacheTemplates = new Map();
-    const templateDoVideo = async (it) => {
-      const over = config?.overridesPorVideo?.[it.id] || null;
-      const chave = over ? assinarConfig(config, over) : '__base__';
-      if (cacheTemplates.has(chave)) return cacheTemplates.get(chave);
-      const { templateId: tid } = await garantirTemplate(over);
-      cacheTemplates.set(chave, tid);
-      return tid;
-    };
     try {
-      // 1) Config vira template REAL no servidor. Sem overrides: 1 template
-      //    compartilhado (como antes). Com overrides: 1 template por corte
-      //    distinto (mesmo formato, single-pass, sem mudar worker/FFmpeg).
-      const comOverride = enfileiraveis.filter((it) => config?.overridesPorVideo?.[it.id]);
-      const semOverride = enfileiraveis.filter((it) => !config?.overridesPorVideo?.[it.id]);
-      let templateBase = null;
-      if (semOverride.length > 0 || comOverride.length === 0) {
-        const r = await garantirTemplate(null);
-        templateBase = r.templateId;
-        cacheTemplates.set('__base__', templateBase);
-      }
-      const templatePorVideo = new Map();
-      for (const it of comOverride) {
-        const tid = await templateDoVideo(it);
-        templatePorVideo.set(it.id, tid);
-      }
+      // 1) Config vira template REAL no servidor — UM ÚNICO template BASE para
+      //    TODO o lote. A areaVideo definida pelo usuário (x/y/largura/altura)
+      //    é propriedade do template e vale IGUAL para todos os vídeos:
+      //    SEM template por vídeo, SEM deslocamento por vídeo, SEM detecção.
+      const { templateId: templateBase } = await garantirTemplate(null);
 
       // 2) Enfileira na fila REAL (Supabase) — a Oracle e o worker local
       //    consomem com reserva atômica. O texto SUPERIOR do lote vai como
       //    tituloIA (DOIS textos: superior + inferior, independentes).
       const textoSup = config.textos?.superior || config.texto;
       const videos = enfileiraveis.map((it) => ({
-        _itemId: it.id,
         bibliotecaId: it.bibliotecaId,
         tituloIA:
           textoSup.visivel && String(textoSup.conteudo || '').trim() !== ''
             ? String(textoSup.conteudo).trim()
             : '',
       }));
-      // Agrupa INDICES por template (1 chamada por template distinto) e
-      // remonta `ids` na ordem de `enfileiraveis` (mapa filaId correto).
-      const grupos = new Map();
-      videos.forEach((v, idx) => {
-        const tid = templatePorVideo.get(v._itemId) || templateBase;
-        if (!grupos.has(tid)) grupos.set(tid, []);
-        const { _itemId, ...semInterno } = v;
-        grupos.get(tid).push({ idx, corpo: semInterno });
-      });
-      const ids = new Array(videos.length).fill(null);
-      for (const [tid, lista] of grupos) {
-        const resposta = await processarLote(tid, lista.map((e) => e.corpo));
-        (resposta.ids || []).forEach((id, k) => { ids[lista[k].idx] = id; });
-      }
+      const resposta = await processarLote(templateBase, videos);
+      const ids = resposta.ids || [];
 
       const mapaFila = new Map();
       enfileiraveis.forEach((it, i) => {
@@ -1085,6 +1145,64 @@ export default function EditorLote() {
     }
   }, [itens, config, enfileirando, garantirTemplate, iniciarPolling, mostrarToast]);
 
+  // "PROCESSAR VÍDEOS" — SEGUNDA fase do fluxo (APENAS encaminhamento).
+  // NÃO renderiza, NÃO chama processarLote, NÃO chama /api/lote, NÃO executa
+  // FFmpeg e NÃO reaplica template: valida os vídeos PRONTOS (finais reais,
+  // status concluido, MP4 em /arquivos/publicados/), remove-os da lista do
+  // Editor e navega para o AGENDAR — os finais já estão no servidor e o
+  // Agendar os lista por conta própria (mecanismo existente).
+  const [encaminhando, setEncaminhando] = useState(false);
+  const aoEncaminhar = useCallback(() => {
+    if (enfileirando || encaminhando) return;
+    if (itens.some((it) => it.status === 'aguardando' || it.status === 'processando')) {
+      mostrarToast('Há vídeos ainda na fila — aguarde a implementação terminar.', 'erro');
+      return;
+    }
+    const prontos = itens.filter(
+      (it) => it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100
+    );
+    if (prontos.length === 0) {
+      mostrarToast('Nenhum vídeo PRONTO — clique em "Implementar vídeo" primeiro.', 'erro');
+      return;
+    }
+    setEncaminhando(true);
+    try {
+      const idsProntos = new Set(prontos.map((it) => it.id));
+      // Encaminhar = tirar os prontos DA SESSÃO do Editor. Os ARQUIVOS finais
+      // NÃO são tocados (output/publicados/ permanece; os finais seguem com
+      // status 'concluido' — é assim que o Agendar os encontra).
+      const atual = estadoAtualRef.current || {};
+      const listaAtual = Array.isArray(atual.itens) ? atual.itens : itens;
+      const restantes = listaAtual.filter((it) => !idsProntos.has(it.id));
+      const eraSelecionado = idsProntos.has(atual.idSelecionado);
+      setItens(restantes);
+      if (eraSelecionado) setIdSelecionado(null);
+      // SESSÃO REGRAVADA NA HORA (mesma mecânica da lixeira — não espera o
+      // autosave de 350ms): os prontos saem da lista do Editor e não voltam
+      // num F5. O MP4 final continua intacto no servidor (nada é copiado,
+      // movido ou regerado).
+      salvarEstadoNoDisco({
+        itens: restantes,
+        config: atual.config,
+        idSelecionado: eraSelecionado ? null : atual.idSelecionado,
+        templateId: atual.templateId,
+        assinatura: atual.assinatura,
+        logoDataUrl: logoDataUrlRef.current?.dataUrl || null,
+      });
+      // Limpa o acompanhamento da sessão encaminhada.
+      concluidosAvisadosRef.current = new Set();
+      prontosContadosRef.current = 0;
+      mostrarToast(
+        prontos.length === 1
+          ? '1 vídeo encaminhado ao Agendar — final já renderizado (nada foi reprocessado).'
+          : `${prontos.length} vídeos encaminhados ao Agendar — finais já renderizados (nada foi reprocessado).`
+      );
+      if (typeof aoEncaminharParaAgendamento === 'function') aoEncaminharParaAgendamento();
+    } finally {
+      setEncaminhando(false);
+    }
+  }, [itens, enfileirando, encaminhando, aoEncaminharParaAgendamento, mostrarToast]);
+
   return (
     <div className="edl-root w-full min-h-screen flex flex-col">
       <HeaderEditor
@@ -1094,6 +1212,9 @@ export default function EditorLote() {
         aoProcessar={aoProcessar}
         salvando={salvando}
         processando={enfileirando}
+        prontos={itens.filter((it) => it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100).length}
+        aoEncaminhar={aoEncaminhar}
+        encaminhando={encaminhando}
       />
 
       <div className="edl-layout flex-1 grid items-start" onPointerDown={(e) => { if (e.target === e.currentTarget) setElementoSelecionado(null); }}>
@@ -1101,6 +1222,37 @@ export default function EditorLote() {
         <aside className="edl-painel-esquerdo min-w-0 flex flex-col border-r border-[color:var(--edl-borda)] h-full" aria-label="Vídeos Importados">
           <div className="shrink-0 px-3 py-3 border-b border-[color:var(--edl-borda)]">
             <h2 className="font-display text-xs font-extrabold text-white uppercase tracking-wider">Vídeos Importados</h2>
+          </div>
+          {/* FLUXO NOVO — template BASE + video no template (sem mexer no fluxo existente abaixo) */}
+          <div className="shrink-0 px-3 pt-3 space-y-2">
+            <button
+              type="button"
+              onClick={() => setModalTemplateAberto(true)}
+              className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg"
+            >
+              + Adicionar template
+            </button>
+            {templateBase && templateBase.id ? (
+              <p className="text-[10px] font-bold truncate" style={{ color: 'var(--edl-texto-dim)' }} title={templateBase.nome || templateBase.id}>
+                Template: {templateBase.nome || templateBase.id}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => inputVideoTemplateRef.current?.click()}
+              disabled={!templateBase || !templateBase.id || enviandoVideoTemplate}
+              title={!templateBase || !templateBase.id ? 'Adicione um template primeiro' : 'Escolhe um video do computador e coloca na area de video do template'}
+              className="edl-botao-grad w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg disabled:opacity-50"
+            >
+              {enviandoVideoTemplate ? 'Enviando...' : '+ Adicionar vídeo ao template'}
+            </button>
+            <input
+              ref={inputVideoTemplateRef}
+              type="file"
+              accept="video/*,.mp4,.mov,.webm,.mkv,.avi"
+              onChange={aoEscolherVideoTemplate}
+              className="hidden"
+            />
           </div>
           <div className="p-3">
              <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
@@ -1180,6 +1332,13 @@ export default function EditorLote() {
           />
           <span className="text-[11px] font-bold text-white">{toast.mensagem}</span>
         </div>
+      )}
+      {modalTemplateAberto && (
+        <ModalSelecionarTemplate
+          aoFechar={() => setModalTemplateAberto(false)}
+          aoEscolher={aplicarTemplateBase}
+          templateAtualId={templateBase?.id || null}
+        />
       )}
     </div>
   );

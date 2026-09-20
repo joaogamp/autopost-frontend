@@ -116,6 +116,25 @@ export default function EditorCanvas({
   const podeEditar = interativo && typeof aoAtualizarConfig === 'function';
   const atualizador = podeEditar ? aoAtualizarConfig : () => {};
 
+  // -------------------------------------------------------------------------
+  // MODO CONFERÊNCIA — VÍDEO PRONTO (declarado ANTES de qualquer uso, inclusive
+  // nas dependências dos effects abaixo). O player já aponta para o MP4 FINAL
+  // (/arquivos/publicados/{filaId}.mp4): é o quadro COMPLETO 1080×1920 com
+  // template/logo/textos/corte JÁ aplicados pelo engine. Nesse modo o canvas
+  // mostra SÓ esse MP4 (sem overlay, guia, alça ou clip de edição) e o player
+  // ocupa o CANVAS INTEIRO — reaplicar a composição sobre o final duplicaria
+  // logo/textos/corte. A edição continua idêntica para os vídeos que ainda NÃO
+  // foram implementados.
+  const conferencia = !!(
+    itemSelecionado &&
+    itemSelecionado.filaId &&
+    itemSelecionado.status === 'concluido' &&
+    Number(itemSelecionado.percentual) === 100
+  );
+  // Em conferência a EDIÇÃO fica desligada (sem arraste/zoom/alças/overlays),
+  // mas o player CONTINUA montado — é o que o usuário precisa assistir.
+  const podeEditarVideo = podeEditar && !conferencia;
+
   // Handlers — arrastre genérico por ruta: cada elemento es independente.
   // Nas células NÃO selecionadas (podeEditar=false) os handlers viram no-op.
   const arrastarLogo = gerarArrasteDeRuta(['logo'], atualizador);
@@ -309,7 +328,7 @@ export default function EditorCanvas({
   // ZOOM NA RODA (sobre a camada do vídeo): mesma matemática do render —
   // `deslocamentoSobZoom` mantém o ponto sob o cursor fixo (sem salto).
   useEffect(() => {
-    if (!podeEditar || !urlVideoAtiva) return;
+    if (!podeEditarVideo || !urlVideoAtiva) return;
     const el = camadaVideoRef.current;
     if (!el) return;
     function aoRoda(e) {
@@ -340,7 +359,7 @@ export default function EditorCanvas({
     }
     el.addEventListener('wheel', aoRoda, { passive: false });
     return () => el.removeEventListener('wheel', aoRoda);
-  }, [podeEditar, urlVideoAtiva, atualizador, areaN?.zoom, areaN, mostrarDicaEnquadramento]);
+  }, [podeEditarVideo, urlVideoAtiva, atualizador, areaN?.zoom, areaN, mostrarDicaEnquadramento]);
   // --------------------------------------------------------------------------
 
   const logo = config.logo || {};
@@ -362,6 +381,13 @@ export default function EditorCanvas({
   // ≤ 90), a linha nunca cruza a superior e o vídeo nunca desaparece inteiro.
   const posLinhaInferior = 100 - corteInf;
   const item = itemSelecionado;
+  // Geometria do player: modo normal = ÁREA de composição (prévia = render);
+  // conferência = canvas inteiro (o MP4 final já é o quadro completo).
+  const areaPlayer = conferencia
+    ? { x: 0, y: 0, largura: CANVAS_LARGURA, altura: CANVAS_ALTURA }
+    : area;
+  const caixaPlayer = conferencia ? areaPlayer : caixa;
+  const fitPlayer = conferencia ? 'ajustar' : area.fit;
   // NOTA: `area.fit` (cobrir/ajustar) é usado na prévia E no vídeo final —
   // o mesmo valor viaja no template (scale/crop/pad do FFmpeg). O enquadramento
   // do usuário (zoom + deslocamentoX/Y, editado com o MOUSE) também é o mesmo
@@ -445,7 +471,7 @@ export default function EditorCanvas({
             camada do vídeo (abaixo) — logo/textos/selo/imagens e os CONTROLES
             do player ficam FORA dela (os controles, na camada fixa própria,
             `data-edl-destino-controles`, no fundo do canvas). */}
-        {(
+        {!conferencia && (
           <>
             {/* Linha superior de corte */}
             <div
@@ -498,7 +524,7 @@ export default function EditorCanvas({
             o conteúdo visual do vídeo (e a dica de enquadramento): os CONTROLES
             do player NÃO estão aqui — são portados pra camada fixa
             `data-edl-destino-controles` (abaixo), fora do clip-path. */}
-        <div className="absolute inset-0" style={corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
+        <div className="absolute inset-0" style={!conferencia && corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
           {/* CAMADA DO VÍDEO — ocupa a ÁREA de composição e desenha o vídeo
               EXATAMENTE como no vídeo final: quadro = área × zoom, posicionado
               por deslocamentoX/Y e com o MESMO `fit` do template. SEM caixa
@@ -508,8 +534,8 @@ export default function EditorCanvas({
               pointer-events-none (só visualização). */}
           <div
             ref={camadaVideoRef}
-            role={podeEditar && urlVideoAtiva ? 'button' : undefined}
-            tabIndex={podeEditar && urlVideoAtiva ? 0 : undefined}
+            role={podeEditarVideo && urlVideoAtiva ? 'button' : undefined}
+            tabIndex={podeEditarVideo && urlVideoAtiva ? 0 : undefined}
             aria-label="Mover o vídeo (arraste com o mouse) e ampliar/reduzir (roda do mouse)"
             data-elemento="video"
             data-x={String(area.x)}
@@ -522,13 +548,13 @@ export default function EditorCanvas({
             data-area-largura={String(areaN.largura)}
             data-area-altura={String(areaN.altura)}
             data-area-fit={area.fit}
-            onPointerDown={podeEditar && urlVideoAtiva ? (e) => { selecionar('video'); moverVideo(e); } : undefined}
-            className={`absolute overflow-hidden ${podeEditar && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'} ${elementoSelecionado === 'video' ? 'edl-elemento-selecionado' : ''}`}
+            onPointerDown={podeEditarVideo && urlVideoAtiva ? (e) => { selecionar('video'); moverVideo(e); } : undefined}
+            className={`absolute overflow-hidden ${podeEditarVideo && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'} ${elementoSelecionado === 'video' ? 'edl-elemento-selecionado' : ''}`}
             style={{
-              left: area.x * escala,
-              top: area.y * escala,
-              width: Math.max(2, area.largura) * escala,
-              height: Math.max(2, area.altura) * escala,
+              left: areaPlayer.x * escala,
+              top: areaPlayer.y * escala,
+              width: Math.max(2, areaPlayer.largura) * escala,
+              height: Math.max(2, areaPlayer.altura) * escala,
               touchAction: 'none',
               userSelect: 'none',
             }}
@@ -538,17 +564,17 @@ export default function EditorCanvas({
             <div
               className="absolute"
               style={{
-                left: caixa.x * escala,
-                top: caixa.y * escala,
-                width: caixa.largura * escala,
-                height: caixa.altura * escala,
+                left: caixaPlayer.x * escala,
+                top: caixaPlayer.y * escala,
+                width: caixaPlayer.largura * escala,
+                height: caixaPlayer.altura * escala,
               }}
             >
               {podeEditar && urlVideoAtiva ? (
                 <ControlesVideo
                   key={`${urlVideoAtiva}|${claveReproductor}`}
                   src={urlVideoAtiva}
-                  encaixe={area.fit}
+                  encaixe={fitPlayer}
                   onDimensoes={aoDimensoesVideo}
                   destinoControles={destinoControles}
                 />
@@ -560,7 +586,7 @@ export default function EditorCanvas({
                   decoding="async"
                   draggable={false}
                   className="w-full h-full pointer-events-none"
-                  style={{ objectFit: area.fit }}
+                  style={{ objectFit: fitPlayer }}
                 />
               ) : item && (
                 <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
@@ -590,7 +616,7 @@ export default function EditorCanvas({
             `pointer-events-none` e SÓ as alças capturam o ponteiro). Arrastar
             o corpo move; roda do mouse = zoom interno; linha tracejada =
             corte; ALÇA = redimensiona o OBJETO (mesma geometria do render). */}
-        {podeEditar && urlVideoAtiva && elementoSelecionado === 'video' && (
+        {podeEditarVideo && urlVideoAtiva && elementoSelecionado === 'video' && (
           <div
             data-elemento="video"
             className="edl-elemento-selecionado absolute z-30"
@@ -630,7 +656,7 @@ export default function EditorCanvas({
         {/* REDEFINIR — discreto, aparece SÓ quando o usuário mexeu no
             enquadramento ou no TAMANHO/POSIÇÃO do objeto de vídeo. Volta
             tamanho e posição originais (zoom 1, centro, canvas inteiro). */}
-        {podeEditar && urlVideoAtiva && videoEditadoNoPreview && (
+        {podeEditarVideo && urlVideoAtiva && videoEditadoNoPreview && (
           <button
             type="button"
             onClick={redefinirEnquadramento}
@@ -679,7 +705,10 @@ export default function EditorCanvas({
             mostrando o VÍDEO ORIGINAL inteiro. É só ferramenta de ediçom: com a
             "Marcação da área" DESLIGADA fica invisível e `pointer-events-none`
             (nunca atrapalha o player); LIGADA, pode ser arrastado/
-            redimensionado na célula selecionada. */}
+            redimensionado na célula selecionada.
+            MODO CONFERÊNCIA (vídeo PRONTO): a guia NÃO é desenhada — o final
+            já está composto e nada de edição sobrepõe o MP4. */}
+        {!conferencia && (
         <div
           role={podeEditar && area.mostrarMarcacao ? 'button' : undefined}
           tabIndex={podeEditar && area.mostrarMarcacao ? 0 : undefined}
@@ -742,11 +771,12 @@ export default function EditorCanvas({
             </>
           )}
         </div>
+        )}
 
         {/* LOGO sobre o canvas — arrastável SÓ na célula selecionada. O onLoad
             captura a proporção da imagem (altura/largura) que o template usa pra
             calcular a altura em px do overlay. */}
-        {logo.visivel && logo.url && (
+        {!conferencia && logo.visivel && logo.url && (
           <div
             role={podeEditar ? 'button' : undefined}
             tabIndex={podeEditar ? 0 : undefined}
@@ -801,7 +831,7 @@ export default function EditorCanvas({
             conteúdo, posição, tamanho, largura, fonte, peso, cor, alinhamento,
             opacidade e visibilidade PRÓPRIOS. Arrastáveis SÓ na célula
             selecionada; nas demais são SOMENTE visualização. */}
-        {[
+        {!conferencia && [
           { chave: 'superior', rotulo: 'Texto superior', t: textoSup },
           { chave: 'inferior', rotulo: 'Texto inferior', t: textoInf },
         ].map(({ chave, rotulo, t }) => {
@@ -856,14 +886,18 @@ export default function EditorCanvas({
             verificado: elementos INDEPENDENTES (posição/tamanho próprios).
             Editáveis SÓ na célula selecionada (nas demais, somente leitura).
             Cada um seleciona sua camada no clique (Camadas ⇄ Preview). */}
-        <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeNome'} aoSelecionar={selecionar} />
-        <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeUsuario'} aoSelecionar={selecionar} />
-        <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'selo'} aoSelecionar={selecionar} />
+        {!conferencia && (
+          <>
+            <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeNome'} aoSelecionar={selecionar} />
+            <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeUsuario'} aoSelecionar={selecionar} />
+            <ElementoIdentidadeSelo selo={identidade?.selo} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'selo'} aoSelecionar={selecionar} />
+          </>
+        )}
 
         {/* IMAGENS (Adicionar elementos → Imagem): cada imagem é UMA camada
             independente — arrastável, redimensionável e selecionável direto no
             preview. MESMA geometria que o render compõe (prévia = render). */}
-        {(config.imagens || []).map((im) => (
+        {!conferencia && (config.imagens || []).map((im) => (
           <ElementoImagem
             key={im.id}
             imagem={im}
@@ -891,7 +925,7 @@ export default function EditorCanvas({
         />
       </div>
 
-      {podeEditar && urlVideoAtiva && (
+      {podeEditarVideo && urlVideoAtiva && (
         <div className="edl-zoom-touch" role="group" aria-label="Zoom do vídeo">
           <button type="button" className="edl-botao-fantasma edl-ring-foco rounded-lg" aria-label="Diminuir zoom" onClick={() => zoomTouch(-1)}>−</button>
           <span className="self-center text-xs" style={{ color: 'var(--edl-texto-dim)' }}>{Math.round(areaN.zoom * 100)}%</span>

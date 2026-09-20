@@ -5,6 +5,7 @@ export default function ModalImportarCanva({ onFechar, onImportado }) {
   const [nome, setNome] = useState('');
   const [arquivo, setArquivo] = useState(null);
   const [corMarcador, setCorMarcador] = useState('#FF00FF');
+  const [corMarcadorVideo, setCorMarcadorVideo] = useState('#00FF00');
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -14,7 +15,7 @@ export default function ModalImportarCanva({ onFechar, onImportado }) {
     if (!arquivo) return setErro('Escolha o arquivo PNG exportado do Canva.');
 
     setEnviando(true);
-    const resultado = await importarTemplateCanva({ nome, arquivoOverlay: arquivo, corMarcadorTexto: corMarcador });
+    const resultado = await importarTemplateCanva({ nome, arquivoOverlay: arquivo, corMarcadorTexto: corMarcador, corMarcadorVideo });
     setEnviando(false);
 
     if (resultado.erro) return setErro(resultado.erro);
@@ -28,8 +29,8 @@ export default function ModalImportarCanva({ onFechar, onImportado }) {
           <div>
             <h3 className="font-display text-lg font-bold text-slate-900">Importar template do Canva</h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed font-medium">
-              Exporte do Canva como PNG com fundo transparente. Deixe a área do vídeo totalmente
-              transparente.
+              Desenhe um retângulo preenchido na cor do marcador exatamente onde o vídeo deve ficar.
+              O tamanho e a posição desse retângulo definem exatamente onde o vídeo será colocado.
             </p>
           </div>
           <button
@@ -61,6 +62,29 @@ export default function ModalImportarCanva({ onFechar, onImportado }) {
               onChange={(e) => setArquivo(e.target.files?.[0] || null)}
               className="w-full bg-white border border-slate-200 rounded-xl p-2 text-xs text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer font-medium"
             />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-600 block mb-1.5">
+              Cor do marcador do vídeo
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={corMarcadorVideo}
+                onChange={(e) => setCorMarcadorVideo(e.target.value)}
+                className="w-9 h-9 rounded-xl border border-slate-200 bg-transparent cursor-pointer"
+              />
+              <span className="text-xs font-mono font-semibold text-slate-700 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                {corMarcadorVideo}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed font-medium">
+              Pinte no Canva um retângulo PREENCHIDO nessa cor, na posição e com o tamanho exatos
+              onde o vídeo deve aparecer (quadrado, vertical ou horizontal — qualquer proporção).
+              O marcador é removido do template salvo e nunca aparece no vídeo final. A cor não
+              pode ser igual à do marcador de texto.
+            </p>
           </div>
 
           <div>
