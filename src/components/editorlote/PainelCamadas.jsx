@@ -4,6 +4,7 @@ import {
   Type,
   Image as ImageIcon,
   ImagePlus,
+  LayoutTemplate,
   Film,
   Scan,
   User,
@@ -104,6 +105,19 @@ export function construirCamadas(config, idSelecionado = null) {
     visivel: !!config.identidade?.selo?.visivel,
     alternar: (v) => ({ identidade: { ...config.identidade, selo: { ...config.identidade?.selo, visivel: v } } }),
   });
+
+  // TEMPLATE DE FUNDO IMPORTADO - camada visual propria (fundo).
+  if (config.templateFundo && typeof config.templateFundo.url === 'string' && config.templateFundo.url.startsWith('data:image/')) {
+    camadas.push({
+      id: 'templateFundo',
+      rotulo: config.templateFundo.nome || 'Template de fundo',
+      Icone: LayoutTemplate,
+      temOlho: true,
+      visivel: config.templateFundo.visivel !== false,
+      dicaOlho: 'Mostrar/ocultar o template de fundo na previa',
+      alternar: (v) => ({ templateFundo: { ...config.templateFundo, visivel: v } }),
+    });
+  }
 
   camadas.push({
     id: 'area',

@@ -11,6 +11,11 @@ import { areaVideoNormalizada, limitarCorte } from './configEditorLote.js';
 export const NOME_TEMPLATE_LOTE = 'Editor em Lote · config compartilhada';
 
 export function configParaTemplatePayload(config, overrideVideo = null) {
+  const tf = (config && config.templateFundo) || {};
+  // `visivel:false` (camada oculta na prévia) NÃO vai pro render — a prévia é
+// fiel ao vídeo final, então o fundo só viaja quando está visível.
+const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') === 0 && tf.visivel !== false);
+  const fundoTemplate = temFundo ? { urlImagem: tf.url, nome: (typeof tf.nome === 'string' ? tf.nome.slice(0, 80) : ''), larguraNatural: (Number(tf.larguraNatural) || 0), alturaNatural: (Number(tf.alturaNatural) || 0) } : null;
   const { canvas, areaVideo, logo } = config;
   // Enquadramento do vídeo normalizado (zoom 1 = original; 50 = centro) — o
   // MESMO valor que a prévia usa, dentro da estrutura `areaVideo` existente.
@@ -215,6 +220,7 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
     // IMAGENS independentes (dataURL + geometria em px) — null quando não há
     // imagem visível: o pipeline pula e nada muda nos fluxos existentes.
     imagens: imagensPayload.length ? imagensPayload : null,
+    fundoTemplate: fundoTemplate,
   };
 }
 
@@ -255,6 +261,7 @@ export function firmaComposicion(config) {
     'sup:' + assinarTexto(textos.superior),
     'inf:' + assinarTexto(textos.inferior),
     // IMAGENS: id/url/geometria/opacidade — re-renderiza a célula quando muda.
+    'fundo:' + (config.templateFundo && config.templateFundo.url ? [config.templateFundo.url.length, Math.round(Number(config.templateFundo.larguraNatural) || 0), Math.round(Number(config.templateFundo.alturaNatural) || 0), config.templateFundo.visivel ? 1 : 0].join(',') : 'n') +
     'img:' + (config.imagens || [])
       .map((im) => (im && im.url ? [im.id, Math.round(im.x), Math.round(im.y), Math.round(im.largura), Math.round((im.opacidade ?? 100)), im.visivel ? 1 : 0].join(',') : 'n'))
       .join(';'),

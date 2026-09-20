@@ -347,6 +347,7 @@ export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, temp
   // template e o pipeline (Oracle/worker) compõe na MESMA ordem da prévia.
   // Sem imagens, envia null: o campo é limpo no template e nada muda.
   formData.append('imagens', JSON.stringify(payload.imagens || null));
+  formData.append('fundoTemplate', JSON.stringify(payload.fundoTemplate || null));
   if (payload.corteBordas) formData.append('corteBordas', JSON.stringify(payload.corteBordas));
   if (arquivoLogo) formData.append('logo', arquivoLogo);
 

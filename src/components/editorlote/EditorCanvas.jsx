@@ -188,6 +188,8 @@ export default function EditorCanvas({
   const textoInf = textos.inferior || {};
 
   const corFundo = config.canvas.corFundo;
+  const templateFundo = config.templateFundo || {};
+  const temTemplateFundo = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/') && templateFundo.visivel !== false;
   const area = config.areaVideo;
   const areaN = areaVideoNormalizada(area);
   // Geometria do enquadramento — MESMA matemática do render (compor.js):
@@ -457,6 +459,12 @@ export default function EditorCanvas({
           background: corFundo,
         }}
       >
+        {/* TEMPLATE DE FUNDO IMPORTADO - camada visual propria (fundo/camada visual). PNG/imagem via Importar Template, no CENTRO do canvas com contain. O video ocupa SOMENTE a areaVideo sobre ele. Somente leitura. */}
+        {temTemplateFundo ? (
+          <div data-template-fundo="true" className="absolute inset-0 pointer-events-none flex items-center justify-center" style={{ zIndex: 1 }} aria-hidden="true">
+            <img src={templateFundo.url} alt={templateFundo.nome || 'Template de fundo'} draggable={false} className="pointer-events-none select-none" style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }} />
+          </div>
+        ) : null}
         {/* CORTE DE BORDAS — guias PERMANENTES de ediçom: as linhas ficam
             SEMPRE visíveis (referência visual da área de corte), independente
             de qual camada está selecionada (Logo, Texto, Imagem, Selo, Vídeo…).
@@ -556,6 +564,7 @@ export default function EditorCanvas({
               width: Math.max(2, areaPlayer.largura) * escala,
               height: Math.max(2, areaPlayer.altura) * escala,
               touchAction: 'none',
+              zIndex: 5,
               userSelect: 'none',
             }}
           >
@@ -710,30 +719,30 @@ export default function EditorCanvas({
             já está composto e nada de edição sobrepõe o MP4. */}
         {!conferencia && (
         <div
-          role={podeEditar && area.mostrarMarcacao ? 'button' : undefined}
-          tabIndex={podeEditar && area.mostrarMarcacao ? 0 : undefined}
+          role={podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? 'button' : undefined}
+          tabIndex={podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? 0 : undefined}
           aria-label="Mover a área do vídeo (composiçom final)"
           data-elemento="area"
           data-x={String(area.x)}
           data-y={String(area.y)}
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
-          onPointerDown={podeEditar && area.mostrarMarcacao ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && area.mostrarMarcacao && elementoSelecionado === 'area' ? 'edl-guia-ativa' : ''} ${podeEditar && area.mostrarMarcacao ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
+          onPointerDown={podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && (area.mostrarMarcacao || temTemplateFundo) && elementoSelecionado === 'area' ? 'edl-guia-ativa' : ''} ${podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
             width: area.largura * escala,
             height: area.altura * escala,
             borderRadius: 8 * escala,
-            cursor: podeEditar && area.mostrarMarcacao ? 'move' : 'default',
-            border: area.mostrarMarcacao ? undefined : '2px dashed transparent',
-            backgroundColor: area.mostrarMarcacao ? undefined : 'transparent',
+            cursor: podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? 'move' : 'default',
+            border: (area.mostrarMarcacao || temTemplateFundo) ? undefined : '2px dashed transparent',
+            backgroundColor: (area.mostrarMarcacao || temTemplateFundo) ? undefined : 'transparent',
           }}
         >
 
           {/* Manijas de redimensionar (SÓ quando a ÁREA está selecionada) */}
-          {podeEditar && area.mostrarMarcacao && elementoSelecionado === 'area' && (
+          {podeEditar && (area.mostrarMarcacao || temTemplateFundo) && elementoSelecionado === 'area' && (
             <>
               <span
                 role="slider"

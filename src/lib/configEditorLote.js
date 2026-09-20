@@ -363,6 +363,11 @@ export function criarImagemPadrao({ url, alturaProporcao = 1, nome = null }) {
   };
 }
 
+/** Template de fundo importado (PNG/imagem) - camada visual propria, funcao dedicada. */
+export function criarTemplateFundoPadrao() {
+  return { url: null, nome: '', larguraNatural: 0, alturaNatural: 0, visivel: true };
+}
+
 /** Rótulo curto do vídeo no lote (vídeo 01, vídeo 02, ...). */
 export function rotuloDeVideo(indice) {
   return `vídeo ${String(indice + 1).padStart(2, '0')}`;
@@ -407,6 +412,18 @@ export function normalizarConfigEditor(salva) {
     imagens: (Array.isArray(salva?.imagens) ? salva.imagens : [])
       .filter((im) => im && typeof im.url === 'string' && im.url.startsWith('data:image/'))
       .map((im) => ({ ...criarImagemPadrao({ url: im.url, alturaProporcao: im.alturaProporcao, nome: im.nome }), ...im, url: im.url })),
+    templateFundo: (() => {
+      const t = salva?.templateFundo;
+      const base0 = criarTemplateFundoPadrao();
+      if (!t || typeof t.url !== 'string' || !t.url.startsWith('data:image/')) return base0;
+      return {
+        url: t.url,
+        nome: typeof t.nome === 'string' ? t.nome.slice(0, 80) : '',
+        larguraNatural: Number(t.larguraNatural) > 0 ? Number(t.larguraNatural) : 0,
+        alturaNatural: Number(t.alturaNatural) > 0 ? Number(t.alturaNatural) : 0,
+        visivel: t.visivel !== false,
+      };
+    })(),
   };
   // Logo: sem URL não há o que mostrar — opt-in estrito.
   if (!cfg.logo?.url) cfg.logo.visivel = false;
@@ -618,6 +635,8 @@ export function criarConfigPadrao() {
     // Identidade do canal (logo + nome + @ + selo azul) — compartilhada por
     // todo o lote; elementos editáveis no painel e direto no canvas.
     identidade: criarIdentidadePadrao(),
+    // TEMPLATE DE FUNDO IMPORTADO (PNG/imagem) - camada visual propria.
+    templateFundo: criarTemplateFundoPadrao(),
     // IMAGENS (Editor em Lote): elementos de imagem independentes — nasce
     // vazio (regra de lote limpo; nada herda de sessões anteriores).
     imagens: [],
