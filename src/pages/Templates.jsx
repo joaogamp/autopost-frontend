@@ -93,14 +93,28 @@ function podeEditarTemplate(t) {
   return t.tipo !== 'importado' || !!t.overlayPath;
 }
 
+/**
+ * A posição do vídeo é SEMPRE propriedade do template (fonte única da
+ * verdade). Remove resquícios do fluxo antigo (flag de detecção automática
+ * por vídeo) antes de salvar — o engine nunca recebe, nunca calcula.
+ */
+function areaVideoLimpa(areaVideo) {
+  if (!areaVideo) return areaVideo;
+  const { detectarContenido, ...posicao } = areaVideo;
+  return posicao;
+}
+
 function novoTemplateEmBranco() {
   return {
     id: null,
     nome: '',
     corFundo: '#15131A',
-canvasLargura: CANVAS_LARGURA,
+    canvasLargura: CANVAS_LARGURA,
     canvasAltura: CANVAS_ALTURA,
-    areaVideo: { x: 90, y: 300, largura: 900, altura: 1200, fit: 'cobrir', detectarContenido: false },
+    // POSIÇÃO FIXA DO VÍDEO (x=90 · y=650 · 900x1000): o usuário marca UMA
+    // VEZ onde o vídeo fica dentro do template; o mesmo valor vale para
+    // todos os vídeos. Sem detecção automática, sem override por vídeo.
+    areaVideo: { x: 90, y: 650, largura: 900, altura: 1000, fit: 'cobrir' },
     logo: null, // { x, y, largura, altura }
     texto: null, // { x, y, largura, altura, tamanhoFonte, cor }
   };
@@ -138,11 +152,11 @@ export default function Templates({ aoMudarPagina = null }) {
   }
 
   function abrirExistente(template) {
-    // Compatibilidad: templates guardados sin las opciones nuevas reciben
-    // los valores por defecto (comportamiento actual: cubrir, sin detección).
+    // Compatibilidade: templates salvos sem `fit` recebem 'cobrir'. A posição
+    // (x · y · largura · altura) vem SEMPRE do template — ela pertence ao
+    // template, nunca a cada vídeo.
     const areaVideo = {
       fit: 'cobrir',
-      detectarContenido: false,
       ...template.areaVideo,
     };
     setEditando({ ...template, areaVideo });
@@ -161,8 +175,8 @@ export default function Templates({ aoMudarPagina = null }) {
     }
   }
 
-  // Preview LOCAL (solo navegador) para ver cómo encajará el vídeo en la zona,
-  // respetando el modo Cubrir/Ajustar. No se sube al servidor.
+  // Preview LOCAL (só navegador) para ver como o vídeo vai encaixar na área,
+  // respeitando o modo Cobrir/Ajustar. Não é enviado ao servidor.
   function aoElegirPreviewVideo(e) {
     const arquivo = e.target.files?.[0];
     if (!arquivo) return;
@@ -189,7 +203,7 @@ export default function Templates({ aoMudarPagina = null }) {
         corFundo: editando.corFundo,
         canvasLargura: editando.canvasLargura || CANVAS_LARGURA,
         canvasAltura: editando.canvasAltura || CANVAS_ALTURA,
-        areaVideo: editando.areaVideo,
+        areaVideo: areaVideoLimpa(editando.areaVideo),
         logoPosicao: editando.logo,
         texto: editando.texto,
       },
@@ -621,9 +635,11 @@ export default function Templates({ aoMudarPagina = null }) {
             </div>
 
             <div className="border-t border-slate-200/80 pt-4 space-y-3">
-              <label className="text-xs font-bold text-slate-600 block">Zona del vídeo (X · Y · tamaño)</label>
+              <label className="text-xs font-bold text-slate-600 block">Posição do vídeo (X · Y · largura · altura)</label>
               <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                Arrastra la caja azul en el canvas o edita los números. Vale igual para todos los vídeos procesados con este template.
+                Arraste o retângulo-guia azul no canvas ou edite os números (ajuste o Y para subir/descer o
+                vídeo). Essa marcação é apenas guia visual do editor — não aparece no vídeo final — e pertence
+                ao template: vale igual para todos os vídeos processados com ele.
               </p>
 
               {/* Modo de encaje */}
@@ -636,7 +652,7 @@ export default function Templates({ aoMudarPagina = null }) {
                       : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
-                  Cubrir
+                  Cobrir
                 </button>
                 <button
                   onClick={() => setEditando({ ...editando, areaVideo: { ...editando.areaVideo, fit: 'ajustar' } })}
@@ -655,7 +671,7 @@ export default function Templates({ aoMudarPagina = null }) {
                 {[
                   ['x', 'X'],
                   ['y', 'Y'],
-                  ['largura', 'Anchura'],
+                  ['largura', 'Largura'],
                   ['altura', 'Altura'],
                 ].map(([campo, rotulo]) => (
                   <div key={campo}>
@@ -674,29 +690,17 @@ export default function Templates({ aoMudarPagina = null }) {
                 ))}
               </div>
 
-              {/* Detección automática de la región útil */}
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={editando.areaVideo.detectarContenido === true}
-                  onChange={(e) =>
-                    setEditando({ ...editando, areaVideo: { ...editando.areaVideo, detectarContenido: e.target.checked } })
-                  }
-                  className="mt-0.5 accent-indigo-600"
-                />
-                <span className="text-[11px] text-slate-600 leading-relaxed font-medium">
-                  <b>Detectar área útil del vídeo automáticamente.</b> Analiza cada vídeo de entrada y recorta
-                  barras, logos, marcas e interfaces de redes antes de encajarlo. Si no detecta nada con confianza,
-                  usa el vídeo completo.
-                </span>
-              </label>
+              <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                Regra de ouro: a posição do vídeo é propriedade do <b>template</b>, nunca de cada vídeo.
+                Para mudar a posição dos vídeos, edite este template — nunca os vídeos.
+              </p>
 
               {/* Preview local */}
               <div>
-                <label className="text-xs font-bold text-slate-600 block mb-1.5">Probar con una imagen</label>
+                <label className="text-xs font-bold text-slate-600 block mb-1.5">Testar com uma imagem</label>
                 <label className="inline-flex items-center gap-2 text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-4 py-2.5 rounded-xl cursor-pointer transition-all shadow-xs">
                   <Image className="w-4 h-4 text-indigo-600" />
-                  <span>{previewVideoUrl ? 'Cambiar imagen' : 'Elegir imagen'}</span>
+                  <span>{previewVideoUrl ? 'Trocar imagem' : 'Escolher imagem'}</span>
                   <input type="file" accept="image/*" hidden onChange={aoElegirPreviewVideo} />
                 </label>
                 {previewVideoUrl && (
@@ -704,12 +708,12 @@ export default function Templates({ aoMudarPagina = null }) {
                     onClick={() => setPreviewVideoUrl(null)}
                     className="text-xs font-bold text-slate-500 hover:text-slate-700 hover:underline px-2 py-1 rounded-lg ml-2"
                   >
-                    Quitar preview
+                    Remover preview
                   </button>
                 )}
                 <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed font-medium">
-                  Preview solo visual (navegador): muestra cómo encajará el vídeo. Cubrir recorta para llenar;
-                  Ajustar centra con el color de fondo del template.
+                  Preview apenas visual (navegador): mostra como o vídeo vai encaixar. Cobrir recorta para
+                  preencher a área; Ajustar centraliza usando a cor de fundo do template.
                 </p>
               </div>
             </div>

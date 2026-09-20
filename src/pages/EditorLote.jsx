@@ -1062,14 +1062,17 @@ export default function EditorLote() {
 
       const mapaFila = new Map();
       enfileiraveis.forEach((it, i) => {
-        if (ids[i]) mapaFila.set(it.bibliotecaId, ids[i]);
+        // Chave = it.id (ÚNICO por item). Antes era it.bibliotecaId: se dois
+        // itens da sessão apontarem para o MESMO original (re-import), ambos
+        // recebiam o mesmo filaId e um final parecia "pertencer" ao outro.
+        if (ids[i]) mapaFila.set(it.id, ids[i]);
       });
 
       inicioFilaRef.current = Date.now();
       avisoWorkerRef.current = false;
       setItens((atual) =>
         atual.map((it) => {
-          const filaId = mapaFila.get(it.bibliotecaId);
+          const filaId = mapaFila.get(it.id);
           return filaId ? { ...it, filaId, status: 'aguardando', percentual: 0, erroMensagem: null } : it;
         })
       );

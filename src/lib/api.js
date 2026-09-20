@@ -13,6 +13,23 @@ export async function excluirVideo(id) {
   return corpo;
 }
 
+/**
+ * EXCLUI TODOS OS VÍDEOS DA BIBLIOTECA — DELETE /api/biblioteca (SEM id).
+ *
+ * A remoção real é do BACKEND: originais (uploads), finais (publicados),
+ * thumbnails, pastas temporárias e os registros dos stores da Biblioteca.
+ * Templates, configurações do Editor e agendamentos ATIVOS (programado/
+ * publicando/publicado) NÃO são tocados: os vídeos protegidos por eles voltam
+ * em `preservados` com o motivo. Biblioteca vazia responde 200 com
+ * `nadaAExcluir: true` (nunca erro).
+ */
+export async function excluirTodosOsVideos() {
+  const r = await fetch(`${BASE_URL}/api/biblioteca`, { method: 'DELETE' });
+  const corpo = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(corpo.erro || `Erro ao excluir todos os vídeos: ${r.status}`);
+  return corpo;
+}
+
 export async function buscarFinal(id) {
   const r = await fetch(`${BASE_URL}/api/finais/${encodeURIComponent(id)}`);
   if (!r.ok) throw new Error(`Erro ao buscar final: ${r.status}`);
@@ -277,7 +294,16 @@ export async function desconectarConta(plataforma) {
 export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, templateId = null }) {
   const formData = new FormData();
   if (templateId) formData.append('id', templateId);
-  formData.append('nome', payload.nome);
+  // BLINDAGEM DE NOME: payload.nome nunca pode chegar como a string "undefined"
+  // (FormData converte undefined em "undefined" e o template era salvo assim).
+  // O fallback mantém o nome padrão do Editor em Lote (mesma constante usada
+  // pelo mapearEditorLote — replicada aqui para evitar import circular).
+  const NOME_PADRAO_LOTE = 'Editor em Lote · config compartilhada';
+  const nomeSeguro =
+    payload && typeof payload.nome === 'string' && payload.nome.trim() && payload.nome.trim().toLowerCase() !== 'undefined'
+      ? payload.nome.trim()
+      : NOME_PADRAO_LOTE;
+  formData.append('nome', nomeSeguro);
   formData.append('corFundo', payload.corFundo);
   formData.append('canvasLargura', String(payload.canvasLargura));
   formData.append('canvasAltura', String(payload.canvasAltura));

@@ -159,6 +159,11 @@ export function configParaTemplatePayload(config, overrideVideo = null) {
     });
 
   return {
+    // NOME do template (CRÍTICO): o POST /api/templates EXIGE 'nome'. Sem este
+    // campo, formData.append('nome', undefined) chegava ao servidor como a
+    // STRING "undefined" — todo template do Editor em Lote era salvo com
+    // nome="undefined" (visível como "Template: undefined" na Biblioteca).
+    nome: NOME_TEMPLATE_LOTE,
     corFundo: canvas.corFundo,
     canvasLargura: canvas.largura,
     canvasAltura: canvas.altura,

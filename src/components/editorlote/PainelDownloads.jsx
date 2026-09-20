@@ -24,6 +24,7 @@ function urlOriginalDoEnviado(v) {
 export default function PainelDownloads({ aoAdicionarVideo }) {
   const fileInputRef = useRef(null);
   const [enviando, setEnviando] = useState(false);
+  const [progresso, setProgresso] = useState(null); // { enviados, total, falhados }
   const [erro, setErro] = useState('');
 
   async function aoEscolherArquivos(e) {
@@ -33,32 +34,68 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
 
     setEnviando(true);
     setErro('');
-    try {
-      // Upload REAL no servidor (ffprobe + thumbnail + biblioteca).
-      const resp = await enviarVideos(arquivos);
-      const videosEnviados = resp && Array.isArray(resp.videos) ? resp.videos : [];
-      if (videosEnviados.length === 0) {
-        setErro('Upload concluído, mas o servidor não retornou nenhum vídeo.');
-        return;
-      }
-      // Cada vídeo entra na LISTA ÚNICA (ListaVideos) e no espaço CENTRAL —
-      // sem lista duplicada: clicar num vídeo abre o vídeo no editor.
-      videosEnviados.forEach((v) =>
-        aoAdicionarVideo({
-          id: v.id,
-          bibliotecaId: v.id,
-          nome: v.nomeOriginal || null,
-          thumbnail: v.thumbnailUrl ? urlArquivo(v.thumbnailUrl) : null,
-          urlFonte: urlOriginalDoEnviado(v),
-          duracao: v.duracaoSegundos ? `${v.duracaoSegundos}s` : null,
-          status: 'pronto',
-        })
-      );
-    } catch (e2) {
-      setErro(e2.message || 'Falha no upload.');
-    } finally {
-      setEnviando(false);
+    setProgresso({ enviados: 0, total: arquivos.length, falhados: 0 });
+
+    // UPLOAD EM BLOCOS (causa do "Enviando..." travado): antes TODOS os arquivos
+    // iam num ÚNICO request multipart — dezenas de vídeos geravam um body
+    // gigante (estouro do client_max_body_size 2G do Nginx / timeout do proxy),
+    // sem nenhum progresso visível e com UM arquivo ruim derrubando o lote
+    // inteiro. Blocos pequenos + 2 requests simultâneos dão progresso real
+    // ("x/y enviados"), falha isolada por bloco e cada vídeo entra na lista
+    // assim que o próprio bloco termina. Nada muda no backend nem no Nginx.
+    const TAMANHO_BLOCO = 4; // arquivos por request
+    const BLOCOS_SIMULTANEOS = 2;
+    const blocos = [];
+    for (let i = 0; i < arquivos.length; i += TAMANHO_BLOCO) {
+      blocos.push(arquivos.slice(i, i + TAMANHO_BLOCO));
     }
+
+    const falhas = [];
+    let enviados = 0;
+    let cursor = 0; // próximo bloco a iniciar
+
+    async function trabalhador() {
+      while (cursor < blocos.length) {
+        const bloco = blocos[cursor++];
+        try {
+          const resp = await enviarVideos(bloco);
+          const videosEnviados = resp && Array.isArray(resp.videos) ? resp.videos : [];
+          if (videosEnviados.length === 0) {
+            falhas.push(bloco.map((a) => a.name).join(', '));
+          } else {
+            // Cada vídeo entra na LISTA ÚNICA (ListaVideos) e no espaço CENTRAL —
+            // sem lista duplicada: clicar num vídeo abre o vídeo no editor.
+            videosEnviados.forEach((v) =>
+              aoAdicionarVideo({
+                id: v.id,
+                bibliotecaId: v.id,
+                nome: v.nomeOriginal || null,
+                thumbnail: v.thumbnailUrl ? urlArquivo(v.thumbnailUrl) : null,
+                urlFonte: urlOriginalDoEnviado(v),
+                duracao: v.duracaoSegundos ? `${v.duracaoSegundos}s` : null,
+                status: 'pronto',
+              })
+            );
+            enviados += videosEnviados.length;
+          }
+        } catch (e2) {
+          falhas.push(`${e2?.message || 'falha no envio'} — ${bloco.map((a) => a.name).join(', ')}`);
+        }
+        setProgresso({ enviados, total: arquivos.length, falhados: falhas.length });
+      }
+    }
+
+    const nTrabalhadores = Math.min(BLOCOS_SIMULTANEOS, blocos.length);
+    await Promise.all(Array.from({ length: nTrabalhadores }, () => trabalhador()));
+
+    if (falhas.length > 0) {
+      console.error('[PainelDownloads] Blocos de upload com falha:', falhas);
+      setErro(
+        `${falhas.length} lote(s) de upload falharam — reenvie apenas os vídeos que faltarem. Ex.: ${falhas[0]}`
+      );
+    }
+    setEnviando(false);
+    setProgresso(null);
   }
 
   return (
@@ -95,7 +132,11 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
           ) : (
             <Upload className="w-3.5 h-3.5" />
           )}
-          {enviando ? 'Enviando...' : 'Escolher vídeos locais'}
+          {enviando
+            ? progresso
+              ? `Enviando ${progresso.enviados}/${progresso.total}…`
+              : 'Enviando...'
+            : 'Escolher vídeos locais'}
         </button>
         <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
           Upload real no servidor (ffprobe + thumbnail + biblioteca). Os vídeos aparecem na lista abaixo.
