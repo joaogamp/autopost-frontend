@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { buscarContas, conectarInstagram, desconectarConta } from '../lib/api';
+import { buscarContas, conectarInstagram, descobrirContasInstagram, desconectarConta } from '../lib/api';
 import RedeLabel from '../components/RedeLabel';
-import { Info, LogOut, CheckCircle2, XCircle, Key, User } from 'lucide-react';
+import { Info, LogOut, CheckCircle2, XCircle, Key, User, Search } from 'lucide-react';
 
 export default function Contas() {
   const [contas, setContas] = useState(null);
   const [accessToken, setAccessToken] = useState('');
   const [igUserId, setIgUserId] = useState('');
   const [conectando, setConectando] = useState(false);
+  const [detectando, setDetectando] = useState(false);
+  const [contasDetectadas, setContasDetectadas] = useState(null);
   const [erro, setErro] = useState('');
 
   async function carregar() {
@@ -18,26 +20,66 @@ export default function Contas() {
     carregar();
   }, []);
 
-  async function conectar() {
+  /**
+   * Conecta a conta. O ID é OPCIONAL: sem ele o backend descobre pelo token —
+   * e, se houver mais de uma conta, responde requerSelecao para o usuário
+   * escolher na lista. Com ID informado, ele serve só como VERIFICAÇÃO.
+   */
+  async function conectar(idEscolhido = null) {
     setErro('');
-    if (!accessToken.trim() || !igUserId.trim()) {
-      return setErro('Preencha o token e o ID da conta comercial.');
+    if (!accessToken.trim()) {
+      return setErro('Cole o token de acesso.');
     }
+    const idVerificacao = (idEscolhido != null ? String(idEscolhido) : igUserId).trim();
     setConectando(true);
-    const resultado = await conectarInstagram(accessToken.trim(), igUserId.trim());
+    const resultado = await conectarInstagram(accessToken.trim(), idVerificacao || undefined);
     setConectando(false);
 
-    if (resultado.erro) return setErro(resultado.erro);
+    if (resultado.requerSelecao) {
+      setContasDetectadas(resultado.contas || []);
+      setErro(
+        `Este token dá acesso a ${(resultado.contas || []).length} contas — clique na conta desejada para conectar.`,
+      );
+      return;
+    }
+    if (resultado.erro) {
+      // Ex.: ID de outra conta (409) — mostra junto as contas que o token
+      // realmente acessa, para conectar a certa com um clique.
+      if (Array.isArray(resultado.contas) && resultado.contas.length > 0) {
+        setContasDetectadas(resultado.contas);
+      }
+      return setErro(resultado.erro);
+    }
 
     setAccessToken('');
     setIgUserId('');
+    setContasDetectadas(null);
     carregar();
+  }
+
+  /** Só DESCOBRE as contas que o token acessa (nada é salvo no servidor). */
+  async function detectar() {
+    setErro('');
+    if (!accessToken.trim()) {
+      return setErro('Cole o token de acesso para detectar as contas.');
+    }
+    setDetectando(true);
+    const resultado = await descobrirContasInstagram(accessToken.trim());
+    setDetectando(false);
+    if (resultado.erro) return setErro(resultado.erro);
+    const lista = resultado.contas || [];
+    setContasDetectadas(lista);
+    if (lista.length === 1) setIgUserId(String(lista[0].id));
+    if (lista.length === 0) {
+      setErro('Este token não dá acesso a nenhuma conta profissional do Instagram.');
+    }
   }
 
   async function aoDesconectar(plataforma) {
     await desconectarConta(plataforma);
     setAccessToken('');
     setIgUserId('');
+    setContasDetectadas(null);
     setErro('');
     carregar();
   }
@@ -113,17 +155,50 @@ export default function Contas() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-text-dim block mb-1.5">ID da conta comercial</label>
+                  <label className="text-xs font-bold text-text-dim block mb-1.5">
+                    ID da conta comercial (opcional — verificação)
+                  </label>
                   <input
                     value={igUserId}
                     onChange={(e) => setIgUserId(e.target.value)}
-                    placeholder="Ex: 17841400000000000"
+                    placeholder="Deixe vazio: o ID é detectado pelo token"
                     className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
                   />
                 </div>
+                <button
+                  onClick={detectar}
+                  disabled={detectando || conectando}
+                  className="w-full bg-surface-hover border border-line hover:border-rosa text-text px-4 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>{detectando ? 'Detectando contas...' : 'Detectar contas deste token'}</span>
+                </button>
+                {contasDetectadas && contasDetectadas.length > 0 && (
+                  <div className="space-y-1.5 p-3 rounded-xl bg-surface-hover border border-line">
+                    <p className="text-[11px] font-bold text-text-dim">
+                      Contas que este token acessa — clique para conectar:
+                    </p>
+                    {contasDetectadas.map((c) => (
+                      <button
+                        key={c.id}
+                        onClick={() => conectar(String(c.id))}
+                        disabled={conectando}
+                        className="w-full text-left px-3 py-2 rounded-lg bg-surface border border-line hover:border-rosa transition-colors flex items-center justify-between gap-2 disabled:opacity-50"
+                      >
+                        <span className="text-xs font-extrabold text-rosa truncate">
+                          @{String(c.username || 'desconhecido').replace(/^@/, '')}
+                        </span>
+                        <span className="text-[10px] text-text-muted font-mono shrink-0">
+                          {c.id}
+                          {c.origem === 'instagram' ? ' · IG Login' : c.paginaNome ? ` · ${c.paginaNome}` : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {erro && <p className="text-xs font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl">{erro}</p>}
                 <button
-                  onClick={conectar}
+                  onClick={() => conectar()}
                   disabled={conectando}
                   className="w-full bg-rosa hover:bg-rosa-hover text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-rosa/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >

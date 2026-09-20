@@ -234,11 +234,26 @@ export async function buscarContas() {
   return r.json();
 }
 
+/**
+ * Conecta a conta do Instagram. O `igUserId` é OPCIONAL: sem ele o backend
+ * descobre sozinho as contas que o token acessa — e responde
+ * { requerSelecao: true, contas: [...] } quando houver mais de uma.
+ */
 export async function conectarInstagram(accessToken, igUserId) {
   const r = await fetch(`${BASE_URL}/api/contas/instagram`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accessToken, igUserId }),
+    body: JSON.stringify({ accessToken, ...(igUserId ? { igUserId } : {}) }),
+  });
+  return r.json();
+}
+
+/** Só DESCOBRE as contas que o token acessa (nada é salvo). */
+export async function descobrirContasInstagram(accessToken) {
+  const r = await fetch(`${BASE_URL}/api/contas/instagram/descobrir`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accessToken }),
   });
   return r.json();
 }
