@@ -210,7 +210,12 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
       aoAtualizarConfig((cfg) => ({
         ...cfg,
         templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
-        areaVideo: { ...cfg.areaVideo, x: Math.round(1080 * 0.1), y: Math.round(1920 * 0.3), largura: Math.round(1080 * 0.8), altura: Math.round(1920 * 0.4), mostrarMarcacao: true },
+        // O template é o FUNDO do canvas e vale para TODO o lote (config
+        // compartilhada — nenhum template por vídeo). A Área do vídeo NÃO é
+        // redefinida aqui: ela é exatamente o espaço que o vídeo deve preencher
+        // e o usuário a posiciona/redimensiona no Preview — apenas o guia é
+        // ligado para referência imediata.
+        areaVideo: { ...cfg.areaVideo, mostrarMarcacao: true },
       }));
       if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('area');
     });

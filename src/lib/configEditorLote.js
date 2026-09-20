@@ -82,11 +82,16 @@ export function normalizarDeslocamentoVideo(valor) {
   return Math.round(Math.min(100, Math.max(0, n)) * 10) / 10;
 }
 
-/** `areaVideo` com o enquadramento normalizado (tolerante a configs antigas). */
+/** `areaVideo` com o enquadramento normalizado (tolerante a configs antigas).
+ * A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o vídeo
+ * SEMPRE preenche 100% da área (cover) — nunca pequeno/centralizado dentro
+ * dela. Templates antigos com fit 'ajustar' são normalizados para 'cobrir'
+ * para que prévia e render usem a mesma geometria. */
 export function areaVideoNormalizada(area) {
   const a = area && typeof area === 'object' ? area : {};
   return {
     ...a,
+    fit: 'cobrir',
     zoom: normalizarZoomVideo(a.zoom),
     deslocamentoX: normalizarDeslocamentoVideo(a.deslocamentoX ?? ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX),
     deslocamentoY: normalizarDeslocamentoVideo(a.deslocamentoY ?? ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY),
@@ -133,19 +138,20 @@ export function caixaEnquadramentoVideo(area) {
 
 /**
  * Dimensões do QUADRO DE CONTEÚDO (fonte escalada, em px do canvas) já com o
- * zoom. `fit` é o mesmo do template: 'cobrir' (cover) | 'ajustar' (contain).
- * Usado pelos cálculos de mouse (1:1 e zoom sob o cursor) — a prévia não
- * precisa disso (o navegador faz o cover/contain).
+ * zoom. O vídeo SEMPRE preenche 100% da área (cover) — a área é exatamente o
+ * espaço do vídeo no template. O parâmetro `fit` é ignorado (mantido na
+ * assinatura por compatibilidade): prévia e FFmpeg usam a mesma geometria de
+ * preenchimento. Usado pelos cálculos de mouse (1:1 e zoom sob o cursor) — a
+ * prévia não precisa disso (o navegador faz o cover).
  */
-export function dimensoesQuadroDeConteudo({ area, dimsVideo, fit } = {}) {
+export function dimensoesQuadroDeConteudo({ area, dimsVideo } = {}) {
   const a = areaVideoNormalizada(area);
   const W = Math.max(2, Number(a.largura) || 0);
   const H = Math.max(2, Number(a.altura) || 0);
   const sw = Math.max(1, Number(dimsVideo?.largura) || 0) || CANVAS_LARGURA;
   const sh = Math.max(1, Number(dimsVideo?.altura) || 0) || CANVAS_ALTURA;
-  const escala = String(fit || 'cobrir') === 'ajustar'
-    ? Math.min(W / sw, H / sh)
-    : Math.max(W / sw, H / sh);
+  // SEMPRE cover: o vídeo preenche 100% da área (a área é o espaço real do vídeo).
+  const escala = Math.max(W / sw, H / sh);
   return { largura: sw * escala * a.zoom, altura: sh * escala * a.zoom };
 }
 

@@ -36,7 +36,13 @@ function formatoTiempo(segs) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function ControlesVideo({ src, encaixe, estiloVideo = null, posicaoObjeto = null, onDimensoes = null, destinoControles = null }) {
+export default function ControlesVideo({ src, estiloVideo = null, posicaoObjeto = null, onDimensoes = null, destinoControles = null }) {
+  // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o vídeo
+  // ocupa SEMPRE 100% da área (object-fit: cover, centralizado) — nunca fica
+  // pequeno/centralizado dentro dela. Qualquer valor legado do `encaixe`
+  // ('cobrir'/'ajustar') é irrelevante: a geometria de preenchimento é cover
+  // tanto na prévia (CSS) quanto no render (FFmpeg scale=increase+crop).
+  const encaixeFinal = 'cover';
   const videoRef = useRef(null);
   const [reproduciendo, setReproduciendo] = useState(false);
   const [duracion, setDuracion] = useState(0);
@@ -201,7 +207,7 @@ export default function ControlesVideo({ src, encaixe, estiloVideo = null, posic
         draggable={false}
         onDragStart={(e) => e.preventDefault()}
         className="w-full h-full"
-        style={{ objectFit: encaixe, ...(posicaoObjeto ? { objectPosition: posicaoObjeto } : null), ...(estiloVideo || null) }}
+        style={{ objectFit: encaixeFinal, ...(posicaoObjeto ? { objectPosition: posicaoObjeto } : null), ...(estiloVideo || null) }}
         onLoadedMetadata={(e) => {
           const d = e.currentTarget.duration;
           if (Number.isFinite(d)) setDuracion(d);

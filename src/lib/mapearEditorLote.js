@@ -177,7 +177,12 @@ const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') ==
       y: areaVideo.y,
       largura: areaVideo.largura,
       altura: areaVideo.altura,
-      fit: areaVideo.fit === 'ajustar' ? 'ajustar' : 'cobrir',
+      // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o
+      // vídeo SEMPRE preenche 100% da área (cover) no Preview e no render —
+      // nunca fica pequeno/centralizado dentro dela. O `fit` do template é
+      // normalizado para 'cobrir' para que TODA a cadeia (payload → FFmpeg →
+      // prévia) use a mesma geometria de preenchimento.
+      fit: 'cobrir',
       // ENQUADRAMENTO DO VÍDEO (mouse: zoom + mover) — valores RELATIVOS (%),
       // os mesmos da prévia. Viajam no MESMO `areaVideo` do template (não há
       // segundo sistema de composição) e o pipeline/FFmpeg materializa:

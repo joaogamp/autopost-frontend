@@ -116,7 +116,11 @@ export function templateParaConfigEditor(template, opts = {}) {
       y: area ? num(area.y, 0) : 0,
       largura: temArea ? num(area.largura) : lc,
       altura: temArea ? num(area.altura) : ac,
-      fit: area && area.fit === 'ajustar' ? 'ajustar' : 'cobrir',
+      // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o
+      // vídeo SEMPRE preenche 100% da área (cover) — nunca pequeno/centralizado
+      // dentro dela. Templates antigos com 'ajustar' são normalizados para
+      // 'cobrir' para que prévia e render usem a mesma geometria.
+      fit: 'cobrir',
       zoom: Number(area && area.zoom) > 0 ? Number(area.zoom) : 1,
       deslocamentoX: Number.isFinite(Number(area && area.deslocamentoX)) ? Number(area.deslocamentoX) : 50,
       deslocamentoY: Number.isFinite(Number(area && area.deslocamentoY)) ? Number(area.deslocamentoY) : 50,

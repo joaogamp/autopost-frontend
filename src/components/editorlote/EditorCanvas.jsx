@@ -43,8 +43,9 @@ import ElementoImagem from './ElementoImagem';
  * enquadramento do vídeo):
  * - A PRÉVIA desenha o vídeo na ÁREA de composição com a MESMA geometria do
  *   render (`caixaEnquadramentoVideo`): quadro = área × zoom, posicionado por
- *   deslocamentoX/Y e com o MESMO `fit` (cobrir/ajustar) do template — o
- *   usuário amplia/reduz e move o vídeo com o MOUSE (arrastar + roda), e o
+ *   deslocamentoX/Y e SEMPRE em cover (a ÁREA é exatamente o espaço do vídeo —
+ *   ele preenche 100% da largura/altura dela, nunca fica pequeno/centralizado).
+ *   O usuário amplia/reduz e move o vídeo com o MOUSE (arrastar + roda), e o
  *   vídeo final sai EXATAMENTE igual (compor.js materializa os mesmos valores);
  * - O CORTE (manual ou o resultado SALVO do "Corte automático de bordas")
  *   aparece na prévia como recorte visual (clip-path) usando EXATAMENTE os
@@ -65,9 +66,9 @@ import ElementoImagem from './ElementoImagem';
 const ALTURA_MAXIMA_PADRAO = 500;
 
 /** (Removido) A prévia NÃO usa mais um encaixe fixo 'contain' do canvas
- * inteiro: ela desenha o vídeo DENTRO da área de composição com o MESMO
- * `fit` (`area.fit` = 'cobrir'|'ajustar') e o MESMO zoom/deslocamento que o
- * render final — prévia = render, por construção. */
+ * inteiro: ela desenha o vídeo DENTRO da área de composição, sempre em
+ * cover (a área é exatamente o espaço do vídeo), com o MESMO zoom/deslocamento
+ * que o render final — prévia = render, por construção. */
 
 /** Leitura tolerante de número vindo de `dataset` (0 é válido — nunca `||`). */
 function numeroDoDataset(valor, padrao) {
@@ -217,11 +218,13 @@ export default function EditorCanvas({
   }, []);
   useEffect(() => () => { if (dicaTimerRef.current) clearTimeout(dicaTimerRef.current); }, []);
 
-  /** Fase do vídeo em exibição (dims reais + fit do template) para os cálculos. */
+  /** Fase do vídeo em exibição (dims reais + fit NORMALIZADO da área — a área
+   * é sempre 'cobrir': o vídeo preenche 100% dela na prévia e no render). */
+  const fitNormalizado = areaN.fit;
   const obterQuadro = useCallback(() => ({
     dimsVideo: dimsVideoRef.current,
-    fit: area?.fit,
-  }), [area?.fit]);
+    fit: fitNormalizado,
+  }), [fitNormalizado]);
 
   /** Arrastar o VÍDEO: gerado com a MESMA config compartilhada do lote. */
   const arrastarEnquadramento = gerarArrastarEnquadramentoVideo(
@@ -385,15 +388,20 @@ export default function EditorCanvas({
   const item = itemSelecionado;
   // Geometria do player: modo normal = ÁREA de composição (prévia = render);
   // conferência = canvas inteiro (o MP4 final já é o quadro completo).
+  // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher — por
+  // isso o player usa SEMPRE cover nesta camada (ocupa 100% da largura/altura
+  // da área, com o enquadramento definido por caixaEnquadramentoVideo).
   const areaPlayer = conferencia
     ? { x: 0, y: 0, largura: CANVAS_LARGURA, altura: CANVAS_ALTURA }
     : area;
   const caixaPlayer = conferencia ? areaPlayer : caixa;
-  const fitPlayer = conferencia ? 'ajustar' : area.fit;
-  // NOTA: `area.fit` (cobrir/ajustar) é usado na prévia E no vídeo final —
-  // o mesmo valor viaja no template (scale/crop/pad do FFmpeg). O enquadramento
-  // do usuário (zoom + deslocamentoX/Y, editado com o MOUSE) também é o mesmo
-  // dos dois lados: a prévia desenha o quadro com `caixaEnquadramentoVideo`.
+  // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o vídeo
+  // preenche 100% da área (cover) no Preview e no render — nunca pequeno /
+  // centralizado dentro dela. O `fit` do template é normalizado para 'cobrir'
+  // (configEditorLote/mapearEditorLote/templateParaConfigEditor), então Preview
+  // e FFmpeg usam a mesma geometria de preenchimento. `fitPlayer` é o valor
+  // CSS (object-fit: cover) — o template usa 'cobrir' (mesmo significado).
+  const fitPlayer = 'cover';
 
   // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
@@ -459,10 +467,13 @@ export default function EditorCanvas({
           background: corFundo,
         }}
       >
-        {/* TEMPLATE DE FUNDO IMPORTADO - camada visual propria (fundo/camada visual). PNG/imagem via Importar Template, no CENTRO do canvas com contain. O video ocupa SOMENTE a areaVideo sobre ele. Somente leitura. */}
+        {/* TEMPLATE DE FUNDO IMPORTADO - camada de FUNDO do canvas: PNG/imagem via
+            Importar Template PREENCHE o canvas 9:16 por completo (cover: 100%
+            largura/altura, centralizado, proporção preservada). O video ocupa
+            SOMENTE a areaVideo sobre ele. Somente leitura. */}
         {temTemplateFundo ? (
-          <div data-template-fundo="true" className="absolute inset-0 pointer-events-none flex items-center justify-center" style={{ zIndex: 1 }} aria-hidden="true">
-            <img src={templateFundo.url} alt={templateFundo.nome || 'Template de fundo'} draggable={false} className="pointer-events-none select-none" style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }} />
+          <div data-template-fundo="true" className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }} aria-hidden="true">
+            <img src={templateFundo.url} alt={templateFundo.nome || 'Template de fundo'} draggable={false} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
           </div>
         ) : null}
         {/* CORTE DE BORDAS — guias PERMANENTES de ediçom: as linhas ficam
@@ -533,13 +544,14 @@ export default function EditorCanvas({
             do player NÃO estão aqui — são portados pra camada fixa
             `data-edl-destino-controles` (abaixo), fora do clip-path. */}
         <div className="absolute inset-0" style={!conferencia && corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
-          {/* CAMADA DO VÍDEO — ocupa a ÁREA de composição e desenha o vídeo
-              EXATAMENTE como no vídeo final: quadro = área × zoom, posicionado
-              por deslocamentoX/Y e com o MESMO `fit` do template. SEM caixa
-              fixa, SEM moldura, SEM controles X/Y: o usuário arrasta o próprio
-              vídeo e usa a RODA DO MOUSE para ampliar/reduzir (zoom sob o
-              cursor). Nas células não selecionadas: mesma geometria, mas
-              pointer-events-none (só visualização). */}
+            {/* CAMADA DO VÍDEO — ocupa EXATAMENTE a ÁREA de composição: a área
+              definida no Preview é o espaço real do vídeo no template (o vídeo
+              preenche 100% da largura/altura da área, com o enquadramento/cover
+              definido por caixaEnquadramentoVideo). SEM caixa fixa, SEM moldura,
+              SEM controles X/Y: o usuário arrasta o próprio vídeo e usa a RODA
+              DO MOUSE para ampliar/reduzir (zoom sob o cursor). Nas células não
+              selecionadas: mesma geometria, mas pointer-events-none (só
+              visualização). */}
           <div
             ref={camadaVideoRef}
             role={podeEditarVideo && urlVideoAtiva ? 'button' : undefined}
@@ -555,7 +567,7 @@ export default function EditorCanvas({
             data-enq-y={String(areaN.deslocamentoY)}
             data-area-largura={String(areaN.largura)}
             data-area-altura={String(areaN.altura)}
-            data-area-fit={area.fit}
+            data-area-fit={areaN.fit}
             onPointerDown={podeEditarVideo && urlVideoAtiva ? (e) => { selecionar('video'); moverVideo(e); } : undefined}
             className={`absolute overflow-hidden ${podeEditarVideo && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'} ${elementoSelecionado === 'video' ? 'edl-elemento-selecionado' : ''}`}
             style={{
@@ -568,8 +580,11 @@ export default function EditorCanvas({
               userSelect: 'none',
             }}
           >
-            {/* Conteúdo escalado (quadro) dentro da área — MESMA geometria do
-                FFmpeg: o render materializa este exato quadro (scale/crop/pad). */}
+            {/* Conteúdo escalado (quadro) dentro da área: a área é exatamente o espaço
+                do vídeo — o <video>/<img> preenche 100% do quadro da área
+                (cover), com o enquadramento/cover definido por
+                caixaEnquadramentoVideo. O render materializa este exato quadro
+                (scale/crop/pad do FFmpeg). */}
             <div
               className="absolute"
               style={{
@@ -583,7 +598,6 @@ export default function EditorCanvas({
                 <ControlesVideo
                   key={`${urlVideoAtiva}|${claveReproductor}`}
                   src={urlVideoAtiva}
-                  encaixe={fitPlayer}
                   onDimensoes={aoDimensoesVideo}
                   destinoControles={destinoControles}
                 />
