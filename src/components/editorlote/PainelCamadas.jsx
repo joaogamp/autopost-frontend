@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import {
   Scissors,
   Paintbrush,
@@ -12,26 +13,28 @@ import {
   BadgeCheck,
   Eye,
   EyeOff,
+  Upload,
+  Trash2,
+  AlertCircle,
 } from 'lucide-react';
 import { corteEfetivoDoVideo, atualizarCorteNoConfig } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — PAINEL DIREITO: CAMADAS.
  *
- * Cada elemento da composição é UMA camada (sem duplicatas: cada função tem
- * um único caminho — logo, textos, identidade, imagens, área, corte, vídeo,
- * fundo). A ordem da lista É a ordem de composição (de cima pra baixo no
- * preview e no render):
+ * O painel ficou com SOMENTE os dois controles deste fluxo:
  *
- *   imagens → logo → texto principal → texto inferior → nome → @ → selo →
- *   área do vídeo (guia) → corte de borda → vídeo (base) → fundo (base).
+ *   1. TEMPLATE — PNG/JPG/WebP importado DIRETO do computador (input file,
+ *      sem popup/modal intermediário). Entra centralizado no canvas como
+ *      FUNDO; controle de trocar/remover/visibilidade (flag real do render).
  *
- * Cada camada:
- *  - clicar SELECIONA (destaca no preview + abre a configuração à esquerda);
- *  - olho MOSTRA/OCULTA escrevendo no flag REAL que viaja pro render
- *    (`visivel` da logo/textos/identidade/imagens, `ativo` do corte,
- *    `mostrarMarcacao` do guia da área). Vídeo e Fundo são a base da
- *    composição — não têm olho (ocultá-los não existe no render).
+ *   2. ÁREA DO VÍDEO — fica SOBRE o template: o clique seleciona o retângulo
+ *      (arraste/redimensione no Preview pra definir exatamente onde o vídeo
+ *      entra) e o olho liga/desliga o guia na prévia.
+ *
+ * `construirCamadas` continua exportada pra manter/documentar a ORDEM de
+ * composição do render (testes): imagens → logo → textos → identidade →
+ * selo → templateFundo → área → corte → vídeo → fundo.
  */
 
 /** Constrói a lista de camadas a partir da config COMPARTILHADA. Exportada
@@ -155,8 +158,76 @@ export function construirCamadas(config, idSelecionado = null) {
   return camadas;
 }
 
-export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelecionado, aoSelecionarElemento, idSelecionado = null }) {
-  const camadas = construirCamadas(config, idSelecionado);
+export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelecionado, aoSelecionarElemento }) {
+  const inputRef = useRef(null);
+  const [erroTemplate, setErroTemplate] = useState('');
+
+  const templateFundo = (config && config.templateFundo) || {};
+  const temTemplate = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/');
+  const templateVisivel = templateFundo.visivel !== false;
+  const guiaAtiva = !!config.areaVideo?.mostrarMarcacao;
+  const areaSelecionada = elementoSelecionado === 'area';
+
+  /* ------------- TEMPLATE DE FUNDO (importação DIRETA do PC — sem popup) ------------- */
+  const LIMITE_TEMPLATE_BYTES = 6 * 1024 * 1024;
+
+  function lerTemplateComoDataUrl(arquivo, aoPronto) {
+    if (!arquivo) return;
+    const tipo = String(arquivo.type || '');
+    if (!tipo.startsWith('image/')) { setErroTemplate('Escolha um arquivo de imagem (PNG/JPG/WebP).'); return; }
+    if (arquivo.size > LIMITE_TEMPLATE_BYTES) { setErroTemplate('Template muito grande (max. 6 MB).'); return; }
+    setErroTemplate('');
+    const leitor = new FileReader();
+    leitor.onload = () => {
+      const du = (typeof leitor.result === 'string' && leitor.result.indexOf('data:image/') === 0) ? leitor.result : null;
+      if (!du) { setErroTemplate('Nao foi possivel ler o template.'); return; }
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxW = 1080;
+          const w0 = img.naturalWidth || maxW;
+          const h0 = img.naturalHeight || 1440;
+          const sc = w0 > maxW ? maxW / w0 : 1;
+          const w = Math.max(1, Math.round(w0 * sc));
+          const h = Math.max(1, Math.round(h0 * sc));
+          const cv = document.createElement('canvas');
+          cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          aoPronto(cv.toDataURL('image/png'), arquivo.name || null, w0, h0);
+        } catch { aoPronto(du, arquivo.name || null, 0, 0); }
+      };
+      img.onerror = () => aoPronto(du, arquivo.name || null, 0, 0);
+      img.src = du;
+    };
+    leitor.readAsDataURL(arquivo);
+  }
+
+  function aoEscolherTemplateFundo(e) {
+    const arquivo = e.target.files ? e.target.files[0] : null;
+    if (!arquivo) return;
+    e.target.value = '';
+    lerTemplateComoDataUrl(arquivo, (dataUrl, nome, wNat, hNat) => {
+      aoAtualizarConfig((cfg) => ({
+        ...cfg,
+        templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
+        areaVideo: { ...cfg.areaVideo, x: Math.round(1080 * 0.1), y: Math.round(1920 * 0.3), largura: Math.round(1080 * 0.8), altura: Math.round(1920 * 0.4), mostrarMarcacao: true },
+      }));
+      if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('area');
+    });
+  }
+
+  function aoRemoverTemplateFundo() {
+    aoAtualizarConfig((cfg) => ({ ...cfg, templateFundo: { url: null, nome: '', larguraNatural: 0, alturaNatural: 0, visivel: true } }));
+    if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento(null);
+  }
+
+  function alternarTemplateVisivel(v) {
+    aoAtualizarConfig((cfg) => ({ ...cfg, templateFundo: { ...cfg.templateFundo, visivel: v } }));
+  }
+
+  function alternarGuiaArea(v) {
+    aoAtualizarConfig((cfg) => ({ ...cfg, areaVideo: { ...cfg.areaVideo, mostrarMarcacao: v } }));
+  }
 
   return (
     <div className="h-full min-h-0 flex flex-col bg-[color:var(--edl-painel)]">
@@ -168,85 +239,139 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
           <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
         </svg>
         <h2 className="font-display text-xs font-extrabold text-white">Camadas</h2>
-        <span
-          className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
-          style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--edl-roxo)' }}
-        >
-          {camadas.length}
-        </span>
       </div>
 
-      {/* Lista — ordem da composição (topo = frente) */}
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 py-2">
-        {camadas.length === 0 ? (
-          <p className="text-[10px] font-semibold px-2 py-3" style={{ color: 'var(--edl-texto-mut)' }}>
-            Nenhuma camada.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-1" role="listbox" aria-label="Camadas da composição">
-            {camadas.map((camada) => {
-              const selecionada = elementoSelecionado === camada.id;
-              const Icone = camada.Icone;
-              return (
-                <li key={camada.id}>
-                  <div
-                    className={`group flex items-center gap-1.5 rounded-lg pr-1 transition-colors ${
-                      selecionada ? '' : 'hover:bg-white/5'
-                    }`}
-                    style={selecionada ? { background: 'rgba(236,72,153,0.14)', boxShadow: 'inset 0 0 0 1.5px var(--edl-rosa)' } : null}
-                  >
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        {/* TEMPLATE — importação DIRETA do PC (input file; SEM popup/modal) */}
+        <section className="px-3 py-3 space-y-2.5 border-b border-[color:var(--edl-borda)]">
+          <div className="flex items-center gap-2">
+            <LayoutTemplate className="w-3.5 h-3.5 edl-icone-a shrink-0" />
+            <h3 className="font-display text-[11px] font-extrabold text-white">Template</h3>
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={aoEscolherTemplateFundo}
+          />
+          {temTemplate ? (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-20 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+                  <img src={templateFundo.url} alt={templateFundo.nome || 'Template'} className="max-w-full max-h-full object-contain" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-white truncate">{templateFundo.nome || 'Template'}</p>
+                  {templateFundo.larguraNatural > 0 && templateFundo.alturaNatural > 0 ? (
+                    <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+                      {`${Math.round(templateFundo.larguraNatural)}×${Math.round(templateFundo.alturaNatural)} px`}
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-1.5 mt-1.5">
                     <button
                       type="button"
-                      role="option"
-                      aria-selected={selecionada}
-                      onClick={() => aoSelecionarElemento && aoSelecionarElemento(camada.id)}
-                      className="edl-ring-foco flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-left"
-                      title={selecionada ? 'Camada selecionada' : `Selecionar ${camada.rotulo}`}
+                      onClick={() => inputRef.current?.click()}
+                      className="edl-ring-foco edl-superficie flex items-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg"
                     >
-                      <Icone className={`w-3.5 h-3.5 shrink-0 ${selecionada ? 'edl-icone-a' : 'edl-icone-b opacity-80'}`} />
-                      <span
-                        className={`text-[11px] font-bold truncate ${selecionada ? 'text-white' : ''}`}
-                        style={{ color: selecionada ? undefined : 'var(--edl-texto-dim)' }}
-                      >
-                        {camada.rotulo}
-                      </span>
+                      <Upload className="w-3 h-3 edl-icone-a" />
+                      Trocar
                     </button>
-
-                    {camada.temOlho ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          aoAtualizarConfig &&
-                          aoAtualizarConfig((cfg) => ({ ...cfg, ...camada.alternar(!camada.visivel) }))
-                        }
-                        title={camada.dicaOlho || (camada.visivel ? 'Ocultar camada' : 'Mostrar camada')}
-                        aria-label={`${camada.visivel ? 'Ocultar' : 'Mostrar'} ${camada.rotulo}`}
-                        aria-pressed={camada.visivel}
-                        className={`edl-ring-foco shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors ${
-                          camada.visivel ? 'text-white/80 hover:text-white' : 'text-white/30 hover:text-white/60'
-                        }`}
-                      >
-                        {camada.visivel ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                      </button>
-                    ) : (
-                      <span
-                        className="shrink-0 w-6 h-6 flex items-center justify-center opacity-0"
-                        title={`${camada.rotulo} é a base da composição — sempre visível`}
-                        aria-hidden="true"
-                      />
-                    )}
+                    <button
+                      type="button"
+                      onClick={aoRemoverTemplateFundo}
+                      className="edl-ring-foco edl-superficie flex items-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg"
+                      style={{ color: '#f87171' }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Remover
+                    </button>
                   </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                </div>
+              </div>
+
+              {/* olho — flag REAL que vai pro render (EditorCanvas + overlay) */}
+              <button
+                type="button"
+                onClick={() => alternarTemplateVisivel(!templateVisivel)}
+                title={templateVisivel ? 'Ocultar o template na prévia e no render' : 'Mostrar o template na prévia e no render'}
+                aria-pressed={templateVisivel}
+                className="edl-ring-foco edl-superficie w-full flex items-center justify-between px-3 py-2 rounded-lg"
+                style={{ color: templateVisivel ? 'var(--edl-texto)' : 'var(--edl-texto-mut)' }}
+              >
+                <span className="flex items-center gap-2 text-[11px] font-bold">
+                  {templateVisivel ? <Eye className="w-3.5 h-3.5 edl-icone-a" /> : <EyeOff className="w-3.5 h-3.5 opacity-70" />}
+                  Template visível
+                </span>
+                <span className="relative w-8 h-[18px] rounded-full transition-colors shrink-0" style={{ background: templateVisivel ? 'var(--edl-grad)' : 'rgba(255,255,255,0.15)' }}>
+                  <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all shadow" style={{ left: templateVisivel ? 16 : 2 }} />
+                </span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="edl-botao-grad edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-extrabold px-3 py-2.5 rounded-lg"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Importar template (PNG/JPG/WebP)
+            </button>
+          )}
+          {erroTemplate ? (
+            <p className="text-[10px] font-bold text-rose-400 flex items-start gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+              {erroTemplate}
+            </p>
+          ) : null}
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            O template entra centralizado no canvas, como FUNDO. O vídeo fica
+            SOMENTE dentro da área marcada, por cima dele.
+          </p>
+        </section>
+
+        {/* ÁREA DO VÍDEO — retângulo sobre o template (arraste/redimensione no Preview) */}
+        <section className="px-3 py-3 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Scan className="w-3.5 h-3.5 edl-icone-a shrink-0" />
+            <h3 className="font-display text-[11px] font-extrabold text-white">Área do vídeo</h3>
+          </div>
+          <div
+            className={`group flex items-center gap-1.5 rounded-lg pr-1 transition-colors ${areaSelecionada ? '' : 'hover:bg-white/5'}`}
+            style={areaSelecionada ? { background: 'rgba(236,72,153,0.14)', boxShadow: 'inset 0 0 0 1.5px var(--edl-rosa)' } : null}
+          >
+            <button
+              type="button"
+              onClick={() => aoSelecionarElemento && aoSelecionarElemento('area')}
+              className="edl-ring-foco flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-left"
+              title={areaSelecionada ? 'Área do vídeo selecionada' : 'Selecionar a área do vídeo'}
+            >
+              <Scan className={`w-3.5 h-3.5 shrink-0 ${areaSelecionada ? 'edl-icone-a' : 'edl-icone-b opacity-80'}`} />
+              <span className={`text-[11px] font-bold truncate ${areaSelecionada ? 'text-white' : ''}`} style={{ color: areaSelecionada ? undefined : 'var(--edl-texto-dim)' }}>
+                Área do vídeo
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => alternarGuiaArea(!guiaAtiva)}
+              title={guiaAtiva ? 'Ocultar o guia da área na prévia' : 'Mostrar o guia da área na prévia'}
+              aria-label={`${guiaAtiva ? 'Ocultar' : 'Mostrar'} o guia da área do vídeo`}
+              aria-pressed={guiaAtiva}
+              className={`edl-ring-foco shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors ${guiaAtiva ? 'text-white/80 hover:text-white' : 'text-white/30 hover:text-white/60'}`}
+            >
+              {guiaAtiva ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+            A área fica SOBRE o template: arraste o retângulo no Preview e use
+            a alça de canto pra redimensionar — o vídeo ocupa SOMENTE essa área.
+          </p>
+        </section>
       </div>
 
       <p className="shrink-0 px-3 py-2 text-[9px] font-semibold leading-relaxed border-t border-[color:var(--edl-borda)]" style={{ color: 'var(--edl-texto-mut)' }}>
-        Ordem da composição (topo = frente). Clique numa camada pra editar à
-        esquerda e destacá-la no preview; o olho liga/desliga o flag real que
-        vai pro render.
+        Template no fundo · Área do vídeo por cima: o vídeo ocupa SOMENTE a
+        área marcada, sobre o template importado.
       </p>
     </div>
   );

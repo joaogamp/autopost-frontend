@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, BadgeCheck, ImagePlus, LayoutTemplate, Scan, Image as ImageIcon } from 'lucide-react';
+import { Type, Film, Eye, EyeOff, Trash2, Upload, RotateCcw, AlertCircle, X, BadgeCheck, ImagePlus, Scan, Image as ImageIcon } from 'lucide-react';
 import BotaoEmoji from './BotaoEmoji';
 import {
   CORES_FUNDO,
@@ -457,8 +457,7 @@ function BlocoSelo({ selo, aoAtualizarConfig, aoEscolherSelo, aoRemoverSelo }) {
       <Deslizador rotulo="Opacidade" sufixo="%" valor={Math.round(s.opacidade ?? 100)} min={0} max={100} aoMudar={(v) => aoMudar('opacidade', v)} />
       <Alternar rotulo="Selo visível" ativo={!!s.visivel} aoMudar={(v) => aoMudar('visivel', v)} />
       <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-        Arraste o selo no Preview pra posicionar (sem X/Y). Ele também aparece
-        como camada no painel “Camadas”.
+        Arraste o selo no Preview pra posicionar (sem X/Y).
       </p>
     </div>
   );
@@ -503,70 +502,10 @@ function BlocoImagem({ imagem, aoAtualizarConfig, aoTrocarImagem, aoRemoverImage
   );
 }
 
-/** Bloco de TEMPLATE DE FUNDO (Adicionar elementos → Template): prévia,
- * troca/remoção do PNG importado e visibilidade. A área do vídeo NÃO é
- * configurada aqui: o usuário arrasta/redimensiona o retângulo no Preview,
- * sobre o template — o vídeo ocupa SOMENTE essa área no final. */
-function BlocoTemplateFundo({ config, aoAtualizarConfig, aoEscolherTemplateFundo, aoRemoverTemplateFundo }) {
-  const inputRef = useRef(null);
-  const t = (config && config.templateFundo) || {};
-  const temTemplate = typeof t.url === 'string' && t.url.startsWith('data:image/');
-  return (
-    <div className="px-3.5 py-3.5 space-y-3">
-      <span className="text-[11px] font-extrabold text-white">Template de fundo</span>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        className="hidden"
-        onChange={aoEscolherTemplateFundo}
-      />
-      <div className="flex items-center gap-3">
-        <div className="w-16 h-20 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
-          {temTemplate ? (
-            <img src={t.url} alt={t.nome || 'Template'} className="max-w-full max-h-full object-contain" />
-          ) : (
-            <LayoutTemplate className="w-6 h-6 opacity-60" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <LinhaAcoes>
-            <BotaoPequeno icone={Upload} onClick={() => inputRef.current?.click()} tom="destaque">
-              {temTemplate ? 'Trocar template' : 'Importar PNG/imagem'}
-            </BotaoPequeno>
-            {temTemplate ? (
-              <BotaoPequeno icone={Trash2} tom="perigo" onClick={aoRemoverTemplateFundo}>Remover</BotaoPequeno>
-            ) : null}
-          </LinhaAcoes>
-          <p className="text-[9px] font-semibold mt-1.5 truncate" style={{ color: 'var(--edl-texto-mut)' }}>
-            {temTemplate ? (t.nome || 'Template') : 'Nenhum template importado.'}
-          </p>
-          {temTemplate && t.larguraNatural > 0 && t.alturaNatural > 0 ? (
-            <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-              {`${Math.round(t.larguraNatural)}×${Math.round(t.alturaNatural)} px`}
-            </p>
-          ) : null}
-        </div>
-      </div>
-      <Alternar
-        rotulo="Template visível"
-        ativo={t.visivel !== false}
-        aoMudar={(v) => aoAtualizarConfig((cfg) => ({ ...cfg, templateFundo: { ...cfg.templateFundo, visivel: v } }))}
-      />
-      <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-        O template fica como FUNDO do canvas. Pra definir onde o vídeo entra,
-        arraste e redimensione o retângulo da área no Preview (camada
-        “Área do vídeo”) — o vídeo ocupa SOMENTE essa área, sobre o template.
-      </p>
-    </div>
-  );
-}
-
 /* ---------------------------------------------------------------------------
  * ADICIONAR ELEMENTOS (4 botões — um caminho único por funcionalidade)
  * ------------------------------------------------------------------------- */
 const ADICIONAR = [
-  { id: 'template', rotulo: 'Template', Icone: LayoutTemplate },
   { id: 'logo', rotulo: 'Logo', Icone: ImageIcon },
   { id: 'texto', rotulo: 'Texto', Icone: Type },
   { id: 'imagem', rotulo: 'Imagem', Icone: ImagePlus },
@@ -619,11 +558,6 @@ export default function PainelEditor({
     if (sel === 'logo') {
       setErroPopup('');
       setPopup('logo');
-      return;
-    }
-    if (sel === 'templateFundo') { // templateFundo-sel
-      setErroPopup('');
-      setPopup('template');
       return;
     }
     if (sel === 'fundo') {
@@ -765,55 +699,6 @@ export default function PainelEditor({
     }));
   }
 
-  /* ------------- TEMPLATE DE FUNDO (fluxo proprio Importar Template) ------------- */
-  const LIMITE_TEMPLATE_BYTES = 6 * 1024 * 1024;
-  function lerTemplateComoDataUrl(arquivo, aoPronto) {
-    if (!arquivo) return;
-    if (!/^image\//.test(arquivo.type || '')) { setErroPopup('Escolha um arquivo de imagem (PNG/JPG/WebP).'); return; }
-    if (arquivo.size > LIMITE_TEMPLATE_BYTES) { setErroPopup('Template muito grande (max. 6 MB).'); return; }
-    setErroPopup('');
-    const leitor = new FileReader();
-    leitor.onload = () => {
-      const du = (typeof leitor.result === 'string' && leitor.result.indexOf('data:image/') === 0) ? leitor.result : null;
-      if (!du) { setErroPopup('Nao foi possivel ler o template.'); return; }
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const maxW = 1080;
-          const w0 = img.naturalWidth || maxW;
-          const h0 = img.naturalHeight || 1440;
-          const sc = w0 > maxW ? maxW / w0 : 1;
-          const w = Math.max(1, Math.round(w0 * sc));
-          const h = Math.max(1, Math.round(h0 * sc));
-          const cv = document.createElement('canvas');
-          cv.width = w; cv.height = h;
-          cv.getContext('2d').drawImage(img, 0, 0, w, h);
-          aoPronto(cv.toDataURL('image/png'), arquivo.name || null, w0, h0);
-        } catch { aoPronto(du, arquivo.name || null, 0, 0); }
-      };
-      img.onerror = () => aoPronto(du, arquivo.name || null, 0, 0);
-      img.src = du;
-    };
-    leitor.readAsDataURL(arquivo);
-  }
-  function aoEscolherTemplateFundo(e) {
-    const arquivo = e.target.files ? e.target.files[0] : null;
-    if (!arquivo) return;
-    e.target.value = '';
-    lerTemplateComoDataUrl(arquivo, (dataUrl, nome, wNat, hNat) => {
-      aoAtualizarConfig((cfg) => ({
-        ...cfg,
-        templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
-        areaVideo: { ...cfg.areaVideo, x: Math.round(1080 * 0.1), y: Math.round(1920 * 0.3), largura: Math.round(1080 * 0.8), altura: Math.round(1920 * 0.4), mostrarMarcacao: true },
-      }));
-      if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('area');
-      fecharPopup();
-    });
-  }
-  function aoRemoverTemplateFundo() {
-    aoAtualizarConfig((cfg) => ({ ...cfg, templateFundo: { url: null, nome: '', larguraNatural: 0, alturaNatural: 0, visivel: true } }));
-    if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento(null);
-  }
   /* ---------------- IMAGEM (dataURL — vai pro overlay do render) ---------------- */
 
   const LIMITE_IMAGEM_BYTES = 3 * 1024 * 1024;
@@ -942,12 +827,6 @@ export default function PainelEditor({
       if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('logo');
       return;
     }
-    if (id === 'template') {
-      setErroPopup('');
-      setPopup('template');
-      if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('templateFundo');
-      return;
-    }
     if (id === 'texto') { // template-selecao
       abrirPopupTexto();
       return;
@@ -1018,12 +897,6 @@ export default function PainelEditor({
           aoEscolherSelo={aoEscolherSelo}
           aoRemoverSelo={aoRemoverSelo}
         />
-      );
-    }
-
-    if (sel === 'templateFundo') { // templateFundo-bloco
-      return (
-        <BlocoTemplateFundo config={config} aoAtualizarConfig={aoAtualizarConfig} aoEscolherTemplateFundo={aoEscolherTemplateFundo} aoRemoverTemplateFundo={aoRemoverTemplateFundo} />
       );
     }
 
@@ -1195,8 +1068,8 @@ export default function PainelEditor({
           </p>
         </div>
         <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-          Adicione elementos acima: Logo · Texto · Imagem · Vídeo. Os demais
-          elementos (Fundo, Corte, Nome, @, Selo, Área) já existem como camadas.
+          Adicione elementos acima: Logo · Texto · Imagem · Vídeo. O Template e
+          a Área do vídeo ficam no painel “Camadas”, à direita.
         </p>
         <button
           type="button"
@@ -1231,8 +1104,6 @@ export default function PainelEditor({
                   ? elementoSelecionado === 'textoSuperior' || elementoSelecionado === 'textoInferior'
                   : item.id === 'video'
                     ? elementoSelecionado === 'video' || elementoSelecionado === 'area'
-                    : item.id === 'template'
-                      ? elementoSelecionado === 'templateFundo'
                     : !!imagemSelecionada;
             return (
               <button
@@ -1426,25 +1297,6 @@ export default function PainelEditor({
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-          {popup === 'template' ? ( // popup-template-fundo
-            <div className={CLASSE_POPUP} style={{ background: 'var(--edl-painel)', boxShadow: '0 20px 50px -12px rgba(0,0,0,0.8)' }} role="dialog" aria-label="Importar template">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-extrabold text-white">Importar template de fundo</span>
-                <button type="button" onClick={fecharPopup} aria-label="Fechar" className="edl-ring-foco p-1 rounded-lg edl-superficie">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <p className="text-[10px] font-medium mt-1.5 leading-relaxed" style={{ color: 'var(--edl-texto-dim)' }}>
-                Escolha um PNG/imagem: ele aparece no centro do canvas como fundo e o video ocupa so a area marcada.
-              </p>
-              <label className="edl-botao-grad edl-ring-foco mt-2.5 flex items-center justify-center gap-2 text-[11px] font-extrabold px-3 py-2.5 rounded-lg cursor-pointer">
-                <Upload className="w-3.5 h-3.5" />
-                Escolher PNG/imagem
-                <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={aoEscolherTemplateFundo} />
-              </label>
-              {erroPopup ? <p className="text-[10px] font-bold text-rose-400 mt-2">{erroPopup}</p> : null}
-            </div>
-          ) : null}
           <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
           <div className="flex-1 min-h-0 flex flex-col" style={{ maxHeight: 260 }}>
             <ListaVideos
