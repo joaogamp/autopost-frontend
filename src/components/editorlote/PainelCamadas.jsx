@@ -17,7 +17,7 @@ import {
   Trash2,
   AlertCircle,
 } from 'lucide-react';
-import { corteEfetivoDoVideo, atualizarCorteNoConfig } from '../../lib/configEditorLote';
+import { corteEfetivoDoVideo, atualizarCorteNoConfig, criarConfigPadrao } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — PAINEL DIREITO: CAMADAS.
@@ -207,16 +207,39 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
     if (!arquivo) return;
     e.target.value = '';
     lerTemplateComoDataUrl(arquivo, (dataUrl, nome, wNat, hNat) => {
-      aoAtualizarConfig((cfg) => ({
-        ...cfg,
-        templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
-        // O template é o FUNDO do canvas e vale para TODO o lote (config
-        // compartilhada — nenhum template por vídeo). A Área do vídeo NÃO é
-        // redefinida aqui: ela é exatamente o espaço que o vídeo deve preencher
-        // e o usuário a posiciona/redimensiona no Preview — apenas o guia é
-        // ligado para referência imediata.
-        areaVideo: { ...cfg.areaVideo, mostrarMarcacao: true },
-      }));
+      aoAtualizarConfig((cfg) => {
+        // O template importado (PNG/JPG/WebP do PC) É o TEMPLATE ORIGINAL: a
+        // arte já contém fundo, textos, logos, molduras e elementos gráficos.
+        // O NOVO TEMPLATE SUBSTITUI A BASE VISUAL ANTERIOR — nada do template
+        // antigo é reaproveitado nem recriado por cima (sem herança de textos,
+        // logo, identidade, imagens ou enquadramento antigos; fim do "elemento
+        // antigo" sobre o template novo). Elementos NOVOS continuam podendo
+        // ser adicionados pelo usuário normalmente (funcionalidade intacta).
+        const base = criarConfigPadrao();
+        return {
+          ...cfg,
+          templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
+          // Textos/logo/identidade/imagens do TEMPLATE ANTERIOR: fora. A config
+          // volta ao estado NEUTRO dessas camadas (ocultas/vazias).
+          textos: base.textos,
+          identidade: base.identidade,
+          logo: base.logo,
+          imagens: [],
+          // O template é o FUNDO do canvas e vale para TODO o lote (config
+          // compartilhada — nenhum template por vídeo). A Área do vídeo é
+          // MANTIDA (x/y/largura/altura — janela definida pelo usuário no
+          // Preview); só o ENQUADRAMENTO interno (zoom/deslocamento — edição
+          // do vídeo antigo, não da arte) volta ao neutro (zoom 1 = vídeo
+          // preenchendo 100% da área) e o guia é ligado para referência.
+          areaVideo: {
+            ...cfg.areaVideo,
+            zoom: base.areaVideo.zoom,
+            deslocamentoX: base.areaVideo.deslocamentoX,
+            deslocamentoY: base.areaVideo.deslocamentoY,
+            mostrarMarcacao: true,
+          },
+        };
+      });
       if (typeof aoSelecionarElemento === 'function') aoSelecionarElemento('area');
     });
   }
@@ -368,8 +391,10 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
             </button>
           </div>
           <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-            A área fica SOBRE o template: arraste o retângulo no Preview e use
-            a alça de canto pra redimensionar — o vídeo ocupa SOMENTE essa área.
+            A área fica SOBRE o template: arraste o retângulo no Preview para
+            mudar onde o vídeo fica e use a alça de canto pra redimensionar a
+            janela — o vídeo ocupa 100% dessa área e sempre preenche tudo, sem
+            barras nem vídeo pequeno centralizado.
           </p>
         </section>
       </div>

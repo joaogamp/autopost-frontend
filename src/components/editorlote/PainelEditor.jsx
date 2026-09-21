@@ -923,25 +923,21 @@ export default function PainelEditor({
           </div>
           <div>
             <Rotulo>Encaixe dentro da área</Rotulo>
+            {/* INVARIANTE DO FLUXO: o vídeo SEMPRE preenche 100% da Área (cover
+                — prévia e render usam a MESMA geometria de scale+crop). O modo
+                'ajustar' (vídeo menor, centralizado, com fundo ao redor) não
+                existe mais — a Área é a janela e o vídeo se adapta a ela, nunca
+                o contrário. O indicador é fixo em "Cobrir". */}
             <div className="flex gap-1.5">
-              {[
-                { id: 'cobrir', rotulo: 'Cobrir' },
-                { id: 'ajustar', rotulo: 'Ajustar' },
-              ].map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => aoMudarArea('fit', o.id)}
-                  className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
-                    area.fit === o.id
-                      ? 'border-[color:var(--edl-rosa)] text-white'
-                      : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
-                  }`}
-                  style={area.fit === o.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
-                >
-                  {o.rotulo}
-                </button>
-              ))}
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-[color:var(--edl-rosa)] text-white cursor-default"
+                style={{ background: 'rgba(236,72,153,0.14)' }}
+              >
+                Cobrir (sempre preenche 100%)
+              </button>
             </div>
           </div>
           <Alternar

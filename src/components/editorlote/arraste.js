@@ -10,7 +10,7 @@
  * NUNCA altera o outro.
  */
 
-import { atualizarCorteNoConfig, CANVAS_LARGURA, CANVAS_ALTURA, deslocamentoPorArraste } from '../../lib/configEditorLote';
+import { atualizarCorteNoConfig, CANVAS_LARGURA, deslocamentoPorArraste, ENQUADRAMENTO_VIDEO_PADRAO } from '../../lib/configEditorLote';
 
 /** Aplica `cambios` em uma ruta anidada da config (1 ou 2 niveles). */
 function atualizarRuta(config, ruta, cambios) {
@@ -139,22 +139,58 @@ export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
 
     if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });
 
+    // CORREÇÃO — travamento ("agarrando") ao arrastar: durante o arraste a
+    // posição é aplicada DIRETO no DOM (estado local, sem passar pelo config
+    // compartilhado), com rAF como limitador; o `aoAtualizarConfig` (re-render
+    // de toda a árvore, incluindo o <video> tocando) acontece UMA só vez, no
+    // `pointerup`. A guia ([data-elemento="area"]) e a camada do vídeo
+    // ([data-elemento="video"]) se movem juntas — a caixa interna é relativa à
+    // camada, então não precisa ser tocada.
+    const esc = Math.max(escala, 0.05);
+    const camadaVideo = canvasEl.querySelector('[data-elemento="video"]');
+    let atual = { x: inicial.x, y: inicial.y };
+    let pendente = false;
+    let rafId = 0;
+
+    function aplicarNoDom() {
+      rafId = 0;
+      if (!pendente) return;
+      pendente = false;
+      const px = `${atual.x * esc}px`;
+      const py = `${atual.y * esc}px`;
+      el.style.left = px;
+      el.style.top = py;
+      if (camadaVideo) {
+        camadaVideo.style.left = px;
+        camadaVideo.style.top = py;
+      }
+    }
+
     function aoMover(ev) {
-      const dx = (ev.clientX - startX) / escala;
-      const dy = (ev.clientY - startY) / escala;
-      aoAtualizarConfig((cfg) => ({
-        ...cfg,
-        areaVideo: {
-          ...cfg.areaVideo,
-          x: limitar(inicial.x + dx, xMin, xMax),
-          y: limitar(inicial.y + dy, yMin, yMax),
-        },
-      }));
+      const dx = (ev.clientX - startX) / esc;
+      const dy = (ev.clientY - startY) / esc;
+      atual = {
+        x: limitar(inicial.x + dx, xMin, xMax),
+        y: limitar(inicial.y + dy, yMin, yMax),
+      };
+      pendente = true;
+      if (!rafId) rafId = requestAnimationFrame(aplicarNoDom);
     }
     function aoSoltar() {
       window.removeEventListener('pointermove', aoMover);
       window.removeEventListener('pointerup', aoSoltar);
       window.removeEventListener('pointercancel', aoSoltar);
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      aplicarNoDom();
+      // COMMIT ÚNICO — só agora o estado compartilhado é atualizado (re-render).
+      aoAtualizarConfig((cfg) => ({
+        ...cfg,
+        areaVideo: {
+          ...(cfg.areaVideo || {}),
+          x: atual.x,
+          y: atual.y,
+        },
+      }));
       if (typeof aoFinalizar === 'function') aoFinalizar();
     }
     window.addEventListener('pointermove', aoMover);
@@ -162,144 +198,97 @@ export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
     window.addEventListener('pointercancel', aoSoltar);
   };
 }
-/* ---------------------------------------------------------------------------
- * OBJETO DE VÍDEO — REDIMENSIONAR pelas ALÇAS do Preview (estilo Canva).
- *
- * A geometria do OBJETO é `areaVideo` (x/y/largura/altura em px do canvas) —
- * EXATAMENTE a que o render usa no scale/crop/pad do FFmpeg. Redimensionar
- * muda só `largura`/`altura` (e `x`/`y` quando a alça é da borda esquerda/
- * superior, mantendo a borda oposta ANCORADA). As outras três operações
- * seguem intocadas e independentes:
- *   · RODA do mouse    → `zoom`/`deslocamentoX/Y` (enquadramento interno);
- *   · ARRASTAR o corpo → `areaVideo.x/y` (posição) ou o enquadramento;
- *   · CORTE de bordas  → `corteBordas` (linhas tracejadas permanentes).
- * ------------------------------------------------------------------------- */
-
-/** Menor OBJETO DE VÍDEO permitido (px do canvas): segue visível e editável. */
-const MIN_AREA_VIDEO = 100;
-/** Teto de segurança contra canvas/dataset inválidos (nunca NaN/Infinity). */
-const MAX_AREA_VIDEO = 100000;
-
-/** Número finito vindo do dataset (vazio/estranho → padrão). */
-function numeroFinito(valor, padrao) {
-  const n = parseFloat(valor);
-  return Number.isFinite(n) ? n : padrao;
-}
-
-/** Direção de cada CANTO: borda que se move em x (+1 direita, -1 esquerda) e
- * em y (+1 abaixo, -1 acima). A borda OPOSTA fica ancorada durante o resize. */
-const DIRECOES_CANTO = {
-  canto: { x: 1, y: 1 }, // compatibilidade: canto inferior direito
-  'canto-sudeste': { x: 1, y: 1 },
-  'canto-sudoeste': { x: -1, y: 1 },
-  'canto-nordeste': { x: 1, y: -1 },
-  'canto-noroeste': { x: -1, y: -1 },
-};
-
-/**
- * Redimensiona o OBJETO DE VÍDEO (`areaVideo.x/y/largura/altura`, px do canvas)
- * a partir das alças do Preview.
- *
- * `eixo`: 'direita' | 'esquerda' | 'abaixo' | 'acima' (uma dimensão) ou um
- * CANTO ('canto' | 'canto-sudeste' | 'canto-sudoeste' | 'canto-nordeste' |
- * 'canto-noroeste'). Nos cantos, `opcoes.proporcional` (padrão **true**) mantém
- * a proporção do objeto; as laterais ajustam uma única dimensão.
- *
- * Limites: nunca abaixo de `MIN_AREA_VIDEO` e nunca com a borda ancorada fora
- * do canvas — nenhum valor inválido (NaN/Infinity) chega à config.
- */
-export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
-  const proporcional = opcoes?.proporcional !== false;
-  const aoInteragir = opcoes?.aoInteragir || null;
-  const aoFinalizar = opcoes?.aoFinalizar || null;
+/** Redimensiona la ÁREA DEL VÍDEO desde las manijas ('direita'|'abaixo'|'canto'). */
+export function gerarRedimensionarArea(eixo, aoAtualizarConfig) {
   return function aoPointerDown(e) {
-    if (!aoAtualizarConfig) return;
-    if (typeof e.button === 'number' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
     const canvasEl = encontrarCanvas(e.currentTarget);
     if (!canvasEl) return;
-    const escala = Math.max(numeroFinito(canvasEl.dataset.escala, 1), 0.05);
-    const cW = Math.max(MIN_AREA_VIDEO, numeroFinito(canvasEl.dataset.canvasLargura, CANVAS_LARGURA));
-    const cH = Math.max(MIN_AREA_VIDEO, numeroFinito(canvasEl.dataset.canvasAltura, CANVAS_ALTURA));
+    const escala = parseFloat(canvasEl.dataset.escala || '1');
+    const cW = parseFloat(canvasEl.dataset.canvasLargura || '1080');
+    const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');
 
     const el = e.currentTarget;
     const inicial = {
-      x: numeroFinito(el.dataset.x, 0),
-      y: numeroFinito(el.dataset.y, 0),
-      largura: Math.max(MIN_AREA_VIDEO, numeroFinito(el.dataset.largura, MIN_AREA_VIDEO)),
-      altura: Math.max(MIN_AREA_VIDEO, numeroFinito(el.dataset.altura, MIN_AREA_VIDEO)),
+      x: parseFloat(el.dataset.x) || 0,
+      y: parseFloat(el.dataset.y) || 0,
+      largura: parseFloat(el.dataset.largura) || 0,
+      altura: parseFloat(el.dataset.altura) || 0,
     };
-    const direcao = DIRECOES_CANTO[eixo] || null;
-    // Bordas ANCORADAS (opostas à alça) — ficam fixas durante o resize.
-    const direita0 = inicial.x + inicial.largura;
-    const base0 = inicial.y + inicial.altura;
     const startX = e.clientX;
     const startY = e.clientY;
 
-    if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });
+    // CORREÇÃO — travamento ao redimensionar: durante o arraste o tamanho é
+    // aplicado DIRETO no DOM (guia + camada do vídeo + caixa interna), sem
+    // passar pelo config compartilhado; o `aoAtualizarConfig` acontece UMA
+    // única vez, no `pointerup`. Com o zoom resetado (commit abaixo) a caixa
+    // interna fica em 0,0 com o MESMO tamanho da área — os três nós recebem
+    // width/height idênticos.
+    const esc = Math.max(escala, 0.05);
+    const camadaVideo = canvasEl.querySelector('[data-elemento="video"]');
+    const caixaVideo = canvasEl.querySelector('[data-elemento="video-caixa"]');
+    let atual = { largura: inicial.largura, altura: inicial.altura };
+    let pendente = false;
+    let rafId = 0;
+
+    function calcularNovo(ev) {
+      const dx = (ev.clientX - startX) / esc;
+      const dy = (ev.clientY - startY) / esc;
+      const nova = { largura: inicial.largura, altura: inicial.altura };
+      if (eixo === 'direita' || eixo === 'canto') {
+        nova.largura = Math.min(cW - inicial.x, Math.max(100, inicial.largura + dx));
+      }
+      if (eixo === 'abaixo' || eixo === 'canto') {
+        nova.altura = Math.min(cH - inicial.y, Math.max(100, inicial.altura + dy));
+      }
+      return nova;
+    }
+
+    function aplicarNoDom() {
+      rafId = 0;
+      if (!pendente) return;
+      pendente = false;
+      const w = `${atual.largura * esc}px`;
+      const h = `${atual.altura * esc}px`;
+      el.style.width = w;
+      el.style.height = h;
+      if (camadaVideo) {
+        camadaVideo.style.width = w;
+        camadaVideo.style.height = h;
+      }
+      if (caixaVideo) {
+        caixaVideo.style.width = w;
+        caixaVideo.style.height = h;
+      }
+    }
 
     function aoMover(ev) {
-      const dx = (ev.clientX - startX) / escala;
-      const dy = (ev.clientY - startY) / escala;
-      aoAtualizarConfig((cfg) => {
-        const area = { ...(cfg.areaVideo || {}) };
-        if (direcao && proporcional) {
-          // CANTO PROPORCIONAL: a escala sai do eixo que mais se moveu.
-          const alvoLargura = Math.max(MIN_AREA_VIDEO, inicial.largura + dx * direcao.x);
-          const alvoAltura = Math.max(MIN_AREA_VIDEO, inicial.altura + dy * direcao.y);
-          const relX = (alvoLargura - inicial.largura) / inicial.largura;
-          const relY = (alvoAltura - inicial.altura) / inicial.altura;
-          const rel = Math.abs(relX) >= Math.abs(relY) ? relX : relY;
-          const fatorMin = Math.max(MIN_AREA_VIDEO / inicial.largura, MIN_AREA_VIDEO / inicial.altura);
-          const fatorTeto = Math.min(
-            direcao.x > 0 ? (cW - inicial.x) / inicial.largura : direita0 / inicial.largura,
-            direcao.y > 0 ? (cH - inicial.y) / inicial.altura : base0 / inicial.altura,
-          );
-          // Intervalo SEMPRE válido: teto nunca abaixo do mínimo (anti-NaN).
-          const teto = Math.max(
-            fatorMin,
-            Math.min(fatorTeto, MAX_AREA_VIDEO / Math.max(inicial.largura, inicial.altura), 1000),
-          );
-          const fator = Math.min(Math.max(1 + rel, fatorMin), teto);
-          const largura = Math.round(inicial.largura * fator);
-          const altura = Math.round(inicial.altura * fator);
-          area.largura = largura;
-          area.altura = altura;
-          area.x = Math.round(direcao.x > 0 ? inicial.x : direita0 - largura);
-          area.y = Math.round(direcao.y > 0 ? inicial.y : base0 - altura);
-        } else {
-          if (eixo === 'direita' || eixo === 'esquerda') {
-            // A borda oposta fica ANCORADA e dentro do canvas.
-            const maxLargura = Math.max(MIN_AREA_VIDEO, eixo === 'direita' ? cW - inicial.x : direita0);
-            const largura = Math.round(
-              Math.min(maxLargura, Math.max(MIN_AREA_VIDEO, inicial.largura + (eixo === 'direita' ? dx : -dx))),
-            );
-            area.largura = largura;
-            if (eixo === 'esquerda') area.x = Math.round(direita0 - largura);
-          }
-          if (eixo === 'abaixo' || eixo === 'acima') {
-            const maxAltura = Math.max(MIN_AREA_VIDEO, eixo === 'abaixo' ? cH - inicial.y : base0);
-            const altura = Math.round(
-              Math.min(maxAltura, Math.max(MIN_AREA_VIDEO, inicial.altura + (eixo === 'abaixo' ? dy : -dy))),
-            );
-            area.altura = altura;
-            if (eixo === 'acima') area.y = Math.round(base0 - altura);
-          }
-        }
-        return { ...cfg, areaVideo: area };
-      });
-      if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });
+      atual = calcularNovo(ev);
+      pendente = true;
+      if (!rafId) rafId = requestAnimationFrame(aplicarNoDom);
     }
     function aoSoltar() {
       window.removeEventListener('pointermove', aoMover);
       window.removeEventListener('pointerup', aoSoltar);
-      window.removeEventListener('pointercancel', aoSoltar);
-      if (typeof aoFinalizar === 'function') aoFinalizar();
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      aplicarNoDom();
+      // COMMIT ÚNICO — com a CORREÇÃO do vão: o resize RESETA o enquadramento
+      // (zoom → 1, deslocamentos → centro). Com zoom 1 a caixa do vídeo
+      // (caixaEnquadramentoVideo) é EXATAMENTE a área nova — o vídeo volta a
+      // preencher 100% dela (cover nunca deixa vão). O zoom/deslocamento
+      // antigos, calculados para o tamanho ANTERIOR da área, é que sobravam
+      // como vão/borda depois do resize.
+      aoAtualizarConfig((cfg) => {
+        const area = { ...(cfg.areaVideo || {}), x: inicial.x, y: inicial.y, ...atual };
+        area.zoom = ENQUADRAMENTO_VIDEO_PADRAO.zoom;
+        area.deslocamentoX = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX;
+        area.deslocamentoY = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY;
+        return { ...cfg, areaVideo: area };
+      });
     }
     window.addEventListener('pointermove', aoMover);
     window.addEventListener('pointerup', aoSoltar);
-    window.addEventListener('pointercancel', aoSoltar);
   };
 }
 

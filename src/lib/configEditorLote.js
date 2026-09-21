@@ -52,8 +52,15 @@ export const ROTULOS_CORES_FUNDO = {
  * canvas). O enquadramento é o mesmo objeto compartilhado — NÃO existe segundo
  * sistema de composição:
  *
- *   zoom          → escala do vídeo dentro da área (1 = enquadramento original;
- *                   > 1 amplia; < 1 diminui, revelando o fundo do canvas);
+ *   zoom          → escala do vídeo dentro da área (1 = preenche EXATAMENTE
+ *                   a área; > 1 amplia para enquadrar o conteúdo). NUNCA < 1:
+ *                   a ÁREA DO VÍDEO é a janela e o vídeo SEMPRE preenche 100%
+ *                   dela (cover) — um zoom abaixo de 1 produziria um vídeo
+ *                   pequeno/centralizado dentro do retângulo, o comportamento
+ *                   que este fluxo proíbe (a ÁREA nunca fica maior que o
+ *                   vídeo). Valores menores salvos em configs/templates
+ *                   antigos são normalizados para 1 pela
+ *                   `normalizarZoomVideo`/`areaVideoNormalizada`;
  *   deslocamentoX → posição horizontal do vídeo dentro da área, em % da
  *                   "folga" disponível (0 = encostado à esquerda, 50 = centro,
  *                   100 = encostado à direita);
@@ -63,7 +70,11 @@ export const ROTULOS_CORES_FUNDO = {
  * todos os vídeos do lote, em qualquer resolução/proporção, e o FFmpeg
  * materializa exatamente o mesmo enquadramento — prévia = render.
  * ------------------------------------------------------------------------- */
-export const ZOOM_VIDEO_MIN = 0.5;
+/** MÍNIMO do zoom = 1 (INVARIANTE do fluxo): o vídeo nunca fica menor que a
+ * Área do vídeo. Ampliar (zoom > 1) continua permitido para enquadrar o
+ * conteúdo; "reduzir" abaixo da área não existe mais — era o caminho que
+ * materializava o vídeo pequeno/centralizado no retângulo (prévia e render). */
+export const ZOOM_VIDEO_MIN = 1;
 export const ZOOM_VIDEO_MAX = 4;
 export const ENQUADRAMENTO_VIDEO_PADRAO = Object.freeze({ zoom: 1, deslocamentoX: 50, deslocamentoY: 50 });
 

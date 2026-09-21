@@ -192,6 +192,11 @@ export default function EditorCanvas({
   const templateFundo = config.templateFundo || {};
   const temTemplateFundo = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/') && templateFundo.visivel !== false;
   const area = config.areaVideo;
+  // CORREÇÃO — editar/marcar a ÁREA DO VÍDEO NÃO depende de ter vídeo
+  // selecionado: depende só de a célula ser interativa (`podeEditar`) e da
+  // marcação/template estarem ativos. A edição do VÍDEO (`podeEditarVideo`,
+  // acima) sim exige um vídeo ativo (`urlVideoAtiva` nos usos).
+  const podeEditarArea = podeEditar && (area.mostrarMarcacao || temTemplateFundo);
   const areaN = areaVideoNormalizada(area);
   // Geometria do enquadramento — MESMA matemática do render (compor.js):
   // quadro = área × zoom, posicionado pela folga com deslocamentoX/Y.
@@ -586,6 +591,8 @@ export default function EditorCanvas({
                 caixaEnquadramentoVideo. O render materializa este exato quadro
                 (scale/crop/pad do FFmpeg). */}
             <div
+              key={item && item.id ? `video-${item.id}` : 'video-vazio'}
+              data-elemento="video-caixa"
               className="absolute"
               style={{
                 left: caixaPlayer.x * escala,
@@ -733,30 +740,30 @@ export default function EditorCanvas({
             já está composto e nada de edição sobrepõe o MP4. */}
         {!conferencia && (
         <div
-          role={podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? 'button' : undefined}
-          tabIndex={podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? 0 : undefined}
+          role={podeEditarArea ? 'button' : undefined}
+          tabIndex={podeEditarArea ? 0 : undefined}
           aria-label="Mover a área do vídeo (composiçom final)"
           data-elemento="area"
           data-x={String(area.x)}
           data-y={String(area.y)}
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
-          onPointerDown={podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditar && (area.mostrarMarcacao || temTemplateFundo) && elementoSelecionado === 'area' ? 'edl-guia-ativa' : ''} ${podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
+          onPointerDown={podeEditarArea ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditarArea && elementoSelecionado === 'area' ? 'edl-guia-ativa' : ''} ${podeEditarArea ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
             width: area.largura * escala,
             height: area.altura * escala,
             borderRadius: 8 * escala,
-            cursor: podeEditar && (area.mostrarMarcacao || temTemplateFundo) ? 'move' : 'default',
+            cursor: podeEditarArea ? 'move' : 'default',
             border: (area.mostrarMarcacao || temTemplateFundo) ? undefined : '2px dashed transparent',
             backgroundColor: (area.mostrarMarcacao || temTemplateFundo) ? undefined : 'transparent',
           }}
         >
 
           {/* Manijas de redimensionar (SÓ quando a ÁREA está selecionada) */}
-          {podeEditar && (area.mostrarMarcacao || temTemplateFundo) && elementoSelecionado === 'area' && (
+          {podeEditarArea && elementoSelecionado === 'area' && (
             <>
               <span
                 role="slider"

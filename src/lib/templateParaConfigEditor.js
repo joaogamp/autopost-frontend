@@ -1,4 +1,4 @@
-import { CANVAS_ALTURA, CANVAS_LARGURA, criarConfigPadrao } from './configEditorLote.js';
+import { CANVAS_ALTURA, CANVAS_LARGURA, criarConfigPadrao, ENQUADRAMENTO_VIDEO_PADRAO } from './configEditorLote.js';
 import { BASE_URL } from './api.js';
 
 function num(v, padrao = 0) {
@@ -107,9 +107,19 @@ export function templateParaConfigEditor(template, opts = {}) {
       visivel: true,
     };
   });
+  // ARTE BASE do template (Editor em Lote): a imagem importada como fundo.
+  // Ela PERTENCE ao template — aplicar o template traz a arte de volta (sem
+  // ela o canvas ficaria em branco por trás da área). Qualquer arte de uma
+  // sessão/config anterior NÃO vem daqui: a config inteira é reconstruída.
+  const fundoSrv = template.fundoTemplate && typeof template.fundoTemplate === 'object' ? template.fundoTemplate : null;
+  const fundoValido = !!(fundoSrv && typeof fundoSrv.urlImagem === 'string' && fundoSrv.urlImagem.startsWith('data:image/'));
+  const templateFundo = fundoValido
+    ? { url: fundoSrv.urlImagem, nome: typeof fundoSrv.nome === 'string' ? fundoSrv.nome : '', larguraNatural: num(fundoSrv.larguraNatural) || 0, alturaNatural: num(fundoSrv.alturaNatural) || 0, visivel: true }
+    : { ...base.templateFundo };
   return preservar({
     ...base,
     canvas: { largura: lc, altura: ac, corFundo: typeof template.corFundo === 'string' && template.corFundo ? template.corFundo : '#ffffff' },
+    templateFundo,
     areaVideo: {
       ...base.areaVideo,
       x: area ? num(area.x, 0) : 0,
@@ -121,9 +131,11 @@ export function templateParaConfigEditor(template, opts = {}) {
       // dentro dela. Templates antigos com 'ajustar' são normalizados para
       // 'cobrir' para que prévia e render usem a mesma geometria.
       fit: 'cobrir',
-      zoom: Number(area && area.zoom) > 0 ? Number(area.zoom) : 1,
-      deslocamentoX: Number.isFinite(Number(area && area.deslocamentoX)) ? Number(area.deslocamentoX) : 50,
-      deslocamentoY: Number.isFinite(Number(area && area.deslocamentoY)) ? Number(area.deslocamentoY) : 50,
+      // O ENQUADRAMENTO (zoom/deslocamento) é edição do VÍDEO, não da arte:
+      // NÃO herda o valor salvo em templates antigos — nasce neutro (zoom 1 =
+      // vídeo preenchendo 100% da área, centrado). O usuário re-enquadra com
+      // o mouse se quiser; nada do template anterior vaza para o novo.
+      ...ENQUADRAMENTO_VIDEO_PADRAO,
       mostrarMarcacao: temArea,
     },
     corteBordas: template.corteBordas && typeof template.corteBordas === 'object'
