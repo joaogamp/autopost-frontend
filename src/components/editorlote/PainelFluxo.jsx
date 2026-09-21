@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Upload, Scan, Eye, LayoutTemplate, Image as ImageIcon, AlertCircle, X } from 'lucide-react';
+import { Upload, Scan, Eye, LayoutTemplate, AlertCircle, X } from 'lucide-react';
 import EditorCanvas from './EditorCanvas';
 import { criarConfigPadrao, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/configEditorLote';
 
@@ -8,17 +8,18 @@ import { criarConfigPadrao, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/conf
  *
  *   TEMPLATE
  *   [ Importar template ]      → PNG/JPG/WebP do PC (input file direto)
- *   [ Marcar espaço do vídeo ] → modo de marcação: mostra o template com o
- *                                retângulo da área arrastável/redimensionável
+ *   [ Marcar espaço do vídeo ] → modo de marcação: mostra SOMENTE o template
+ *                                com o retângulo da área arrastável/
+ *                                redimensionável (SEM vídeo — Estado A)
  *   [ Mostrar Preview ]        → aplica template + área em TODOS os vídeos
+ *                                (Estado B)
  *
- *   (opcional) [ Importar logo ] — elemento separado do template.
- *
- * NÃO recria elementos do template (a arte importada JÁ contém tudo): o
- * Editor em Lote apenas recebe o template, define a área do vídeo e compõe.
- * A marcação usa o MESMO EditorCanvas / arraste.js / config.areaVideo —
- * prévia e render compartilham a MESMA geometria (x/y/largura/altura em px
- * do canvas 1080×1920).
+ * NÃO recria elementos do template (a arte importada JÁ contém tudo — fundo,
+ * textos, imagens, gráficos): o Editor em Lote apenas recebe o template,
+ * define a área do vídeo e compõe. NADA de logo/overlay extra: o template é a
+ * fonte visual completa. A marcação usa o MESMO EditorCanvas / arraste.js /
+ * config.areaVideo — prévia e render compartilham a MESMA geometria
+ * (x/y/largura/altura em px do canvas 1080×1920).
  */
 
 /** Área padrão ao importar template (antes de o usuário marcar): retângulo
@@ -26,7 +27,6 @@ import { criarConfigPadrao, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/conf
 const AREA_TEMPLATE_LARGURA_PCT = 0.85;
 const AREA_TEMPLATE_ALTURA_PCT = 0.7;
 const LIMITE_TEMPLATE_BYTES = 6 * 1024 * 1024;
-const LIMITE_LOGO_BYTES = 3 * 1024 * 1024;
 
 /** Lê imagem do PC como dataURL (mesma mecânica do PainelCamadas antigo). */
 function lerImagemComoDataUrl(arquivo, limite, aoPronto, aoErro) {
@@ -69,22 +69,15 @@ export default function PainelFluxo({
   aoAtualizarConfig,
   previewAtivo,
   aoAlternarPreview,
-  aoAlternarMarcacao,
-  urlVideoAtiva,
-  itemMarcacao,
   elementoSelecionado,
   aoSelecionarElemento,
 }) {
   const inputTemplateRef = useRef(null);
-  const inputLogoRef = useRef(null);
   const [erro, setErro] = useState('');
-  const [erroLogo, setErroLogo] = useState('');
   const [marcaAberta, setMarcaAberta] = useState(false);
 
   const templateFundo = (config && config.templateFundo) || {};
   const temTemplate = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/');
-  const logo = (config && config.logo) || {};
-  const temLogo = !!(logo.visivel && logo.url);
 
   /* ------------- IMPORTAR TEMPLATE (TEMPLATE BASE do lote) ------------- */
   function aoEscolherTemplate(e) {
@@ -121,7 +114,6 @@ export default function PainelFluxo({
       // e para o Preview. Fecha a marcação/preview anteriores para o usuário
       // seguir o fluxo (marcar → Mostrar Preview).
       setMarcaAberta(false);
-      if (typeof aoAlternarMarcacao === 'function') aoAlternarMarcacao(false);
       if (typeof aoAlternarPreview === 'function') aoAlternarPreview(false);
     }, setErro);
   }
@@ -131,42 +123,8 @@ export default function PainelFluxo({
       ...cfg,
       templateFundo: { url: null, nome: '', larguraNatural: 0, alturaNatural: 0, visivel: true },
     }));
-    if (typeof aoAlternarMarcacao === 'function') aoAlternarMarcacao(false);
     setMarcaAberta(false);
     if (typeof aoAlternarPreview === 'function') aoAlternarPreview(false);
-  }
-
-  /* ------------- IMPORTAR LOGO (elemento separado, opcional) ------------- */
-  function aoEscolherLogo(e) {
-    const arquivo = e.target.files ? e.target.files[0] : null;
-    e.target.value = '';
-    if (!arquivo) return;
-    setErroLogo('');
-    lerImagemComoDataUrl(arquivo, LIMITE_LOGO_BYTES, (dataUrl) => {
-      const img = new Image();
-      const aplicar = (alturaProporcao) =>
-        aoAtualizarConfig((cfg) => ({
-          ...cfg,
-          logo: {
-            ...(cfg.logo || {}),
-            url: dataUrl,
-            logoDataUrl: dataUrl,
-            arquivo: null,
-            visivel: true,
-            alturaProporcao,
-          },
-        }));
-      img.onload = () => aplicar(img.naturalWidth > 0 ? img.naturalHeight / img.naturalWidth : null);
-      img.onerror = () => aplicar(null);
-      img.src = dataUrl;
-    }, setErroLogo);
-  }
-
-  function aoRemoverLogo() {
-    aoAtualizarConfig((cfg) => ({
-      ...cfg,
-      logo: { ...(cfg.logo || {}), url: null, logoDataUrl: null, arquivo: null, visivel: false },
-    }));
   }
 
   /* -------- ÁREA DO VÍDEO (marcação reusa o EditorCanvas existente) -------- */
@@ -192,7 +150,7 @@ export default function PainelFluxo({
           </div>
           <button
             type="button"
-            onClick={() => { setMarcaAberta(false); if (typeof aoAlternarMarcacao === 'function') aoAlternarMarcacao(false); }}
+            onClick={() => { setMarcaAberta(false); }}
             aria-label="Fechar marcação"
             className="edl-ring-foco w-7 h-7 rounded-lg flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
           >
@@ -206,19 +164,21 @@ export default function PainelFluxo({
           esta MESMA geometria.
         </p>
         <div className="min-h-0 overflow-auto px-4 pb-4">
-          {/* MESMO EditorCanvas da prévia: o vídeo REAL aparece DENTRO da área
-              marcada (cover) sobre o template — o usuário vê a composição
-              exata enquanto marca. Interativo para arrastar/redimensionar. */}
+          {/* MESMO EditorCanvas da prévia, mas no ESTADO A (marcação): só o
+              TEMPLATE + o RETÂNGULO da área — SEM vídeo nenhum. Nenhum vídeo
+              (nem thumbnail) é renderizado dentro do retângulo; ele é apenas
+              marcação geométrica (x/y/largura/altura) que o Preview usará
+              depois. Interativo para arrastar/redimensionar o retângulo. */}
           <EditorCanvas
             config={config}
             aoAtualizarConfig={aoAtualizarConfig}
-            itemSelecionado={itemMarcacao}
-            urlVideoAtiva={urlVideoAtiva}
+            itemSelecionado={null}
+            urlVideoAtiva={null}
             interativo
             alturaMaxima={620}
             mostrarRodape={false}
-            claveReproductor="marcacao"
             forcarTemplateVisivel
+            previewAtivo={false}
             elementoSelecionado={elementoSelecionado}
             aoSelecionarElemento={aoSelecionarElemento}
           />
@@ -282,9 +242,7 @@ export default function PainelFluxo({
           type="button"
           disabled={!temTemplate}
           onClick={() => {
-            const novo = !marcaAberta;
-            setMarcaAberta(novo);
-            if (typeof aoAlternarMarcacao === 'function') aoAlternarMarcacao(novo);
+            setMarcaAberta(!marcaAberta);
           }}
           title={temTemplate ? 'Abrir o modo de marcação da área do vídeo' : 'Importe um template primeiro'}
           className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg disabled:opacity-50 disabled:cursor-default"
@@ -323,54 +281,13 @@ export default function PainelFluxo({
         </p>
       </div>
 
-
-      {/* LOGO — elemento SEPARADO do template (opcional) */}
-      <div className="px-3 py-3 border-t border-[color:var(--edl-borda)] space-y-2">
-        <div className="flex items-center gap-2">
-          <ImageIcon className="w-3.5 h-3.5 edl-icone-b" />
-          <h3 className="font-display text-[11px] font-extrabold text-white">Logo (opcional)</h3>
-        </div>
-        <input ref={inputLogoRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={aoEscolherLogo} />
-        {temLogo ? (
-          <div className="flex items-center gap-2.5 edl-superficie rounded-lg p-2">
-            <img src={logo.url} alt="Logo" className="w-8 h-8 object-contain shrink-0" />
-            <span className="flex-1 min-w-0 text-[10px] font-bold text-white truncate">Logo do lote</span>
-            <button
-              type="button"
-              onClick={aoRemoverLogo}
-              title="Remover logo"
-              className="edl-ring-foco shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => inputLogoRef.current?.click()}
-            className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-[11px] font-bold py-2 rounded-lg"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Importar logo
-          </button>
-        )}
-        {erroLogo ? (
-          <p className="text-[10px] font-bold flex items-start gap-1.5" style={{ color: '#f87171' }}>
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-px" /> {erroLogo}
-          </p>
-        ) : null}
-        <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-          A logo é um elemento separado — não faz parte do template.
-        </p>
-      </div>
-
       {marcaAberta ? (
         <p className="mt-auto px-3 py-2 text-[9px] font-semibold border-t border-[color:var(--edl-borda)]" style={{ color: 'var(--edl-texto-mut)' }}>
-          Marcação aberta à direita — o template aparece apenas aqui, nunca no centro antes do Preview.
+          Marcação aberta à direita — só o template + o retângulo (sem vídeo). O Preview aplica a geometria marcada em todos os vídeos.
         </p>
       ) : (
         <p className="mt-auto px-3 py-2 text-[9px] font-semibold border-t border-[color:var(--edl-borda)]" style={{ color: 'var(--edl-texto-mut)' }}>
-          Importe vídeos à esquerda · importe o template · marque a área · mostre o Preview · processe no topo.
+          Importe vídeos à esquerda · importe o template · marque a área · mostre o Preview.
         </p>
       )}
 

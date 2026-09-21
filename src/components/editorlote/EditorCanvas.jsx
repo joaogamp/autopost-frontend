@@ -1,12 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ImageOff, Trash2 } from 'lucide-react';
 import {
-  CORTE_MAXIMO,
   CANVAS_LARGURA,
   CANVAS_ALTURA,
   familiaDeFonte,
   pesoDeTexto,
-  corteEfetivoDoVideo,
   areaVideoNormalizada,
   caixaEnquadramentoVideo,
   enquadramentoVideoEditado,
@@ -17,10 +15,7 @@ import {
   gerarArrasteDeRuta,
   gerarArrastreArea,
   gerarRedimensionarArea,
-  gerarRedimensionarLogo,
   gerarRedimensionarTextoLargura,
-  gerarArrastarCorteSuperior,
-  gerarArrastarCorteInferior,
   gerarArrastarEnquadramentoVideo,
 } from './arraste';
 import ControlesVideo from './ControlesVideo';
@@ -32,32 +27,26 @@ import ElementoImagem from './ElementoImagem';
  *
  * Canvas 9:16 reutilizado em DOIS lugares:
  * - CÉLULA SELECIONADA da área central (interativo=true): canvas completo,
- *   editável — vídeo REAL com ControlesVideo + logo + textos + identidade +
- *   guia da área arrastável/redimensionável + cortes arrastáveis;
+ *   editável — vídeo REAL com ControlesVideo + textos + identidade +
+ *   guia da área arrastável/redimensionável;
  * - DEMAIS CÉLULAS (interativo=false): SOMENTE visualização do MESMO canvas
- *   com a MESMA config compartilhada (logo/textos/identidade/área/cortes
+ *   com a MESMA config compartilhada (textos/identidade/área
  *   aparecem iguais), mas sem arrastes/manijas/áudio — SOLO thumbnail
  *   estática (parada), nunca un <video> con autoplay/loop en background.
  *
- * PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para o corte E para o
- * enquadramento do vídeo):
+ * PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para a geometria do vídeo):
  * - A PRÉVIA desenha o vídeo na ÁREA de composição com a MESMA geometria do
  *   render (`caixaEnquadramentoVideo`): quadro = área × zoom, posicionado por
  *   deslocamentoX/Y e SEMPRE em cover (a ÁREA é exatamente o espaço do vídeo —
  *   ele preenche 100% da largura/altura dela, nunca fica pequeno/centralizado).
  *   O usuário amplia/reduz e move o vídeo com o MOUSE (arrastar + roda), e o
  *   vídeo final sai EXATAMENTE igual (compor.js materializa os mesmos valores);
- * - O CORTE (manual ou o resultado SALVO do "Corte automático de bordas")
- *   aparece na prévia como recorte visual (clip-path) usando EXATAMENTE os
- *   mesmos % (`corteEfetivoDoVideo`) que viajam no template — e o FFmpeg
- *   materializa com o MESMO valor (drawbox single-pass). NENHUMA detecção
- *   acontece no processamento: o render nunca re-detecta nem re-enquadra;
- * - logo, textos e identidade continuam sendo renderizados por cima do vídeo
- *   (posiçom/tamanho/proporçom preservados; editáveis normalmente);
+ * - Sem corte de bordas: nenhuma linha/guia/clip-path de corte existe mais no
+ *   Editor — a arte completa já vive no template importado;
+ * - logo removida: o template é a fonte visual COMPLETA (fundo, textos,
+ *   imagens, gráficos) — o Editor não adiciona nada por cima;
  * - os CONTROLES DO PLAYER (play/pause · progresso · volume) vivem numa camada
- *   FIXA própria (`data-edl-destino-controles`), FORA do clip-path: o corte
- *   afeta SOMENTE o conteúdo visual do vídeo — os controles nunca são cortados,
- *   nunca mudam de posição por causa do corte e seguem 100% interativos.
+ *   FIXA própria (`data-edl-destino-controles`) no fundo do canvas.
  */
 
 /** Altura MÁXIMA padrão do preview 9:16 na TELA (px). Pode ser sobrescrita
@@ -103,27 +92,33 @@ export default function EditorCanvas({
   // localStorage; o arquivo original continua na Biblioteca — sem DELETE).
   aoRemoverBase,
   // SELEÇÃO DE ELEMENTOS (Camadas ⇄ Preview): id do elemento selecionado
-  // ('logo', 'textoSuperior', 'video', 'area', 'corte', 'selo', 'imagem:<id>'…)
+  // ('textoSuperior', 'video', 'area', 'selo', 'imagem:<id>'…)
   // e callback pra selecionar/desselecionar. SÓ a célula editável seleciona.
   elementoSelecionado = null,
   aoSelecionarElemento,
   // FLUXO SIMPLIFICADO — "Mostrar Preview" (REGRA 12): `previewAtivo=false`
   // mostra SOMENTE o vídeo importado (sem template, sem composição na área,
-  // sem logo/textos, sem guias). `previewAtivo=true` desenha a composição
+  // sem guias). `previewAtivo=true` desenha a composição
   // final (template + vídeo dentro da área marcada + overlays), a MESMA
   // geometria do render. `forcarTemplateVisivel=true` (modo de marcação no
-  // painel direito) mostra template + área mesmo fora do preview.
+  // painel direito) mostra template + retângulo da área — SEM vídeo (Estado A:
+  // apenas geometria; o vídeo só existe no Preview — Estado B).
   previewAtivo = true,
   forcarTemplateVisivel = false,
 }) {
   // A composição (template/overlays/guias) só aparece com o Preview ativo ou
   // dentro do modo de marcação — o centro mostra "somente vídeos" antes disso.
   const composicaoAtiva = previewAtivo || forcarTemplateVisivel;
-  // O GUIA tracejado da área do vídeo (e as alças/arraste do enquadramento) é
-  // FERRAMENTA DO MODO DE MARCAÇÃO: na prévia composta (Mostrar Preview) o
-  // centro mostra o resultado LIMPO, exatamente como o render final — a
-  // marcação nunca fica permanente sobre os vídeos.
-  const mostraGuiaArea = !previewAtivo || forcarTemplateVisivel;
+  // ESTADO A — MARCAÇÃO: a gaveta do painel direito (forcarTemplateVisivel)
+  // mostra SOMENTE template + retângulo. O vídeo NÃO é renderizado aqui, não
+  // acompanha o arraste e não sofre nenhuma transformação (Regra 3/12).
+  const modoMarcacao = forcarTemplateVisivel && !previewAtivo;
+  // O GUIA tracejado da área do vídeo é FERRAMENTA DE MARCAÇÃO/edição: na
+  // prévia composta (Mostrar Preview) o centro mostra o resultado LIMPO,
+  // exatamente como o render final — a marcação nunca fica permanente sobre
+  // os vídeos. Durante a MARCAÇÃO o guia fica SEMPRE visível (é ele o
+  // retângulo geométrico que o usuário arrasta/redimensiona).
+  const mostraGuiaArea = modoMarcacao;
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
   const [escala, setEscala] = useState(1);
@@ -137,10 +132,10 @@ export default function EditorCanvas({
   // MODO CONFERÊNCIA — VÍDEO PRONTO (declarado ANTES de qualquer uso, inclusive
   // nas dependências dos effects abaixo). O player já aponta para o MP4 FINAL
   // (/arquivos/publicados/{filaId}.mp4): é o quadro COMPLETO 1080×1920 com
-  // template/logo/textos/corte JÁ aplicados pelo engine. Nesse modo o canvas
+  // o template JÁ aplicado pelo engine. Nesse modo o canvas
   // mostra SÓ esse MP4 (sem overlay, guia, alça ou clip de edição) e o player
   // ocupa o CANVAS INTEIRO — reaplicar a composição sobre o final duplicaria
-  // logo/textos/corte. A edição continua idêntica para os vídeos que ainda NÃO
+  // a arte. A edição continua idêntica para os vídeos que ainda NÃO
   // foram implementados.
   const conferencia = !!(
     itemSelecionado &&
@@ -152,22 +147,21 @@ export default function EditorCanvas({
   // mas o player CONTINUA montado — é o que o usuário precisa assistir.
   // FLUXO SIMPLIFICADO: sem "Mostrar Preview" o centro mostra SOMENTE os
   // vídeos importados — nada de composição, guias ou arraste de enquadramento.
-  const podeEditarVideo = podeEditar && !conferencia && composicaoAtiva && mostraGuiaArea;
+  // MARCAÇÃO (`forcarTemplateVisivel` sem preview): o vídeo NÃO é renderizado
+  // nem arrastável — só o template + o retângulo da área (Estado A). O vídeo
+  // só volta a existir dentro da área marcada no PREVIEW (Estado B).
+  const podeEditarVideo = podeEditar && !conferencia && previewAtivo;
 
   // Handlers — arrastre genérico por ruta: cada elemento es independente.
   // Nas células NÃO selecionadas (podeEditar=false) os handlers viram no-op.
-  const arrastarLogo = gerarArrasteDeRuta(['logo'], atualizador);
   const arrastarTextoSuperior = gerarArrasteDeRuta(['textos', 'superior'], atualizador);
   const arrastarTextoInferior = gerarArrasteDeRuta(['textos', 'inferior'], atualizador);
-  const redimensionarLogo = gerarRedimensionarLogo(atualizador);
   const redimensionarTextoSup = gerarRedimensionarTextoLargura(['textos', 'superior'], atualizador);
   const redimensionarTextoInf = gerarRedimensionarTextoLargura(['textos', 'inferior'], atualizador);
   const arrastarArea = gerarArrastreArea(atualizador);
   const redimensionarAreaDireita = gerarRedimensionarArea('direita', atualizador);
   const redimensionarAreaAbaixo = gerarRedimensionarArea('abaixo', atualizador);
   const redimensionarAreaCanto = gerarRedimensionarArea('canto', atualizador);
-  const corredorSuperior = gerarArrastarCorteSuperior(atualizador, itemSelecionado?.id || null);
-  const corredorInferior = gerarArrastarCorteInferior(atualizador, itemSelecionado?.id || null);
 
   // SELEÇÃO — clicar num elemento do preview seleciona a camada dele (Painel
   // de Camadas + painel de configuração sincronizam). Clicar no FUNDO do
@@ -185,12 +179,10 @@ export default function EditorCanvas({
   const camadaVideoRef = useRef(null);
   const dicaTimerRef = useRef(null);
   // CONTROLES DO PLAYER — camada FIXA do preview. O nó vive no fundo do canvas,
-  // FORA do clip-path do vídeo; o ControlesVideo PORTA a barra pra cá
-  // (createPortal). Assim o corte (clip-path) recorta SOMENTE o conteúdo
-  // visual do vídeo: play/pause, progresso, volume e demais controles nunca
-  // são cortados, nunca mudam de posição por causa do corte e seguem 100%
-  // interativos. Estado (não ref) porque o portal precisa re-renderizar quando
-  // o nó fica disponível (pós-commit).
+  // FORA da camada do vídeo; o ControlesVideo PORTA a barra pra cá
+  // (createPortal): play/pause, progresso e volume seguem fixos no fundo do
+  // canvas e 100% interativos. Estado (não ref) porque o portal precisa
+  // re-renderizar quando o nó fica disponível (pós-commit).
   const destinoControlesRef = useRef(null);
   const [destinoControles, setDestinoControles] = useState(null);
   // Dica DISCRETA durante a interação (some sozinha — nada de controles X/Y,
@@ -208,7 +200,10 @@ export default function EditorCanvas({
 
   const corFundo = config.canvas.corFundo;
   const templateFundo = config.templateFundo || {};
-  const temTemplateFundo = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/') && templateFundo.visivel !== false;
+  const temTemplateFundo =
+    typeof templateFundo.url === 'string' &&
+    templateFundo.url.startsWith('data:image/') &&
+    (forcarTemplateVisivel ? true : templateFundo.visivel !== false);
   const area = config.areaVideo;
   // CORREÇÃO — editar/marcar a ÁREA DO VÍDEO NÃO depende de ter vídeo
   // selecionado: depende só de a célula ser interativa (`podeEditar`) e da
@@ -289,8 +284,7 @@ export default function EditorCanvas({
    * quando a alça é da borda esquerda/superior) — a MESMA geometria que o
    * render materializa (scale/crop/pad do FFmpeg): prévia = render. Cantos
    * mantêm a PROPORÇÃO; as laterais ajustam uma dimensão. NÃO mexe em
-   * `zoom`/`deslocamentoX/Y` (roda do mouse = enquadramento interno) nem em
-   * `corteBordas` (linhas tracejadas permanentes).
+   * `zoom`/`deslocamentoX/Y` (roda do mouse = enquadramento interno).
    */
   const aoRedimensionarVideo = (eixo) => gerarRedimensionarArea(eixo, atualizador, {
     aoInteragir: () => mostrarDicaEnquadramento('Redimensionando o vídeo…'),
@@ -390,24 +384,7 @@ export default function EditorCanvas({
   }, [podeEditarVideo, urlVideoAtiva, atualizador, areaN?.zoom, areaN, mostrarDicaEnquadramento]);
   // --------------------------------------------------------------------------
 
-  const logo = config.logo || {};
   const identidade = config.identidade || null;
-  const corte = corteEfetivoDoVideo(config, itemSelecionado?.id);
-  const corteAtivo = !!corte.ativo || !!(itemSelecionado?.id && config?.overridesPorVideo?.[itemSelecionado.id]);
-  const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.superior) || 0));
-  const corteInf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.inferior) || 0));
-  // CORTE — PREVIEW = RENDER (CORREÇÃO 3): o recorte visual (clip-path) usa a
-  // MESMA condição e os MESMOS valores que o render (template.corteBordas.
-  // ativo || override → drawbox no FFmpeg). Toggle desligado e sem override =
-  // prévia inteira E vídeo inteiro no render — nenhuma das pontas corta.
-  const corteMostraClip = corteAtivo && (corteSup > 0 || corteInf > 0);
-  const corteSupEfetivo = corteSup;
-  const corteInfEfetivo = corteInf;
-  // Linha inferior vive em `top: (100 − inferior)%` — EXATAMENTE o mesmo
-  // percentual efetivo do clip-path e do render (NENHUM cálculo visual à
-  // parte). Com a margem mínima imposta na fonte única (superior + inferior
-  // ≤ 90), a linha nunca cruza a superior e o vídeo nunca desaparece inteiro.
-  const posLinhaInferior = 100 - corteInf;
   const item = itemSelecionado;
   // Geometria do player: modo normal = ÁREA de composição (prévia = render);
   // conferência = canvas inteiro (o MP4 final já é o quadro completo).
@@ -416,9 +393,10 @@ export default function EditorCanvas({
   // da área, com o enquadramento definido por caixaEnquadramentoVideo).
   // SEM PREVIEW (`composicaoAtiva === false`): o vídeo aparece NORMAL, no
   // quadro inteiro 9:16 — a área marcada NÃO reposiciona/redimensiona o vídeo
-  // fora do preview (o centro mostra só os vídeos importados). COM PREVIEW (ou
-  // no modo de marcação): a camada do vídeo ocupa EXATAMENTE `areaVideo` — a
-  // MESMA geometria (x/y/largura/altura) que o render final usa.
+  // fora do preview (o centro mostra só os vídeos importados, sem véu/fosco).
+  // COM PREVIEW: a camada do vídeo ocupa EXATAMENTE `areaVideo` — a
+  // MESMA geometria (x/y/largura/altura) que o render final usa. Na MARCAÇÃO
+  // (Estado A) a camada de vídeo nem é montada (ver `!modoMarcacao` abaixo).
   const areaSemComposicao = { x: 0, y: 0, largura: CANVAS_LARGURA, altura: CANVAS_ALTURA };
   const areaPlayer = conferencia || !composicaoAtiva ? areaSemComposicao : area;
   const caixaPlayer = conferencia || !composicaoAtiva
@@ -434,7 +412,7 @@ export default function EditorCanvas({
 
   // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
-  // (ancho e alto). As linhas/faixas de corte usam top/height em % — posicionamento
+  // (ancho e alto). O guia da área usa top/height em % — posicionamento
   // independente da escala.
   const aoAtualizarDataset = useCallback(() => {
     const el = canvasRef.current;
@@ -505,75 +483,16 @@ export default function EditorCanvas({
             <img src={templateFundo.url} alt={templateFundo.nome || 'Template de fundo'} draggable={false} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
           </div>
         ) : null}
-        {/* CORTE DE BORDAS — guias PERMANENTES de ediçom: as linhas ficam
-            SEMPRE visíveis (referência visual da área de corte), independente
-            de qual camada está selecionada (Logo, Texto, Imagem, Selo, Vídeo…).
-            Clicar numa linha seleciona a camada "Corte de borda" e permite
-            arrastá-la. A área cortada revela o FUNDO DO CANVAS puro
-            (`corFundo` — BRANCO por padrão), SEM véu/faixa escura por cima: é
-            o MESMO `corFundo` que o render final usa pra cobrir o corte, então
-            prévia e processamento ficam visualmente idênticos. Cor NEUTRA
-            (nada de rosa/roxo). O corte em si continua visível na prévia pelo
-            clip-path da camada do vídeo (abaixo), sempre fiel ao render.
-            A LINHA NÃO CORTA nada: é só guia; a máscara real é o clip-path da
-            camada do vídeo (abaixo) — logo/textos/selo/imagens e os CONTROLES
-            do player ficam FORA dela (os controles, na camada fixa própria,
-            `data-edl-destino-controles`, no fundo do canvas). */}
-        {composicaoAtiva && !conferencia && (
-          <>
-            {/* Linha superior de corte */}
-            <div
-              role="slider"
-              aria-label="Corte superior"
-              aria-valuemin={0}
-              aria-valuemax={CORTE_MAXIMO}
-              aria-valuenow={Math.round(corteSup)}
-              aria-valuetext={`${Math.round(corteSup)}% da altura`}
-              data-elemento="corte"
-              data-posy={String(corteSup)}
-              onPointerDown={(e) => { selecionar('corte'); corredorSuperior(e); }}
-              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize ${podeEditar ? '' : 'pointer-events-none'}`}
-              style={{
-                top: `${corteSup}%`,
-                borderTop: '2px dashed rgba(148, 163, 184, 0.9)',
-              }}
-            >
-              {/* Alça visual central */}
-              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: '#94a3b8' }} />
-            </div>
-
-            {/* Linha inferior de corte */}
-            <div
-              role="slider"
-              aria-label="Corte inferior"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(posLinhaInferior)}
-              aria-valuetext={`${Math.round(posLinhaInferior)}% da altura`}
-              data-elemento="corte"
-              data-posy={String(posLinhaInferior)}
-              onPointerDown={(e) => { selecionar('corte'); corredorInferior(e); }}
-              className={`edl-corredor-corte absolute left-0 right-0 z-20 touch-none cursor-row-resize ${podeEditar ? '' : 'pointer-events-none'}`}
-              style={{
-                top: `${posLinhaInferior}%`,
-                borderBottom: '2px dashed rgba(148, 163, 184, 0.9)',
-              }}
-            >
-              {/* Alça visual central */}
-              <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm" style={{ background: '#94a3b8' }} />
-            </div>
-          </>
-        )}
-
-        {/* VÍDEO (original + edicoes da previa): sem corte mostra o quadro
-            completo (`contain`); com corte efetivo, a camada leva `clip-path`
-            com o mesmo % do render. Arquivo original intacto; `areaVideo` segue
-            como guia (so o FINAL compoe). NESTA camada recortada vive SOMENTE
-            o conteúdo visual do vídeo (e a dica de enquadramento): os CONTROLES
-            do player NÃO estão aqui — são portados pra camada fixa
-            `data-edl-destino-controles` (abaixo), fora do clip-path. O recorte
-            (clip-path) só existe na composição/preview. */}
-        <div className="absolute inset-0" style={composicaoAtiva && !conferencia && corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
+        {/* VÍDEO (original + edições da prévia) — NUNCA no ESTADO A (marcação):
+            só o template + o retângulo da área existem nessa tela (a marcação é
+            apenas geometria — o retângulo NÃO é container visual do vídeo). Fora
+            da marcação o vídeo aparece: no canvas INTEIRO (sem preview — vídeos
+            normais no centro), dentro da ÁREA marcada (Preview — cover, MESMA
+            geometria do render) ou em conferência (MP4 pronto). Os CONTROLES do
+            player NÃO estão aqui — são portados pra camada fixa
+            `data-edl-destino-controles` (abaixo). */}
+        {!modoMarcacao && (
+        <div className="absolute inset-0">
             {/* CAMADA DO VÍDEO — ocupa EXATAMENTE a ÁREA de composição: a área
               definida no Preview é o espaço real do vídeo no template (o vídeo
               preenche 100% da largura/altura da área, com o enquadramento/cover
@@ -664,13 +583,13 @@ export default function EditorCanvas({
             )}
           </div>
         </div>
+        )}
 
         {/* CAIXA DE SELEÇÃO + ALÇAS DO OBJETO DE VÍDEO (vídeo selecionado).
-            Vive FORA do clip-path (o corte nunca recorta as alças) e FORA da
-            camada do vídeo (não bloqueia o arraste do corpo: o contêiner é
-            `pointer-events-none` e SÓ as alças capturam o ponteiro). Arrastar
-            o corpo move; roda do mouse = zoom interno; linha tracejada =
-            corte; ALÇA = redimensiona o OBJETO (mesma geometria do render). */}
+            Vive FORA da camada do vídeo (não bloqueia o arraste do corpo: o
+            contêiner é `pointer-events-none` e SÓ as alças capturam o ponteiro).
+            Arrastar o corpo move; roda do mouse = zoom interno; ALÇA =
+            redimensiona o OBJETO (mesma geometria do render). */}
         {podeEditarVideo && urlVideoAtiva && elementoSelecionado === 'video' && (
           <div
             data-elemento="video"
@@ -756,16 +675,16 @@ export default function EditorCanvas({
 
         {/* ÁREA DO VÍDEO — GUIA da COMPOSIÇÃO FINAL (nunca recorta a prévia).
             O retângulo tracejado mostra ONDE o vídeo entra no vídeo FINAL
-            (`areaVideo` → scale/crop/pad do FFmpeg), mas a prévia segue
-            mostrando o VÍDEO ORIGINAL inteiro. É só ferramenta de ediçom: com a
+            (`areaVideo` → scale/crop/pad do FFmpeg). É SOMENTE marcação
+            geométrica (x/y/largura/altura): NÃO é container do vídeo — o
+            vídeo só aparece dentro dela no Preview (Estado B). Com a
             "Marcação da área" DESLIGADA fica invisível e `pointer-events-none`
-            (nunca atrapalha o player); LIGADA, a borda aparece em TODAS as
-            células — a VISIBILIDADE do guia é SÓ o toggle (`mostrarMarcacao`),
-            sem depender da camada estar selecionada no painel. Na célula
-            selecionada, LIGADO, pode ser arrastado/redimensionado (as alças
-            exigem a camada "Área do vídeo" selecionada).
-            MODO CONFERÊNCIA (vídeo PRONTO): a guia NÃO é desenhada — o final
-            já está composto e nada de edição sobrepõe o MP4. */}
+            (nunca atrapalha o player); no MODO DE MARCAÇÃO o guia fica
+            SEMPRE visível. Na célula selecionada pode ser arrastado/
+            redimensionado (as alças exigem a camada "Área do vídeo"
+            selecionada). MODO CONFERÊNCIA (vídeo PRONTO): a guia NÃO é
+            desenhada — o final já está composto e nada de edição sobrepõe o
+            MP4. */}
         {composicaoAtiva && !conferencia && (
         <div
           role={podeEditarArea ? 'button' : undefined}
@@ -777,7 +696,7 @@ export default function EditorCanvas({
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
           onPointerDown={podeEditarArea ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${area.mostrarMarcacao ? 'edl-guia-ativa' : ''} ${podeEditarArea ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${(area.mostrarMarcacao || mostraGuiaArea) ? 'edl-guia-ativa' : ''} ${podeEditarArea ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
@@ -785,14 +704,13 @@ export default function EditorCanvas({
             height: area.altura * escala,
             borderRadius: 8 * escala,
             cursor: podeEditarArea ? 'move' : 'default',
-            // Acima do template (z=1) e do vídeo (z=5), abaixo das linhas de
-            // corte (z=20): com o toggle ligado, o guia aparece SOBRE o
-            // vídeo/template em TODAS as células — antes ele ficava por trás
-            // (z-auto) e o template/vídeo o tapavam. DESLIGADO, o guia é
-            // invisível E pointer-events-none: nunca atrapalha o player.
+            // Acima do template (z=1) e do vídeo (z=5): com o toggle ligado,
+            // o guia aparece SOBRE o template em TODAS as células — antes ele
+            // ficava por trás (z-auto) e o template o tapava. DESLIGADO, o
+            // guia é invisível E pointer-events-none: nunca atrapalha o player.
             zIndex: 10,
-            border: area.mostrarMarcacao ? undefined : '2px dashed transparent',
-            backgroundColor: area.mostrarMarcacao ? undefined : 'transparent',
+            border: (area.mostrarMarcacao || mostraGuiaArea) ? undefined : '2px dashed transparent',
+            backgroundColor: (area.mostrarMarcacao || mostraGuiaArea) ? undefined : 'transparent',
           }}
         >
 
@@ -837,65 +755,13 @@ export default function EditorCanvas({
         </div>
         )}
 
-        {/* LOGO sobre o canvas — arrastável SÓ na célula selecionada. O onLoad
-            captura a proporção da imagem (altura/largura) que o template usa pra
-            calcular a altura em px do overlay. */}
-        {composicaoAtiva && !conferencia && logo.visivel && logo.url && (
-          <div
-            role={podeEditar ? 'button' : undefined}
-            tabIndex={podeEditar ? 0 : undefined}
-            aria-label="Arrastar logo"
-            data-elemento="logo"
-            data-x={logo.x}
-            data-y={logo.y}
-            onPointerDown={podeEditar ? (e) => { selecionar('logo'); arrastarLogo(e); } : undefined}
-            className={`edl-logo absolute ${podeEditar ? '' : 'pointer-events-none'} ${elementoSelecionado === 'logo' ? 'edl-elemento-selecionado' : ''}`}
-            style={{
-              left: `${logo.x}%`,
-              top: `${logo.y}%`,
-              width: `${logo.largura}%`,
-              transform: 'translate(-50%, 0)',
-              opacity: (logo.opacidade ?? 100) / 100,
-              // Acima da camada do vídeo original e do guia da área — mesma
-              // ordem do FFmpeg (vídeo/composição antes do overlay da logo).
-              zIndex: 17,
-            }}
-          >
-            <img
-              src={logo.url}
-              alt="Logo"
-              draggable={false}
-              onLoad={(e) => {
-                if (!podeEditar) return;
-                const img = e.currentTarget;
-                if (img.naturalWidth > 0) {
-                  const prop = img.naturalHeight / img.naturalWidth;
-                  if (Math.abs((logo.alturaProporcao || 0) - prop) > 0.001) {
-                    atualizador((cfg) => ({ ...cfg, logo: { ...cfg.logo, alturaProporcao: prop } }));
-                  }
-                }
-              }}
-              className="w-full h-auto pointer-events-none"
-            />
-            {/* Manija de redimensionar a logo (SÓ na célula editável) */}
-            {podeEditar && (
-              <span
-                role="slider"
-                aria-label="Redimensionar logo"
-                data-largura={String(logo.largura)}
-                onPointerDown={redimensionarLogo}
-                className="absolute w-4 h-4 rounded-full border-2 border-white shadow"
-                style={{ right: -8, bottom: -8, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
-              />
-            )}
-          </div>
-        )}
-
         {/* DOIS TEXTOS INDEPENDENTES (superior e inferior) — cada um tem
             conteúdo, posição, tamanho, largura, fonte, peso, cor, alinhamento,
             opacidade e visibilidade PRÓPRIOS. Arrastáveis SÓ na célula
-            selecionada; nas demais são SOMENTE visualização. */}
-        {composicaoAtiva && !conferencia && [
+            selecionada; nas demais são SOMENTE visualização.
+            Na marcação (Estado A) não aparecem: só o template + o retângulo da
+            área existem nessa tela (o vídeo entra apenas no Preview). */}
+        {composicaoAtiva && !conferencia && !modoMarcacao && [
           { chave: 'superior', rotulo: 'Texto superior', t: textoSup },
           { chave: 'inferior', rotulo: 'Texto inferior', t: textoInf },
         ].map(({ chave, rotulo, t }) => {
@@ -949,8 +815,10 @@ export default function EditorCanvas({
         {/* IDENTIDADE DO CANAL — nome do canal, @ do canal e selo azul de
             verificado: elementos INDEPENDENTES (posição/tamanho próprios).
             Editáveis SÓ na célula selecionada (nas demais, somente leitura).
-            Cada um seleciona sua camada no clique (Camadas ⇄ Preview). */}
-        {composicaoAtiva && !conferencia && (
+            Cada um seleciona sua camada no clique (Camadas ⇄ Preview).
+            Na marcação (Estado A) não aparecem: só o template + o retângulo da
+            área existem nessa tela. */}
+        {composicaoAtiva && !conferencia && !modoMarcacao && (
           <>
             <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeNome'} aoSelecionar={selecionar} />
             <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeUsuario'} aoSelecionar={selecionar} />
@@ -960,8 +828,10 @@ export default function EditorCanvas({
 
         {/* IMAGENS (Adicionar elementos → Imagem): cada imagem é UMA camada
             independente — arrastável, redimensionável e selecionável direto no
-            preview. MESMA geometria que o render compõe (prévia = render). */}
-        {composicaoAtiva && !conferencia && (config.imagens || []).map((im) => (
+            preview. MESMA geometria que o render compõe (prévia = render).
+            Na marcação (Estado A) não aparecem: só o template + o retângulo da
+            área existem nessa tela. */}
+        {composicaoAtiva && !conferencia && !modoMarcacao && (config.imagens || []).map((im) => (
           <ElementoImagem
             key={im.id}
             imagem={im}
@@ -972,16 +842,15 @@ export default function EditorCanvas({
           />
         ))}
 
-        {/* CONTROLES DO PLAYER — CAMADA FIXA do preview (FORA do clip-path).
+        {/* CONTROLES DO PLAYER — CAMADA FIXA do preview.
             Estrutura desejada do Preview:
-              ├── camada do VÍDEO      → recebe o clip-path (corte)
-              ├── overlays             → Logo · Texto · Imagem · Selo
+              ├── camada do VÍDEO      → vídeo na área marcada (cover)
+              ├── overlays             → Texto · Imagem · Selo
               └── CONTROLES DO PLAYER  → Play/Pause · Progresso · Volume
-            O ControlesVideo porta a barra exatamente pra cá: o corte afeta
-            SOMENTE o conteúdo visual do vídeo; os controles ficam fixos no
-            fundo do preview — nunca cortados, nunca reposicionados pelo corte,
-            sempre visíveis e 100% interativos. (O contêiner tem altura zero:
-            a barra ancorada nele cresce pra cima a partir do fundo do canvas.) */}
+            O ControlesVideo porta a barra exatamente pra cá: os controles
+            ficam fixos no fundo do preview, sempre visíveis e 100%
+            interativos. (O contêiner tem altura zero: a barra ancorada nele
+            cresce pra cima a partir do fundo do canvas.) */}
         <div
           ref={destinoControlesRef}
           data-edl-destino-controles="true"

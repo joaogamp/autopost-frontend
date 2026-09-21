@@ -45,7 +45,7 @@ export default function App() {
 
       {ehEditor ? (
         <main className="flex-1 min-w-0">
-          <EditorLote aoEncaminharParaAgendamento={() => mudarPagina('agendamento')} />
+          <EditorLote />
         </main>
       ) : (
         <main className="autopost-pages flex-1 min-w-0 px-6 sm:px-10 py-10 transition-all">
