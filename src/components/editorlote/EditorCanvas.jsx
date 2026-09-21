@@ -107,7 +107,23 @@ export default function EditorCanvas({
   // e callback pra selecionar/desselecionar. SÓ a célula editável seleciona.
   elementoSelecionado = null,
   aoSelecionarElemento,
+  // FLUXO SIMPLIFICADO — "Mostrar Preview" (REGRA 12): `previewAtivo=false`
+  // mostra SOMENTE o vídeo importado (sem template, sem composição na área,
+  // sem logo/textos, sem guias). `previewAtivo=true` desenha a composição
+  // final (template + vídeo dentro da área marcada + overlays), a MESMA
+  // geometria do render. `forcarTemplateVisivel=true` (modo de marcação no
+  // painel direito) mostra template + área mesmo fora do preview.
+  previewAtivo = true,
+  forcarTemplateVisivel = false,
 }) {
+  // A composição (template/overlays/guias) só aparece com o Preview ativo ou
+  // dentro do modo de marcação — o centro mostra "somente vídeos" antes disso.
+  const composicaoAtiva = previewAtivo || forcarTemplateVisivel;
+  // O GUIA tracejado da área do vídeo (e as alças/arraste do enquadramento) é
+  // FERRAMENTA DO MODO DE MARCAÇÃO: na prévia composta (Mostrar Preview) o
+  // centro mostra o resultado LIMPO, exatamente como o render final — a
+  // marcação nunca fica permanente sobre os vídeos.
+  const mostraGuiaArea = !previewAtivo || forcarTemplateVisivel;
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
   const [escala, setEscala] = useState(1);
@@ -134,7 +150,9 @@ export default function EditorCanvas({
   );
   // Em conferência a EDIÇÃO fica desligada (sem arraste/zoom/alças/overlays),
   // mas o player CONTINUA montado — é o que o usuário precisa assistir.
-  const podeEditarVideo = podeEditar && !conferencia;
+  // FLUXO SIMPLIFICADO: sem "Mostrar Preview" o centro mostra SOMENTE os
+  // vídeos importados — nada de composição, guias ou arraste de enquadramento.
+  const podeEditarVideo = podeEditar && !conferencia && composicaoAtiva && mostraGuiaArea;
 
   // Handlers — arrastre genérico por ruta: cada elemento es independente.
   // Nas células NÃO selecionadas (podeEditar=false) os handlers viram no-op.
@@ -396,10 +414,16 @@ export default function EditorCanvas({
   // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher — por
   // isso o player usa SEMPRE cover nesta camada (ocupa 100% da largura/altura
   // da área, com o enquadramento definido por caixaEnquadramentoVideo).
-  const areaPlayer = conferencia
-    ? { x: 0, y: 0, largura: CANVAS_LARGURA, altura: CANVAS_ALTURA }
-    : area;
-  const caixaPlayer = conferencia ? areaPlayer : caixa;
+  // SEM PREVIEW (`composicaoAtiva === false`): o vídeo aparece NORMAL, no
+  // quadro inteiro 9:16 — a área marcada NÃO reposiciona/redimensiona o vídeo
+  // fora do preview (o centro mostra só os vídeos importados). COM PREVIEW (ou
+  // no modo de marcação): a camada do vídeo ocupa EXATAMENTE `areaVideo` — a
+  // MESMA geometria (x/y/largura/altura) que o render final usa.
+  const areaSemComposicao = { x: 0, y: 0, largura: CANVAS_LARGURA, altura: CANVAS_ALTURA };
+  const areaPlayer = conferencia || !composicaoAtiva ? areaSemComposicao : area;
+  const caixaPlayer = conferencia || !composicaoAtiva
+    ? caixaEnquadramentoVideo(areaSemComposicao)
+    : caixa;
   // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o vídeo
   // preenche 100% da área (cover) no Preview e no render — nunca pequeno /
   // centralizado dentro dela. O `fit` do template é normalizado para 'cobrir'
@@ -476,7 +500,7 @@ export default function EditorCanvas({
             Importar Template PREENCHE o canvas 9:16 por completo (cover: 100%
             largura/altura, centralizado, proporção preservada). O video ocupa
             SOMENTE a areaVideo sobre ele. Somente leitura. */}
-        {temTemplateFundo ? (
+        {composicaoAtiva && temTemplateFundo ? (
           <div data-template-fundo="true" className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }} aria-hidden="true">
             <img src={templateFundo.url} alt={templateFundo.nome || 'Template de fundo'} draggable={false} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
           </div>
@@ -495,7 +519,7 @@ export default function EditorCanvas({
             camada do vídeo (abaixo) — logo/textos/selo/imagens e os CONTROLES
             do player ficam FORA dela (os controles, na camada fixa própria,
             `data-edl-destino-controles`, no fundo do canvas). */}
-        {!conferencia && (
+        {composicaoAtiva && !conferencia && (
           <>
             {/* Linha superior de corte */}
             <div
@@ -547,8 +571,9 @@ export default function EditorCanvas({
             como guia (so o FINAL compoe). NESTA camada recortada vive SOMENTE
             o conteúdo visual do vídeo (e a dica de enquadramento): os CONTROLES
             do player NÃO estão aqui — são portados pra camada fixa
-            `data-edl-destino-controles` (abaixo), fora do clip-path. */}
-        <div className="absolute inset-0" style={!conferencia && corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
+            `data-edl-destino-controles` (abaixo), fora do clip-path. O recorte
+            (clip-path) só existe na composição/preview. */}
+        <div className="absolute inset-0" style={composicaoAtiva && !conferencia && corteMostraClip ? { clipPath: `inset(${corteSupEfetivo}% 0 ${corteInfEfetivo}% 0)` } : undefined}>
             {/* CAMADA DO VÍDEO — ocupa EXATAMENTE a ÁREA de composição: a área
               definida no Preview é o espaço real do vídeo no template (o vídeo
               preenche 100% da largura/altura da área, com o enquadramento/cover
@@ -741,7 +766,7 @@ export default function EditorCanvas({
             exigem a camada "Área do vídeo" selecionada).
             MODO CONFERÊNCIA (vídeo PRONTO): a guia NÃO é desenhada — o final
             já está composto e nada de edição sobrepõe o MP4. */}
-        {!conferencia && (
+        {composicaoAtiva && !conferencia && (
         <div
           role={podeEditarArea ? 'button' : undefined}
           tabIndex={podeEditarArea ? 0 : undefined}
@@ -815,7 +840,7 @@ export default function EditorCanvas({
         {/* LOGO sobre o canvas — arrastável SÓ na célula selecionada. O onLoad
             captura a proporção da imagem (altura/largura) que o template usa pra
             calcular a altura em px do overlay. */}
-        {!conferencia && logo.visivel && logo.url && (
+        {composicaoAtiva && !conferencia && logo.visivel && logo.url && (
           <div
             role={podeEditar ? 'button' : undefined}
             tabIndex={podeEditar ? 0 : undefined}
@@ -870,7 +895,7 @@ export default function EditorCanvas({
             conteúdo, posição, tamanho, largura, fonte, peso, cor, alinhamento,
             opacidade e visibilidade PRÓPRIOS. Arrastáveis SÓ na célula
             selecionada; nas demais são SOMENTE visualização. */}
-        {!conferencia && [
+        {composicaoAtiva && !conferencia && [
           { chave: 'superior', rotulo: 'Texto superior', t: textoSup },
           { chave: 'inferior', rotulo: 'Texto inferior', t: textoInf },
         ].map(({ chave, rotulo, t }) => {
@@ -925,7 +950,7 @@ export default function EditorCanvas({
             verificado: elementos INDEPENDENTES (posição/tamanho próprios).
             Editáveis SÓ na célula selecionada (nas demais, somente leitura).
             Cada um seleciona sua camada no clique (Camadas ⇄ Preview). */}
-        {!conferencia && (
+        {composicaoAtiva && !conferencia && (
           <>
             <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeNome'} aoSelecionar={selecionar} />
             <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeUsuario'} aoSelecionar={selecionar} />
@@ -936,7 +961,7 @@ export default function EditorCanvas({
         {/* IMAGENS (Adicionar elementos → Imagem): cada imagem é UMA camada
             independente — arrastável, redimensionável e selecionável direto no
             preview. MESMA geometria que o render compõe (prévia = render). */}
-        {!conferencia && (config.imagens || []).map((im) => (
+        {composicaoAtiva && !conferencia && (config.imagens || []).map((im) => (
           <ElementoImagem
             key={im.id}
             imagem={im}
@@ -975,7 +1000,7 @@ export default function EditorCanvas({
       {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}
       {mostrarRodape && (
         <p className="text-[9px] font-semibold mt-3" style={{ color: 'var(--edl-texto-mut)' }}>
-          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • prévia: vídeo original • encaixe do final: {area.fit}
+          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • {composicaoAtiva ? 'prévia: template + vídeo na área marcada' : 'prévia: somente os vídeos importados'} • encaixe do final: {area.fit}
         </p>
       )}
     </div>

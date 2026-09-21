@@ -134,9 +134,9 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
           )}
           {enviando
             ? progresso
-              ? `Enviando ${progresso.enviados}/${progresso.total}…`
-              : 'Enviando...'
-            : 'Escolher vídeos locais'}
+              ? `Importando ${progresso.enviados}/${progresso.total}…`
+              : 'Importando...'
+            : 'Importar vídeos'}
         </button>
         <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
           Upload real no servidor (ffprobe + thumbnail + biblioteca). Os vídeos aparecem na lista abaixo.

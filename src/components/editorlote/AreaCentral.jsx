@@ -12,7 +12,9 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  * textos, identidade, área do vídeo e corte de bordas aparecen iguais em
  * todas as células).
  *
- * 1X / 2X / 3X = modo de visualização do espaço central:
+ * 6X / 1X / 2X / 3X = modo de visualização do espaço central (padrão 6X):
+ * - 6X (GRADE PADRÃO DO LOTE): 6 vídeos DIFERENTES por fileira, continuando
+ *   nas linhas seguintes: [V1][V2][V3][V4][V5][V6] / [V7][V8]...
  * - 1X (VÍDEO ÚNICO/DESTAQUE): SOMENTE o vídeo selecionado no centro — É o
  *   preview principal editável. Não mostra outro vídeo abaixo: NÃO continua
  *   a lista de vídeos neste modo;
@@ -20,7 +22,13 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  *   seguintes: [V1][V2] / [V3][V4] / [V5][V6] ...;
  * - 3X (MÚLTIPLOS): 3 vídeos DIFERENTES lado a lado, continuando nas linhas
  *   seguintes: [V1][V2][V3] / [V4][V5][V6] / [V7][V8][V9] ....
- * NUNCA repite o mesmo vídeo; scroll VERTICAL mostra os demais (2X/3X).
+ * NUNCA repite o mesmo vídeo; scroll VERTICAL mostra os demais.
+ *
+ * PRÉVIA x VÍDEOS (fluxo simplificado): com `previewAtivo = false` o centro
+ * mostra SOMENTE os vídeos importados (sem template, sem composição, 6 por
+ * fileira). O template/área só entram na tela quando o usuário clica em
+ * "Mostrar Preview" (painel DIREITO — PainelFluxo): aí cada célula passa a
+ * mostrar template + vídeo dentro da área marcada (MESMA geometria do render).
  *
  * Edição COMPARTILHADA: clicar numa célula selecciona o vídeo principal
  * (idêntico a clicar na esquerda). SÓ a célula selecionada é interativa
@@ -50,6 +58,7 @@ const MODOS_AREA = [
   { colunas: 1, rotulo: '1X', titulo: '1X — vídeo único (destaque)' },
   { colunas: 2, rotulo: '2X', titulo: '2X — 2 vídeos lado a lado' },
   { colunas: 3, rotulo: '3X', titulo: '3X — 3 vídeos lado a lado' },
+  { colunas: 6, rotulo: '6X', titulo: '6X — 6 vídeos por fileira (grade padrão do lote)' },
 ];
 
 function AreaCentral(p) {
@@ -70,7 +79,7 @@ function AreaCentral(p) {
   const celulaSelRef = useRef(null);
   const [selFuera, setSelFuera] = useState(false);
   const [limite, setLimite] = useState(JANELA);
-  const [colunas, setColunas] = useState(1);
+  const [colunas, setColunas] = useState(6);
   // 1X = modo de VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro,
   // sem continuar a lista abaixo. 2X/3X = múltiplos vídeos lado a lado.
   const modoUnico = colunas === 1;
@@ -127,7 +136,7 @@ function AreaCentral(p) {
     obs.observe(celda);
     return () => obs.disconnect();
   }, [colunas, seleccionadoItem ? seleccionadoItem.id : null]);
-  const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : 300;
+  const alturaPorCelula = colunas === 1 ? 660 : colunas === 2 ? 380 : colunas === 3 ? 300 : 260;
   const gradeCls = 'edl-grade-previews grid gap-3 w-full';
   const modoUnicoCls = 'w-full max-w-[560px] mx-auto mt-3';
   // Clave do reproductor por modo (1X/2X/3X) + visibilidad: qualquer cambio
@@ -143,6 +152,14 @@ function AreaCentral(p) {
           {itens.length}
         </span>
         <div className="flex-1" />
+        {/* O botão "Mostrar Preview" vive no PAINEL DIREITO (PainelFluxo) — sem
+            duplicar a ação aqui. O selo abaixo só indica que a composição
+            (template + área marcada) está aplicada nos vídeos do centro. */}
+        {p.previewAtivo ? (
+          <span className="shrink-0 text-[9px] font-black px-2 py-0.5 rounded-full" style={{ background: 'rgba(34,197,94,0.18)', color: '#4ade80' }}>
+            PREVIEW
+          </span>
+        ) : null}
         <div className="flex items-center gap-0.5 edl-superficie rounded-lg p-0.5 shrink-0" role="group" aria-label="Vídeos lado a lado">
           {MODOS_AREA.map((m) => (
             <button key={m.colunas} type="button" title={m.titulo} aria-pressed={colunas === m.colunas} onClick={() => setColunas(m.colunas)} className="edl-ring-foco w-8 h-6 rounded-md text-[10px] font-black transition-colors" style={colunas === m.colunas ? { background: 'var(--edl-grad)', color: '#fff' } : { color: 'var(--edl-texto-mut)' }}>
@@ -186,6 +203,7 @@ function AreaCentral(p) {
                 aoSelecionarElemento={p.aoSelecionarElemento}
                 base
                 aoRemoverBase={aoRemoverItem ? () => aoRemoverItem(seleccionadoItem) : undefined}
+                previewAtivo={!!p.previewAtivo}
               />
             </div>
           ) : (
@@ -219,6 +237,9 @@ function AreaCentral(p) {
                 referenciaSel={item.id === idSelecionado ? celulaSelRef : undefined}
                 elementoSelecionado={p.elementoSelecionado}
                 aoSelecionarElemento={p.aoSelecionarElemento}
+                /* Cada célula recebe a MESMA flag de preview da área central:
+                   antes do clique em "Mostrar Preview" nenhuma célula compõe. */
+                previewAtivo={!!p.previewAtivo}
               />
             ))}
           </div>
@@ -277,6 +298,7 @@ function CelulaVideo(props) {
              lixeira que remove o vídeo base do Editor (local, sem apagar o
              arquivo original). */
           base={selecionado}
+          previewAtivo={!!props.previewAtivo}
           aoRemoverBase={
             selecionado && props.aoRemoverItem ? () => props.aoRemoverItem(item) : undefined
           }

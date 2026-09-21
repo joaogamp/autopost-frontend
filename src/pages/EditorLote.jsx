@@ -1,22 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderEditor from '../components/editorlote/HeaderEditor';
 import AreaCentral from '../components/editorlote/AreaCentral';
-import PainelEditor from '../components/editorlote/PainelEditor';
-import PainelCamadas from '../components/editorlote/PainelCamadas';
+import PainelFluxo from '../components/editorlote/PainelFluxo';
 import PainelDownloads from '../components/editorlote/PainelDownloads';
 import ListaVideos from '../components/editorlote/ListaVideos';
 import { usePoolDeVideos } from '../hooks/usePoolDeVideos';
 import {
   criarConfigPadrao,
   criarConfigLimpaDeLote,
-  criarIdentidadePadrao,
   loteTemEdicoesAtivas,
   normalizarConfigEditor,
 } from '../lib/configEditorLote';
-import { detectarBordasDoVideo } from '../lib/detectorBordas.js';
-import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo, listarFinais, enviarVideos } from '../lib/api';
-import ModalSelecionarTemplate from '../components/editorlote/ModalSelecionarTemplate';
-import { templateParaConfigEditor, metaDoTemplate } from '../lib/templateParaConfigEditor';
+import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
 import {
   configParaTemplatePayload,
   assinarConfig,
@@ -25,32 +20,43 @@ import {
 } from '../lib/mapearEditorLote';
 
 /**
- * EDITOR EM LOTE — página (header + 3 colunas), conectada ao FLUXO REAL:
+ * EDITOR EM LOTE — página (header + 3 colunas) com o FLUXO SIMPLIFICADO:
  *
- *   ESQUERDA  PainelDownloads + ListaVideos — importa videos LOCAIS
- *                               (upload REAL no servidor) + lista dos videos
- *                               importados (clicar seleciona o video principal).
+ *   1) IMPORTAR VÍDEOS       (esquerda) — PainelDownloads: seletor múltiplo de
+ *      arquivos do computador → upload REAL (POST /api/upload: ffprobe +
+ *      thumbnail + biblioteca) → os vídeos entram NA HORA na lista (ListaVideos)
+ *      e no CENTRO (AreaCentral → EditorCanvas), SEM template, SEM moldura.
  *
- *   CENTRO    AreaCentral — O PROPRIO ESPACO CENTRAL mostra os MESMOS videos
- *                               da esquerda (sem secao separada, sem faixa
- *                               abaixo do preview). Topo com botoes 1X/2X/3X =
- *                               SOMENTE qtd. de videos lado a lado (1/2/3
- *                               videos DIFERENTES por linha, demais nas linhas
- *                               seguintes). Cada celula usa o MESMO
- *                               EditorCanvas (config COMPARTILHADA); clicar
- *                               seleciona o video principal editavel (SOMENTE
- *                               a celula selecionada edita).
+ *   2) IMPORTAR TEMPLATE     (direita / PainelFluxo) — seletor de imagem
+ *      (PNG/JPG/WebP) → vira `config.templateFundo` (TEMPLATE BASE do lote).
+ *      NÃO vai para o centro; NÃO substitui os vídeos; NÃO é convertido em vídeo.
  *
- *   DIREITA   PainelEditor     — controles da CONFIG COMPARTILHADA (vale pro
- *                               lote inteiro, sem botão "Aplicar a todos"):
- *                               Logo (popup grande) · Texto superior/inferior ·
- *                               Área do vídeo · Corte de bordas
+ *   3) MARCAR ÁREA DO VÍDEO  (direita / PainelFluxo) — abre o MODO DE MARCAÇÃO:
+ *      o MESMO EditorCanvas mostra o TEMPLATE com o retângulo da área do vídeo,
+ *      arrastável/redimensionável (arraste.js). A área é somente GEOMETRIA
+ *      (x/y/largura/altura em `config.areaVideo`) — nunca redimensiona o
+ *      template nem o vídeo original. O centro continua só com os vídeos.
  *
- * PRÉVIA x PROCESSAMENTO: o canvas (AreaCentral → EditorCanvas) mostra SEMPRE
- * o VÍDEO ORIGINAL NORMAL (quadro completo, `contain`) + logo/textos/
- * identidade — a área de composiçom (`areaVideo`) é apenas um GUIA tracejado e
- * o corte automático de bordas NÃO aparece na prévia: ambos são aplicados
- * SOMENTE no processamento final (template → FFmpeg/worker).
+ *   4) MOSTRAR PREVIEW       (direita / PainelFluxo) — `previewAtivo` liga a
+ *      composição: o CENTRO passa a mostrar TODOS os vídeos em grade de 6 por
+ *      fileira, cada um com O MESMO template + A MESMA área marcada (vídeo
+ *      cobrindo 100% da área, `cover`). Desligado, o centro volta a mostrar
+ *      somente os vídeos importados.
+ *
+ *   CENTRO    AreaCentral — os MESMOS vídeos da lista (sem lista duplicada),
+ *   em grade: 6X (padrão do lote: 6 por fileira, o resto nas linhas seguintes),
+ *   além de 1X/2X/3X. Cada célula usa o MESMO EditorCanvas (config
+ *   COMPARTILHADA); clicar seleciona o vídeo principal.
+ *
+ *   DIREITA   PainelFluxo — SOMENTE o fluxo do template: importar template ·
+ *   marcar espaço do vídeo · mostrar preview · importar logo (opcional). O
+ *   template JÁ contém a arte final (fundo, textos, formas, logo): o AutoPost
+ *   NÃO reconstrói elementos do template — apenas define a área do vídeo,
+ *   coloca o vídeo nela e gera o preview.
+ *
+ * PRÉVIA x PROCESSAMENTO: a prévia e o render usam a MESMA geometria —
+ * `config.areaVideo` (x/y/largura/altura) é a única fonte da posição do vídeo
+ * e viaja para o template do servidor exatamente como está na tela.
  *
  * LIXEIRA: a lista (ListaVideos) e o card do VÍDEO BASE (AreaCentral) têm uma
  * lixeira discreta que remove o vídeo da LISTA do Editor — remoção LOCAL
@@ -411,18 +417,15 @@ function carregarLoteSalvo() {
     const idSelecionado = itens.some((it) => it.id === dados.idSelecionado)
       ? dados.idSelecionado
       : null;
-    // templateId/assinatura/templateBase pertencem ao LOTE: só voltam em
-    // continuação da mesma sessão. Sessão nova começa sem template — o próximo
-    // "Processar" salva um template NOVO com a config limpa.
-    // templateBase = { id, nome } — metadados do template BASE escolhido via
-    // "Adicionar template" (só exibição; o contrato /api/lote usa templateId).
+    // templateId/assinatura pertencem ao LOTE: só voltam em continuação da
+    // mesma sessão. Sessão nova começa sem template — o próximo
+    // "Implementar vídeo" salva um template NOVO com a config limpa.
     return {
       itens,
       config,
       idSelecionado,
       templateId: mesmaSessao ? dados.templateId || null : null,
       assinatura: mesmaSessao ? dados.assinatura || null : null,
-      templateBase: mesmaSessao && dados.templateBase && dados.templateBase.id ? dados.templateBase : null,
     };
   } catch {
     return null;
@@ -430,7 +433,7 @@ function carregarLoteSalvo() {
 }
 
 /** GRAVA o estado atual do editor no localStorage (autosave + botão Salvar). */
-function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura, logoDataUrl, templateBase }) {
+function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura, logoDataUrl }) {
   try {
     const carga = JSON.stringify({
       itens: itensParaSalvar(itens),
@@ -438,7 +441,6 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
       idSelecionado: idSelecionado || null,
       templateId: templateId || null,
       assinatura: assinatura || null,
-      templateBase: templateBase && templateBase.id ? templateBase : null,
     });
     try {
       localStorage.setItem(CHAVE_LOTE, carga);
@@ -455,7 +457,6 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
               idSelecionado: idSelecionado || null,
               templateId: templateId || null,
               assinatura: assinatura || null,
-              templateBase: templateBase && templateBase.id ? templateBase : null,
             })
           );
         } catch {
@@ -478,12 +479,11 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
   const [enfileirando, setEnfileirando] = useState(false);
   const [templateIdSalvo, setTemplateIdSalvo] = useState(() => loteSalvo?.templateId || null);
   const [assinaturaSalva, setAssinaturaSalva] = useState(() => loteSalvo?.assinatura || null);
-  // FLUXO NOVO — template BASE escolhido via "Adicionar template" (UM por vez).
-  // { id, nome } — só metadados p/ exibição; o contrato /api/lote usa templateIdSalvo.
-  const [templateBase, setTemplateBase] = useState(() => loteSalvo?.templateBase || null);
-  const [modalTemplateAberto, setModalTemplateAberto] = useState(false);
-  const [enviandoVideoTemplate, setEnviandoVideoTemplate] = useState(false);
-  const inputVideoTemplateRef = useRef(null);
+  // MOSTRAR PREVIEW (fluxo simplificado): desligado, o CENTRO mostra SOMENTE
+  // os vídeos importados (grade de 6 por fileira); ligado, aplica o MESMO
+  // template + a MESMA área marcada em TODOS os vídeos. Estado transitório de
+  // apresentação — não é persistido no localStorage.
+  const [previewAtivo, setPreviewAtivo] = useState(false);
   const [toast, setToast] = useState(null);
   // ELEMENTO SELECIONADO no Preview (Camadas ⇄ Preview ⇄ configuração à
   // esquerda): 'logo' | 'textoSuperior' | 'textoInferior' | 'identidadeNome' |
@@ -606,7 +606,6 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
     idSelecionado,
     templateId: templateIdSalvo,
     assinatura: assinaturaSalva,
-    templateBase,
   };
 
   // VALIDAÇÃO DA RESTAURAÇÃO (1× por mount): confere o `bibliotecaId` de cada
@@ -702,13 +701,12 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
           idSelecionado,
           templateId: templateIdSalvo,
           assinatura: assinaturaSalva,
-          templateBase,
           logoDataUrl: logoDataUrlRef.current?.dataUrl || null,
         }),
       350
     );
     return () => clearTimeout(timer);
-  }, [itens, config, idSelecionado, templateIdSalvo, assinaturaSalva, templateBase]);
+  }, [itens, config, idSelecionado, templateIdSalvo, assinaturaSalva]);
 
   // Flush no unmount: garante que o ÚLTIMO estado vá pro localStorage mesmo
   // que o usuário saia da aba dentro da janela do debounce (trocar de página
@@ -748,91 +746,8 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
 
-  // FLUXO NOVO — "Adicionar template": aplica UM template existente como BASE.
-  // Substitui a config COMPARTILHADA (conversao template -> config, sem criar
-  // segundo sistema), invalida o templateIdSalvo (proximo "Implementar" salva
-  // um template NOVO com a config aplicada) e guarda { id, nome } p/ exibicao.
-  const aplicarTemplateBase = useCallback((template) => {
-    if (!template || !template.id) return;
-    setConfig((cfg) => templateParaConfigEditor(template, { loteId: cfg?.loteId || null, loteCriadoEm: cfg?.loteCriadoEm || null }));
-    setTemplateIdSalvo(null);
-    setAssinaturaSalva(null);
-    setTemplateBase(metaDoTemplate(template));
-    setModalTemplateAberto(false);
-    mostrarToast(`Template "${template.nome || 'template'}" aplicado como BASE do lote.`);
-  }, [mostrarToast]);
-
-  // FLUXO NOVO — "Adicionar video ao template": upload REAL via POST
-  // /api/upload (enviarVideos, MESMO fluxo do PainelDownloads) e o video entra
-  // na LISTA do Editor com bibliotecaId/thumbnail/duracao — o centro (AreaCentral
-  // -> EditorCanvas) mostra o video DENTRO da areaVideo do template BASE.
-  const aoEscolherVideoTemplate = useCallback(async (e) => {
-    const arquivos = Array.from(e?.target?.files || []);
-    if (e?.target) e.target.value = '';
-    if (arquivos.length === 0 || enviandoVideoTemplate) return;
-    setEnviandoVideoTemplate(true);
-    try {
-      const resp = await enviarVideos(arquivos.slice(0, 1));
-      const v = resp && Array.isArray(resp.videos) ? resp.videos[0] : null;
-      if (!v || !v.id) throw new Error('Upload sem retorno de id — tente novamente.');
-      const ext = (/(\.[A-Za-z0-9]{1,8})$/.exec(String(v.nomeOriginal || '')) || [])[1] || '.mp4';
-      preservarSemBaseRef.current = false;
-      aoAdicionarVideo({
-        id: v.id,
-        bibliotecaId: v.id,
-        nome: v.nomeOriginal || arquivos[0].name || null,
-        thumbnail: v.thumbnailUrl ? urlArquivo(v.thumbnailUrl) : null,
-        urlFonte: urlArquivo(`/arquivos/uploads/${v.id}${ext}`),
-        duracao: v.duracaoSegundos ? `${v.duracaoSegundos}s` : null,
-        status: 'pronto',
-      });
-      mostrarToast('Video adicionado ao template — confira no centro do Editor.');
-    } catch (erro) {
-      mostrarToast(erro?.message || 'Falha no upload do video.', 'erro');
-    } finally {
-      setEnviandoVideoTemplate(false);
-    }
-  }, [aoAdicionarVideo, enviandoVideoTemplate, mostrarToast]);
-
-
-  // ACAO "Corte automatico de bordas" — ÚNICO momento de detecção (regra
-  // definitiva): analisa cada vídeo importado individualmente (20 frames
-  // amostrados 16–24 pelo detector ESTRUTURAL, sem MP4, sem tocar o original),
-  // guarda o resultado em `overridesPorVideo` e o preview mostra na hora via
-  // clip. "Implementar vídeo" NÃO detecta nada: apenas materializa o que está
-  // salvo aqui. Fail-open por vídeo: sem confiança, fica 0/0 (vídeo NORMAL).
-  const [detectandoBordas, setDetectandoBordas] = useState(false);
-  const [progressoBordas, setProgressoBordas] = useState(null);
-  const aoDetectarBordas = useCallback(async () => {
-    if (detectandoBordas) return;
-    const alvos = (itens || []).filter((it) => it && (it.urlFonte || it.url));
-    if (alvos.length === 0) { mostrarToast('Importe videos antes do corte automatico.', 'erro'); return; }
-    setDetectandoBordas(true);
-    try {
-      const saidas = {};
-      for (let i = 0; i < alvos.length; i++) {
-        const it = alvos[i];
-        setProgressoBordas({ atual: i + 1, total: alvos.length, nome: it.nome || `video ${i + 1}` });
-        const src = it.urlFonte || it.url;
-        const r = await detectarBordasDoVideo(src, () => {});
-        if (r && r.confiavel && ((Number(r.superior) || 0) > 0 || (Number(r.inferior) || 0) > 0)) {
-          saidas[it.id] = { superior: r.superior, inferior: r.inferior, origem: 'auto', em: Date.now() };
-        }
-      }
-      const n = Object.keys(saidas).length;
-      if (n > 0) {
-        setConfig((cfg) => ({ ...cfg, overridesPorVideo: { ...(cfg.overridesPorVideo || {}), ...saidas } }));
-        mostrarToast(`${n} video(s) com bordas detectadas — preview atualizado.`);
-      } else {
-        mostrarToast('Nenhuma borda relevante encontrada — videos seguem normais.');
-      }
-    } catch (erro) {
-      mostrarToast(erro?.message || 'Falha na deteccao de bordas.', 'erro');
-    } finally {
-      setDetectandoBordas(false);
-      setProgressoBordas(null);
-    }
-  }, [itens, detectandoBordas, mostrarToast]);
+  // POOL: focar um vídeo (hover na lista/célula) pede o carregamento dele — o
+  // pool mantém no máximo 3 vídeos completos e libera os que saem de foco.
   const aoFocar = useCallback((item) => pool.solicitar(item.id), [pool.solicitar]);
 
   /**
@@ -1316,37 +1231,6 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
           <div className="shrink-0 px-3 py-3 border-b border-[color:var(--edl-borda)]">
             <h2 className="font-display text-xs font-extrabold text-white uppercase tracking-wider">Vídeos Importados</h2>
           </div>
-          {/* FLUXO NOVO — template BASE + video no template (sem mexer no fluxo existente abaixo) */}
-          <div className="shrink-0 px-3 pt-3 space-y-2">
-            <button
-              type="button"
-              onClick={() => setModalTemplateAberto(true)}
-              className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg"
-            >
-              + Adicionar template
-            </button>
-            {templateBase && templateBase.id ? (
-              <p className="text-[10px] font-bold truncate" style={{ color: 'var(--edl-texto-dim)' }} title={templateBase.nome || templateBase.id}>
-                Template: {templateBase.nome || templateBase.id}
-              </p>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => inputVideoTemplateRef.current?.click()}
-              disabled={!templateBase || !templateBase.id || enviandoVideoTemplate}
-              title={!templateBase || !templateBase.id ? 'Adicione um template primeiro' : 'Escolhe um video do computador e coloca na area de video do template'}
-              className="edl-botao-grad w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg disabled:opacity-50"
-            >
-              {enviandoVideoTemplate ? 'Enviando...' : '+ Adicionar vídeo ao template'}
-            </button>
-            <input
-              ref={inputVideoTemplateRef}
-              type="file"
-              accept="video/*,.mp4,.mov,.webm,.mkv,.avi"
-              onChange={aoEscolherVideoTemplate}
-              className="hidden"
-            />
-          </div>
           <div className="p-3">
              <PainelDownloads aoAdicionarVideo={aoAdicionarVideo} />
           </div>
@@ -1361,8 +1245,9 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
           </div>
         </aside>
 
-        {/* CENTRO — PREVIEW SEMPRE VISÍVEL */}
-        <section className="edl-preview-central min-w-0 flex flex-col h-full" aria-label="Preview da composição">
+        {/* CENTRO — VÍDEOS (grade de 6 por fileira). Com o Preview ligado, cada
+            célula mostra o MESMO template + a MESMA área marcada. */}
+        <section className="edl-preview-central min-w-0 flex flex-col h-full" aria-label="Vídeos do lote">
           <AreaCentral
             itens={itens}
             idSelecionado={idSelecionado}
@@ -1375,37 +1260,23 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
             aoRemoverItem={aoRemoverVideo}
             elementoSelecionado={elementoSelecionado}
             aoSelecionarElemento={setElementoSelecionado}
+            previewAtivo={previewAtivo}
           />
         </section>
 
-        {/* DIREITA — CAMADAS */}
-        <aside className="edl-painel-direita min-w-0 grid grid-cols-2 border-l border-[color:var(--edl-borda)] h-full" aria-label="Painéis da direita">
-          <div className="edl-painel-ferramentas min-w-0 flex flex-col border-r border-[color:var(--edl-borda)] h-full">
-            <PainelEditor
-              config={config}
-              aoAtualizarConfig={setConfig}
-              elementoSelecionado={elementoSelecionado}
-              aoSelecionarElemento={setElementoSelecionado}
-              itensLote={itens}
-              aoDetectarBordas={aoDetectarBordas}
-              detectandoBordas={detectandoBordas}
-              progressoBordas={progressoBordas}
-              itens={itens}
-              idSelecionado={idSelecionado}
-              aoSelecionarVideo={aoSelecionar}
-              aoFocarVideo={aoFocar}
-              aoRemoverVideo={aoRemoverVideo}
-              aoAdicionarVideo={aoAdicionarVideo}
-            />
-          </div>
-          <div className="edl-painel-camadas min-w-0 flex flex-col h-full">
-            <PainelCamadas
-              config={config}
-              aoAtualizarConfig={setConfig}
-              elementoSelecionado={elementoSelecionado}
-              aoSelecionarElemento={setElementoSelecionado}
-            />
-          </div>
+        {/* DIREITA — FLUXO DO TEMPLATE (painel único e simples): importar
+            template · marcar espaço do vídeo · mostrar preview · logo (opcional) */}
+        <aside className="edl-painel-direita min-w-0 flex flex-col border-l border-[color:var(--edl-borda)] h-full" aria-label="Template do lote">
+          <PainelFluxo
+            config={config}
+            aoAtualizarConfig={setConfig}
+            previewAtivo={previewAtivo}
+            aoAlternarPreview={setPreviewAtivo}
+            itemMarcacao={itemSelecionado || itens[0] || null}
+            urlVideoAtiva={urlVideoAtiva}
+            elementoSelecionado={elementoSelecionado}
+            aoSelecionarElemento={setElementoSelecionado}
+          />
         </aside>
       </div>
 
@@ -1424,13 +1295,6 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
           />
           <span className="text-[11px] font-bold text-white">{toast.mensagem}</span>
         </div>
-      )}
-      {modalTemplateAberto && (
-        <ModalSelecionarTemplate
-          aoFechar={() => setModalTemplateAberto(false)}
-          aoEscolher={aplicarTemplateBase}
-          templateAtualId={templateBase?.id || null}
-        />
       )}
     </div>
   );
