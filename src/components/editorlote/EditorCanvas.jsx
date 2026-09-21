@@ -734,8 +734,11 @@ export default function EditorCanvas({
             (`areaVideo` → scale/crop/pad do FFmpeg), mas a prévia segue
             mostrando o VÍDEO ORIGINAL inteiro. É só ferramenta de ediçom: com a
             "Marcação da área" DESLIGADA fica invisível e `pointer-events-none`
-            (nunca atrapalha o player); LIGADA, pode ser arrastado/
-            redimensionado na célula selecionada.
+            (nunca atrapalha o player); LIGADA, a borda aparece em TODAS as
+            células — a VISIBILIDADE do guia é SÓ o toggle (`mostrarMarcacao`),
+            sem depender da camada estar selecionada no painel. Na célula
+            selecionada, LIGADO, pode ser arrastado/redimensionado (as alças
+            exigem a camada "Área do vídeo" selecionada).
             MODO CONFERÊNCIA (vídeo PRONTO): a guia NÃO é desenhada — o final
             já está composto e nada de edição sobrepõe o MP4. */}
         {!conferencia && (
@@ -749,7 +752,7 @@ export default function EditorCanvas({
           data-largura={String(area.largura)}
           data-altura={String(area.altura)}
           onPointerDown={podeEditarArea ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${podeEditarArea && elementoSelecionado === 'area' ? 'edl-guia-ativa' : ''} ${podeEditarArea ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
+          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${area.mostrarMarcacao ? 'edl-guia-ativa' : ''} ${podeEditarArea ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
           style={{
             left: area.x * escala,
             top: area.y * escala,
@@ -757,8 +760,14 @@ export default function EditorCanvas({
             height: area.altura * escala,
             borderRadius: 8 * escala,
             cursor: podeEditarArea ? 'move' : 'default',
-            border: (area.mostrarMarcacao || temTemplateFundo) ? undefined : '2px dashed transparent',
-            backgroundColor: (area.mostrarMarcacao || temTemplateFundo) ? undefined : 'transparent',
+            // Acima do template (z=1) e do vídeo (z=5), abaixo das linhas de
+            // corte (z=20): com o toggle ligado, o guia aparece SOBRE o
+            // vídeo/template em TODAS as células — antes ele ficava por trás
+            // (z-auto) e o template/vídeo o tapavam. DESLIGADO, o guia é
+            // invisível E pointer-events-none: nunca atrapalha o player.
+            zIndex: 10,
+            border: area.mostrarMarcacao ? undefined : '2px dashed transparent',
+            backgroundColor: area.mostrarMarcacao ? undefined : 'transparent',
           }}
         >
 

@@ -105,6 +105,20 @@ import {
 
 const CHAVE_LOTE = 'autopost:editorlote:v1';
 
+/** RE-HIDRATAÇÃO DE THUMBNAILS (pool do Editor): o POST /api/upload responde
+ * `thumbnailUrl: null` (ffprobe/thumbnail rodam em BACKGROUND no servidor) e o
+ * item nasce `thumbnail: null` — os cards não selecionados ficariam para
+ * sempre no placeholder "VÍDEO ORIGINAL". Enquanto houver item pendente, o
+ * Editor re-consulta GET /api/biblioteca neste intervalo e preenche a URL
+ * assim que o servidor publicar o dado. Mesmo padrão do polling da fila
+ * (setInterval + fail-open); NÃO toca fila/worker/Supabase. */
+const INTERVALO_THUMB_PENDENTE_MS = 4000;
+/** Teto de tentativas sem sucesso (~2 min): evita polling eterno para um
+ * vídeo cujo enriquecimento falhou de vez (melhor esforço no servidor). Um
+ * novo vídeo importado remonta o efeito e o teto recomeça. */
+const TETO_TENTATIVAS_THUMB_PENDENTE = 30;
+
+
 const EXTENSAO_POR_TIPO_LOGO = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -991,6 +1005,85 @@ export default function EditorLote({ aoEncaminharParaAgendamento = null }) {
   // Se o usuário saiu no meio de uma implementação e voltou, o acompanhamento
   // recomeça no próximo "Implementar vídeo" (a fila REAL continua na
   // Oracle/worker — só a UI tinha parado de olhar).
+
+  // THUMBNAILS DO POOL — RE-HIDRATAÇÃO (GET /api/biblioteca):
+  // o item importado nasce `thumbnail: null` (o upload responde sem thumbnail
+  // — geração em background no servidor). Enquanto existir item com
+  // `bibliotecaId` sem thumbnail, este efeito re-consulta a biblioteca
+  // periodicamente (MESMO padrão do polling da fila acima) e preenche a
+  // thumbnail — e a duração, quando o enriquecimento já a tiver trazido —
+  // assim que o servidor publicar o dado. Sem tocar em fila/worker/Supabase.
+  //  · 1ª consulta IMEDIATA ao ligar + tick de 4s;
+  //  · a chave do efeito é a LISTA de ids pendentes: importar outro vídeo
+  //    remonta o efeito (teto de tentativas recomeça) e cada progresso
+  //    parcial (um item preenchido) renova o teto;
+  //  · todos preenchidos → chave vazia → intervalo encerrado (zero polling
+  //    quando nada está pendente).
+  const chaveThumbsPendentes = useMemo(
+    () =>
+      itens
+        .filter((it) => it && it.bibliotecaId && !it.thumbnail)
+        .map((it) => it.bibliotecaId)
+        .join(','),
+    [itens]
+  );
+  useEffect(() => {
+    if (!chaveThumbsPendentes) return undefined;
+    let ativo = true;
+    let emVoo = false;
+    let tentativas = 0;
+    const consultar = async () => {
+      if (emVoo) return; // nunca sobrepõe uma consulta em andamento
+      emVoo = true;
+      tentativas += 1;
+      try {
+        const bib = await buscarBiblioteca();
+        if (!ativo || !Array.isArray(bib)) return;
+        const dadosPorId = new Map();
+        for (const v of bib) {
+          if (v && v.id && v.thumbnailUrl) {
+            dadosPorId.set(v.id, {
+              thumbnail: urlArquivo(v.thumbnailUrl),
+              duracao: Number.isFinite(Number(v.duracaoSegundos)) ? `${v.duracaoSegundos}s` : null,
+            });
+          }
+        }
+        if (dadosPorId.size === 0) return; // enriquecimento ainda não rodou
+        setItens((atual) => {
+          let mudou = false;
+          const proximo = atual.map((it) => {
+            if (!it || it.thumbnail || !it.bibliotecaId) return it;
+            const dado = dadosPorId.get(it.bibliotecaId);
+            if (!dado) return it;
+            mudou = true;
+            return {
+              ...it,
+              thumbnail: dado.thumbnail,
+              duracao: it.duracao || dado.duracao,
+            };
+          });
+          return mudou ? proximo : atual;
+        });
+      } catch {
+        /* rede instável — tenta de novo no próximo tick (fail-open) */
+      } finally {
+        emVoo = false;
+      }
+    };
+    consultar();
+    const id = setInterval(() => {
+      if (tentativas >= TETO_TENTATIVAS_THUMB_PENDENTE) {
+        clearInterval(id); // servidor não publicou a thumbnail a tempo — desiste
+        return;
+      }
+      consultar();
+    }, INTERVALO_THUMB_PENDENTE_MS);
+    return () => {
+      ativo = false;
+      clearInterval(id);
+    };
+  }, [chaveThumbsPendentes]);
+
   const filaRetomadaRef = useRef(false);
   useEffect(() => {
     if (filaRetomadaRef.current) return;

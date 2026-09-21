@@ -17,7 +17,7 @@ import {
   Trash2,
   AlertCircle,
 } from 'lucide-react';
-import { corteEfetivoDoVideo, atualizarCorteNoConfig, criarConfigPadrao } from '../../lib/configEditorLote';
+import { CANVAS_ALTURA, CANVAS_LARGURA, corteEfetivoDoVideo, atualizarCorteNoConfig, criarConfigPadrao } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — PAINEL DIREITO: CAMADAS.
@@ -36,6 +36,15 @@ import { corteEfetivoDoVideo, atualizarCorteNoConfig, criarConfigPadrao } from '
  * composição do render (testes): imagens → logo → textos → identidade →
  * selo → templateFundo → área → corte → vídeo → fundo.
  */
+
+/** ÁREA DO VÍDEO ao importar um template COM ARTE DE FUNDO: quando a área
+ * atual é o default (canvas inteiro — nada definido pelo usuário), nasce este
+ * retângulo CENTRAL padrão (~85% da largura × ~70% da altura do canvas). Sem
+ * isso TODO template novo nasceria com a área = canvas inteiro: o vídeo real
+ * (cover) cobriria a arte importada por inteiro e o usuário não veria NADA do
+ * template no card editável. Área JÁ ajustada pelo usuário é preservada. */
+const AREA_TEMPLATE_LARGURA_PCT = 0.85;
+const AREA_TEMPLATE_ALTURA_PCT = 0.7;
 
 /** Constrói a lista de camadas a partir da config COMPARTILHADA. Exportada
  * pra testes e pra manter UMA única definição da ordem de composição. */
@@ -216,6 +225,19 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
         // antigo" sobre o template novo). Elementos NOVOS continuam podendo
         // ser adicionados pelo usuário normalmente (funcionalidade intacta).
         const base = criarConfigPadrao();
+        // ÁREA DO VÍDEO: se a área atual é o DEFAULT (canvas inteiro — nada
+        // definido pelo usuário no Preview), nasce o RETÂNGULO CENTRAL PADRÃO
+        // (~85% largura × ~70% altura). Assim o vídeo passa a ocupar um
+        // retângulo visivelmente menor que a arte (o usuário vê o template ao
+        // redor e ajusta a janela), em vez de nascer cobrindo o template por
+        // inteiro. Área JÁ ajustada (≠ canvas inteiro) é PRESERVADA.
+        const areaAtual = cfg.areaVideo || {};
+        const areaSemAjuste =
+          !(Number(areaAtual.largura) > 0) ||
+          !(Number(areaAtual.altura) > 0) ||
+          (Number(areaAtual.largura) >= CANVAS_LARGURA && Number(areaAtual.altura) >= CANVAS_ALTURA);
+        const larguraAreaCentral = Math.round(CANVAS_LARGURA * AREA_TEMPLATE_LARGURA_PCT);
+        const alturaAreaCentral = Math.round(CANVAS_ALTURA * AREA_TEMPLATE_ALTURA_PCT);
         return {
           ...cfg,
           templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
@@ -228,11 +250,21 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
           // O template é o FUNDO do canvas e vale para TODO o lote (config
           // compartilhada — nenhum template por vídeo). A Área do vídeo é
           // MANTIDA (x/y/largura/altura — janela definida pelo usuário no
-          // Preview); só o ENQUADRAMENTO interno (zoom/deslocamento — edição
-          // do vídeo antigo, não da arte) volta ao neutro (zoom 1 = vídeo
-          // preenchendo 100% da área) e o guia é ligado para referência.
+          // Preview) quando já foi ajustada; no estado default (canvas
+          // inteiro) nasce o retângulo central padrão. O ENQUADRAMENTO
+          // interno (zoom/deslocamento — edição do vídeo antigo, não da arte)
+          // volta ao neutro (zoom 1 = vídeo preenchendo 100% da área) e o
+          // guia é ligado para referência.
           areaVideo: {
-            ...cfg.areaVideo,
+            ...(areaSemAjuste
+              ? {
+                  ...base.areaVideo,
+                  x: Math.round((CANVAS_LARGURA - larguraAreaCentral) / 2),
+                  y: Math.round((CANVAS_ALTURA - alturaAreaCentral) / 2),
+                  largura: larguraAreaCentral,
+                  altura: alturaAreaCentral,
+                }
+              : cfg.areaVideo),
             zoom: base.areaVideo.zoom,
             deslocamentoX: base.areaVideo.deslocamentoX,
             deslocamentoY: base.areaVideo.deslocamentoY,
