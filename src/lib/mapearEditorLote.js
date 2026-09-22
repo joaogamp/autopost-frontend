@@ -192,6 +192,16 @@ const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') ==
       zoom: enq.zoom,
       deslocamentoX: enq.deslocamentoX,
       deslocamentoY: enq.deslocamentoY,
+      // CAIXA DE CONTEÚDO EXPLÍCITA (opção A — coords absolutas do canvas):
+      // viaja junto quando presente; configs antigas (sem os 4 campos) não
+      // enviam nada e o render usa o fallback legado. O engine valida os 4
+      // campos (caixaConteudoExplicita) — parcial/inválida = legado.
+      ...(enq.conteudoX !== undefined ? {
+        conteudoX: enq.conteudoX,
+        conteudoY: enq.conteudoY,
+        conteudoLargura: enq.conteudoLargura,
+        conteudoAltura: enq.conteudoAltura,
+      } : {}),
       // CORREÇÃO 1/2 (REGRA DEFINITIVA do corte automático — auditoria): a
       // detecção da região útil acontece UMA ÚNICA vez, no botão "Corte
       // automático de bordas" do Editor (detectorBordas.js). O resultado é
@@ -258,7 +268,8 @@ export function firmaComposicion(config) {
     canvas.corFundo,
     areaVideo.x, areaVideo.y, areaVideo.largura, areaVideo.altura, areaVideo.fit, areaVideo.mostrarMarcacao,
     // Enquadramento do vídeo (mouse): re-renderiza a célula quando muda.
-    'enq:' + Math.round(Number(areaVideo.zoom || 1) * 100) + '/' + Math.round(Number(areaVideo.deslocamentoX ?? 50)) + '/' + Math.round(Number(areaVideo.deslocamentoY ?? 50)),
+    'enq:' + Math.round(Number(areaVideo.zoom || 1) * 100) + '/' + Math.round(Number(areaVideo.deslocamentoX ?? 50)) + '/' + Math.round(Number(areaVideo.deslocamentoY ?? 50))
+    + (areaVideo.conteudoX !== undefined ? `/cx:${Math.round(Number(areaVideo.conteudoX) || 0)}:${Math.round(Number(areaVideo.conteudoY) || 0)}:${Math.round(Number(areaVideo.conteudoLargura) || 0)}:${Math.round(Number(areaVideo.conteudoAltura) || 0)}` : ''),
     corteBordas?.ativo ? 1 : 0, Math.round(corteBordas?.superior || 0), Math.round(corteBordas?.inferior || 0),
     logo.visivel ? 1 : 0, Math.round(logo.x), Math.round(logo.y), Math.round(logo.largura),
     Math.round(logo.opacidade || 100), logo.url ? 't' : 'f',

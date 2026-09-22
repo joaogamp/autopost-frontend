@@ -159,9 +159,17 @@ export default function EditorCanvas({
   const redimensionarTextoSup = gerarRedimensionarTextoLargura(['textos', 'superior'], atualizador);
   const redimensionarTextoInf = gerarRedimensionarTextoLargura(['textos', 'inferior'], atualizador);
   const arrastarArea = gerarArrastreArea(atualizador);
+  // REDIMENSIONAR A ÁREA — 4 LADOS + 4 CANTOS (marcação precisa de controle
+  // total: puxar o topo pra baixo, a esquerda pra direita etc.). Todos usam o
+  // MESMO gerarRedimensionarArea (sem sistema paralelo); só muda o eixo.
   const redimensionarAreaDireita = gerarRedimensionarArea('direita', atualizador);
   const redimensionarAreaAbaixo = gerarRedimensionarArea('abaixo', atualizador);
-  const redimensionarAreaCanto = gerarRedimensionarArea('canto', atualizador);
+  const redimensionarAreaEsquerda = gerarRedimensionarArea('esquerda', atualizador);
+  const redimensionarAreaAcima = gerarRedimensionarArea('acima', atualizador);
+  const redimensionarAreaCantoSE = gerarRedimensionarArea('canto-sudeste', atualizador);
+  const redimensionarAreaCantoSO = gerarRedimensionarArea('canto-sudoeste', atualizador);
+  const redimensionarAreaCantoNE = gerarRedimensionarArea('canto-nordeste', atualizador);
+  const redimensionarAreaCantoNO = gerarRedimensionarArea('canto-noroeste', atualizador);
 
   // SELEÇÃO — clicar num elemento do preview seleciona a camada dele (Painel
   // de Camadas + painel de configuração sincronizam). Clicar no FUNDO do
@@ -280,15 +288,19 @@ export default function EditorCanvas({
   /**
    * REDIMENSIONAR O OBJETO DE VÍDEO (alças do Preview, estilo Canva) — MESMO
    * mecanismo já existente da área (`gerarRedimensionarArea`), agora também
-   * usado pelo VÍDEO selecionado. Muda só `areaVideo.largura/altura` (+ `x`/`y`
-   * quando a alça é da borda esquerda/superior) — a MESMA geometria que o
-   * render materializa (scale/crop/pad do FFmpeg): prévia = render. Cantos
-   * mantêm a PROPORÇÃO; as laterais ajustam uma dimensão. NÃO mexe em
-   * `zoom`/`deslocamentoX/Y` (roda do mouse = enquadramento interno).
+   * usado pelo VÍDEO selecionado. Muda só a MOLDURA (`areaVideo.x/y/largura/
+   * altura`); o CONTEÚDO fica parado (opção A — caixa explícita
+   * conteudoX/Y/Largura/Altura em coords do canvas, congelada no pointerdown;
+   * a borda oposta fica fixa e a moldura nunca passa da caixa — cover sem vão).
+   * Commit único no pointerup, SEM reset de zoom/deslocamento. Cantos mantêm a
+   * PROPORÇÃO; as laterais ajustam uma dimensão. (Roda do mouse = enquadramento
+   * interno; arraste do corpo, marcação, corteBordas e Redefinir intactos.)
    */
-  const aoRedimensionarVideo = (eixo) => gerarRedimensionarArea(eixo, atualizador, {
-    aoInteragir: () => mostrarDicaEnquadramento('Redimensionando o vídeo…'),
-  });
+  // NOTA: sem `aoInteragir` de propósito — ele chamava
+  // `mostrarDicaEnquadramento` (setState) no pointerdown e o re-render
+  // sobrescrevia o DOM direto do rAF no frame seguinte, anulando a
+  // compensação da caixa (o conteúdo voltava a acompanhar a borda).
+  const aoRedimensionarVideo = (eixo) => gerarRedimensionarArea(eixo, atualizador);
   const redimVideoDireita = aoRedimensionarVideo('direita');
   const redimVideoEsquerda = aoRedimensionarVideo('esquerda');
   const redimVideoAbaixo = aoRedimensionarVideo('abaixo');
@@ -300,11 +312,20 @@ export default function EditorCanvas({
 
   /**
    * ALÇAS do objeto de vídeo (Preview, estilo Canva): 4 CANTOS (mantêm a
-   * proporção) + 4 LATERAIS (largura/altura). Ficam DENTRO do objeto (inset
-   * 2px) porque o canvas tem `overflow-hidden`: alças centradas na borda
-   * seriam cortadas quando o vídeo encosta na borda do canvas (caso padrão =
-   * vídeo ocupando o canvas inteiro). Só aparecem com o vídeo SELECIONADO.
+   * proporção) + 4 BORDAS (faixas de 8px top/bottom/left/right, com 16px de
+   * recuo dos cantos, cursor ns/ew-resize) + 4 LATERAIS legadas. Todas ligadas
+   * ao MESMO `gerarRedimensionarArea` (mesmos data-x/y/largura/altura das
+   * alças atuais). Ficam DENTRO do objeto (inset) porque o canvas tem
+   * `overflow-hidden`: alças centradas na borda seriam cortadas quando o vídeo
+   * encosta na borda do canvas (caso padrão = vídeo ocupando o canvas inteiro).
+   * Só existem com o vídeo SELECIONADO.
    */
+  const bordasDoVideo = [
+    { rotulo: 'borda superior', estilo: { top: 0, left: 16, right: 16, height: 8 }, cursor: 'ns-resize', onPointerDown: redimVideoAcima },
+    { rotulo: 'borda inferior', estilo: { bottom: 0, left: 16, right: 16, height: 8 }, cursor: 'ns-resize', onPointerDown: redimVideoAbaixo },
+    { rotulo: 'borda esquerda', estilo: { left: 0, top: 16, bottom: 16, width: 8 }, cursor: 'ew-resize', onPointerDown: redimVideoEsquerda },
+    { rotulo: 'borda direita', estilo: { right: 0, top: 16, bottom: 16, width: 8 }, cursor: 'ew-resize', onPointerDown: redimVideoDireita },
+  ];
   const alcasDoVideo = [
     { rotulo: 'canto superior esquerdo', largura: 14, altura: 14, estilo: { left: 2, top: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoNO },
     { rotulo: 'canto superior direito', largura: 14, altura: 14, estilo: { right: 2, top: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoNE },
@@ -501,6 +522,10 @@ export default function EditorCanvas({
               DO MOUSE para ampliar/reduzir (zoom sob o cursor). Nas células não
               selecionadas: mesma geometria, mas pointer-events-none (só
               visualização). */}
+          {/* CAIXA DE CONTEÚDO: data-conteudo-* (coords absolutas do canvas)
+              alimenta o freeze do gerarRedimensionarArea — em arrastes
+              consecutivos moldura×zoom ≠ caixa, então a caixa verdadeira tem
+              que vir explícita do render. */}
           <div
             ref={camadaVideoRef}
             role={podeEditarVideo && urlVideoAtiva ? 'button' : undefined}
@@ -514,6 +539,10 @@ export default function EditorCanvas({
             data-enq-zoom={String(areaN.zoom)}
             data-enq-x={String(areaN.deslocamentoX)}
             data-enq-y={String(areaN.deslocamentoY)}
+            data-conteudo-x={String(area.x + caixa.x)}
+            data-conteudo-y={String(area.y + caixa.y)}
+            data-conteudo-largura={String(caixa.largura)}
+            data-conteudo-altura={String(caixa.altura)}
             data-area-largura={String(areaN.largura)}
             data-area-altura={String(areaN.altura)}
             data-area-fit={areaN.fit}
@@ -592,7 +621,7 @@ export default function EditorCanvas({
             redimensiona o OBJETO (mesma geometria do render). */}
         {podeEditarVideo && urlVideoAtiva && elementoSelecionado === 'video' && (
           <div
-            data-elemento="video"
+            data-elemento="selecao-video"
             className="edl-elemento-selecionado absolute z-30"
             style={{
               left: area.x * escala,
@@ -602,6 +631,26 @@ export default function EditorCanvas({
               pointerEvents: 'none',
             }}
           >
+            {bordasDoVideo.map((borda) => (
+              <span
+                key={borda.rotulo}
+                role="slider"
+                aria-label={`Redimensionar vídeo (${borda.rotulo})`}
+                data-x={String(area.x)}
+                data-y={String(area.y)}
+                data-largura={String(area.largura)}
+                data-altura={String(area.altura)}
+                onPointerDown={borda.onPointerDown}
+                className="absolute z-30"
+                style={{
+                  ...borda.estilo,
+                  background: 'transparent',
+                  cursor: borda.cursor,
+                  touchAction: 'none',
+                  pointerEvents: 'auto',
+                }}
+              />
+            ))}
             {alcasDoVideo.map((alca) => (
               <span
                 key={alca.rotulo}
@@ -714,42 +763,45 @@ export default function EditorCanvas({
           }}
         >
 
-          {/* Manijas de redimensionar (SÓ quando a ÁREA está selecionada) */}
+          {/* ALÇAS DA MARCAÇÃO — 4 LADOS + 4 CANTOS (mesmo padrão das alças do
+              vídeo: ficam DENTRO do retângulo, inset, porque o canvas tem
+              `overflow-hidden`). Cada alça redimensiona SÓ o retângulo
+              (areaVideo.x/y/largura/altura): topo/baixo mudam a altura, esquerda/
+              direita mudam a largura, cantos mudam as duas — e as bordas opostas
+              ficam FIXAS (gerarRedimensionarArea). A marcação NUNCA renderiza
+              vídeo: é só geometria (Estado A). */}
           {podeEditarArea && elementoSelecionado === 'area' && (
             <>
-              <span
-                role="slider"
-                aria-label="Redimensionar largura da área"
-                data-x={String(area.x)}
-                data-y={String(area.y)}
-                data-largura={String(area.largura)}
-                data-altura={String(area.altura)}
-                onPointerDown={redimensionarAreaDireita}
-                className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{ right: -5, top: '50%', transform: 'translateY(-50%)', width: 12, height: 26, background: '#94a3b8', cursor: 'ew-resize', touchAction: 'none' }}
-              />
-              <span
-                role="slider"
-                aria-label="Redimensionar altura da área"
-                data-x={String(area.x)}
-                data-y={String(area.y)}
-                data-largura={String(area.largura)}
-                data-altura={String(area.altura)}
-                onPointerDown={redimensionarAreaAbaixo}
-                className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{ bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 26, height: 12, background: '#94a3b8', cursor: 'ns-resize', touchAction: 'none' }}
-              />
-              <span
-                role="slider"
-                aria-label="Redimensionar área (canto)"
-                data-x={String(area.x)}
-                data-y={String(area.y)}
-                data-largura={String(area.largura)}
-                data-altura={String(area.altura)}
-                onPointerDown={redimensionarAreaCanto}
-                className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{ right: -5, bottom: -5, width: 14, height: 14, background: '#94a3b8', cursor: 'nwse-resize', touchAction: 'none' }}
-              />
+              {[
+                { rotulo: 'canto superior esquerdo', estilo: { left: 2, top: 2 }, largura: 14, altura: 14, cursor: 'nwse-resize', aoBaixar: redimensionarAreaCantoNO },
+                { rotulo: 'canto superior direito', estilo: { right: 2, top: 2 }, largura: 14, altura: 14, cursor: 'nesw-resize', aoBaixar: redimensionarAreaCantoNE },
+                { rotulo: 'canto inferior esquerdo', estilo: { left: 2, bottom: 2 }, largura: 14, altura: 14, cursor: 'nesw-resize', aoBaixar: redimensionarAreaCantoSO },
+                { rotulo: 'canto inferior direito', estilo: { right: 2, bottom: 2 }, largura: 14, altura: 14, cursor: 'nwse-resize', aoBaixar: redimensionarAreaCantoSE },
+                { rotulo: 'lateral esquerda', estilo: { left: 2, top: '50%', transform: 'translateY(-50%)' }, largura: 12, altura: 26, cursor: 'ew-resize', aoBaixar: redimensionarAreaEsquerda },
+                { rotulo: 'lateral direita', estilo: { right: 2, top: '50%', transform: 'translateY(-50%)' }, largura: 12, altura: 26, cursor: 'ew-resize', aoBaixar: redimensionarAreaDireita },
+                { rotulo: 'lateral superior', estilo: { top: 2, left: '50%', transform: 'translateX(-50%)' }, largura: 26, altura: 12, cursor: 'ns-resize', aoBaixar: redimensionarAreaAcima },
+                { rotulo: 'lateral inferior', estilo: { bottom: 2, left: '50%', transform: 'translateX(-50%)' }, largura: 26, altura: 12, cursor: 'ns-resize', aoBaixar: redimensionarAreaAbaixo },
+              ].map((alca) => (
+                <span
+                  key={alca.rotulo}
+                  role="slider"
+                  aria-label={`Redimensionar área (${alca.rotulo})`}
+                  data-x={String(area.x)}
+                  data-y={String(area.y)}
+                  data-largura={String(area.largura)}
+                  data-altura={String(area.altura)}
+                  onPointerDown={alca.aoBaixar}
+                  className="absolute z-30 rounded-sm border-2 border-white shadow"
+                  style={{
+                    ...alca.estilo,
+                    width: alca.largura,
+                    height: alca.altura,
+                    background: '#94a3b8',
+                    cursor: alca.cursor,
+                    touchAction: 'none',
+                  }}
+                />
+              ))}
             </>
           )}
         </div>

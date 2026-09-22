@@ -78,6 +78,44 @@ export const ZOOM_VIDEO_MIN = 1;
 export const ZOOM_VIDEO_MAX = 4;
 export const ENQUADRAMENTO_VIDEO_PADRAO = Object.freeze({ zoom: 1, deslocamentoX: 50, deslocamentoY: 50 });
 
+/** CAIXA DE CONTEÚDO EXPLÍCITA (px do canvas, coordenadas absolutas do canvas).
+ * Quando presente em `areaVideo` ({ conteudoX, conteudoY, conteudoLargura,
+ * conteudoAltura }), ela é a fonte de verdade da posição/escala do conteúdo:
+ * puxar borda/canto muda SÓ a moldura (x/y/largura/altura) e a caixa de
+ * conteúdo fica parada na tela — o recorte. Fallback: configs antigas sem os
+ * 4 campos usam a conta legada (área × zoom + deslocamentoX/Y). */
+function numeroCaixa(valor) {
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+export function caixaConteudoExplicita(area) {
+  const a = area && typeof area === 'object' ? area : null;
+  if (!a) return null;
+  const cx = numeroCaixa(a.conteudoX);
+  const cy = numeroCaixa(a.conteudoY);
+  const cw = numeroCaixa(a.conteudoLargura);
+  const ch = numeroCaixa(a.conteudoAltura);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(cw) || !Number.isFinite(ch)) return null;
+  if (!(cw >= 2 && ch >= 2)) return null;
+  return { x: cx, y: cy, largura: cw, altura: ch };
+}
+
+/** Moldura (x/y/largura/altura) contém a caixa de conteúdo? (cover sem vão). */
+export function molduraContemConteudo(area) {
+  const caixa = caixaConteudoExplicita(area);
+  if (!caixa) return true;
+  const a = area && typeof area === 'object' ? area : {};
+  const x = Number(a.x) || 0;
+  const y = Number(a.y) || 0;
+  const w = Number(a.largura) || 0;
+  const h = Number(a.altura) || 0;
+  const EPS = 0.51;
+  return x <= caixa.x + EPS && y <= caixa.y + EPS
+    && x + w >= caixa.x + caixa.largura - EPS
+    && y + h >= caixa.y + caixa.altura - EPS;
+}
+
 /** Zoom válido (1 = original). */
 export function normalizarZoomVideo(valor) {
   const n = Number(valor);
@@ -97,15 +135,57 @@ export function normalizarDeslocamentoVideo(valor) {
  * A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o vídeo
  * SEMPRE preenche 100% da área (cover) — nunca pequeno/centralizado dentro
  * dela. Templates antigos com fit 'ajustar' são normalizados para 'cobrir'
- * para que prévia e render usem a mesma geometria. */
+ * para que prévia e render usem a mesma geometria.
+ * CAIXA EXPLÍCITA (opção A): se os 4 campos conteudoX/Y/Largura/Altura
+ * estiverem presentes e válidos, são preservados (fonte de verdade do
+ * conteúdo); parciais/NaN/null são descartados (fallback legado). */
 export function areaVideoNormalizada(area) {
   const a = area && typeof area === 'object' ? area : {};
-  return {
+  const normalizada = {
     ...a,
     fit: 'cobrir',
     zoom: normalizarZoomVideo(a.zoom),
     deslocamentoX: normalizarDeslocamentoVideo(a.deslocamentoX ?? ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX),
     deslocamentoY: normalizarDeslocamentoVideo(a.deslocamentoY ?? ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY),
+  };
+  const temAlgumCampoCaixa = a.conteudoX !== undefined || a.conteudoY !== undefined
+    || a.conteudoLargura !== undefined || a.conteudoAltura !== undefined;
+  if (!temAlgumCampoCaixa) {
+    delete normalizada.conteudoX;
+    delete normalizada.conteudoY;
+    delete normalizada.conteudoLargura;
+    delete normalizada.conteudoAltura;
+    return normalizada;
+  }
+  const caixa = caixaConteudoExplicita(a);
+  if (!caixa) {
+    // Parcial/inválida/null → descarta (fallback legado, configs antigas).
+    delete normalizada.conteudoX;
+    delete normalizada.conteudoY;
+    delete normalizada.conteudoLargura;
+    delete normalizada.conteudoAltura;
+    return normalizada;
+  }
+  normalizada.conteudoX = Math.round(caixa.x * 100) / 100;
+  normalizada.conteudoY = Math.round(caixa.y * 100) / 100;
+  normalizada.conteudoLargura = Math.round(caixa.largura * 100) / 100;
+  normalizada.conteudoAltura = Math.round(caixa.altura * 100) / 100;
+  return normalizada;
+}
+
+/** Congela a caixa de conteúdo atual em coords absolutas do canvas.
+ * Usado no pointerdown do resize (origem 'video'): a partir daí a caixa fica
+ * FIXA e só a moldura muda. Retorna os 4 campos para gravar em areaVideo. */
+export function congelarConteudoVideo(area) {
+  const caixa = caixaEnquadramentoVideo(area);
+  const a = areaVideoNormalizada(area);
+  const x = (Number(a.x) || 0) + caixa.x;
+  const y = (Number(a.y) || 0) + caixa.y;
+  return {
+    conteudoX: Math.round(x * 100) / 100,
+    conteudoY: Math.round(y * 100) / 100,
+    conteudoLargura: Math.round(caixa.largura * 100) / 100,
+    conteudoAltura: Math.round(caixa.altura * 100) / 100,
   };
 }
 
@@ -136,6 +216,26 @@ export function caixaEnquadramentoVideo(area) {
   const a = areaVideoNormalizada(area);
   const larguraArea = Math.max(2, Math.round(Number(a.largura) || 0));
   const alturaArea = Math.max(2, Math.round(Number(a.altura) || 0));
+  // CAIXA EXPLÍCITA (opção A): fonte de verdade = coords absolutas do canvas.
+  // Relativo à área: x/y = caixaAbs - origem da moldura. Configs antigas
+  // (sem os 4 campos) caem no cálculo legado abaixo — prévia e render
+  // continuam idênticos nos dois casos.
+  const explicita = caixaConteudoExplicita(a);
+  if (explicita) {
+    const ox = Number(a.x) || 0;
+    const oy = Number(a.y) || 0;
+    const largura = Math.max(2, Math.round(explicita.largura));
+    const altura = Math.max(2, Math.round(explicita.altura));
+    return {
+      largura,
+      altura,
+      x: explicita.x - ox,
+      y: explicita.y - oy,
+      zoom: a.zoom,
+      deslocamentoX: a.deslocamentoX,
+      deslocamentoY: a.deslocamentoY,
+    };
+  }
   // Dimensões PARES: mesma paridade exigida pelo yuv420p do encoder final.
   const largura = Math.max(2, Math.round((larguraArea * a.zoom) / 2) * 2);
   const altura = Math.max(2, Math.round((alturaArea * a.zoom) / 2) * 2);

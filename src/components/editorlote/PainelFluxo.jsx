@@ -242,7 +242,22 @@ export default function PainelFluxo({
           type="button"
           disabled={!temTemplate}
           onClick={() => {
-            setMarcaAberta(!marcaAberta);
+            const abrindo = !marcaAberta;
+            setMarcaAberta(abrindo);
+            // REGRA DO FLUXO — ao ABRIR a marcação o Preview é FECHADO: durante
+            // a marcação existe SOMENTE o template + o retângulo (Estado A), sem
+            // nenhum vídeo enquadrado em lugar nenhum. O vídeo só volta a ser
+            // ENQUADRADO dentro da área marcada quando o usuário clicar em
+            // "Mostrar Preview" (Estado B). Ao FECHAR, nada é ligado
+            // automaticamente — o usuário controla o Preview.
+            if (abrindo && typeof aoAlternarPreview === 'function') aoAlternarPreview(false);
+            // Seleciona a camada "Área do vídeo" ao ABRIR a marcação: as 8
+            // alças (4 lados + 4 cantos) nascem visíveis — o usuário segura
+            // qualquer linha/borda imediatamente, sem um clique prévio no
+            // retângulo. Ao FECHAR, a seleção é limpa.
+            if (typeof aoSelecionarElemento === 'function') {
+              aoSelecionarElemento(abrindo ? 'area' : null);
+            }
           }}
           title={temTemplate ? 'Abrir o modo de marcação da área do vídeo' : 'Importe um template primeiro'}
           className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg disabled:opacity-50 disabled:cursor-default"
