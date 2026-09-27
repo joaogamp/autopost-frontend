@@ -10,7 +10,10 @@ import {
   criarConfigLimpaDeLote,
   loteTemEdicoesAtivas,
   normalizarConfigEditor,
+  corteEfetivoDoVideo,
+  limitarCorte,
 } from '../lib/configEditorLote';
+import { detectarBordasDoVideo } from '../lib/detectorBordas';
 import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
 import {
   configParaTemplatePayload,
@@ -528,6 +531,15 @@ export default function EditorLote() {
     assinatura: assinaturaSalva,
   };
 
+  // IDs presentes no lote, em espelho SÍNCRONO do estado. O `estadoAtualRef`
+  // acima só reflete `itens` DEPOIS do re-render, e a detecção automática
+  // (fundo) pode resolver antes disso — sem este espelho, o vídeo que acabou
+  // de ser importado pareceria "removido" e o corte seria descartado. É
+  // atualizado na hora em `aoAdicionarVideo`/`aoRemoverVideo` e reconciliado
+  // a cada render.
+  const idsNoLoteRef = useRef(new Set());
+  idsNoLoteRef.current = new Set(itens.map((it) => it.id));
+
   // VALIDAÇÃO DA RESTAURAÇÃO (1× por mount): confere o `bibliotecaId` de cada
   // item vindo do localStorage contra a biblioteca REAL do servidor e limpa
   // SOMENTE as referências confirmadas como órfãs — antes de implementar
@@ -608,31 +620,106 @@ export default function EditorLote() {
     return () => window.removeEventListener('pagehide', descarregar);
   }, [descarregar]);
 
-  const aoAdicionarVideo = useCallback((novo) => {
-    // Importou vídeo novo: o fluxo normal de auto-select volta a valer (não faz
-    // sentido manter o editor "sem vídeo base" depois de uma importação).
-    preservarSemBaseRef.current = false;
-    setItens((atual) => {
-      // Sem limite de quantidade — só evita duplicado (mesmo vídeo da
-      // biblioteca importado duas vezes).
-      if (atual.some((v) => v.id === novo.id)) return atual;
-      return [
-        ...atual,
-        {
-          id: novo.id,
-          bibliotecaId: novo.bibliotecaId || novo.id || null,
-          nome: novo.nome || null,
-          thumbnail: novo.thumbnail || null,
-          urlFonte: novo.urlFonte || novo.url || null,
-          duracao: novo.duracao || null,
-          status: novo.status || 'pronto',
-          percentual: 0,
-          filaId: null,
-          erroMensagem: null,
-        },
-      ];
-    });
+  /**
+   * CORTE AUTOMÁTICO DE BORDAS NO IMPORT (fundo, por vídeo).
+   *
+   * Dispara `detectarBordasDoVideo` (a MESMA função de produção, sem
+   * reimplementação: cria <video>, faz seek e desenha no <canvas>) assim que o
+   * vídeo entra na lista, e grava o resultado em `config.overridesPorVideo` com
+   * `origem: 'auto'`.
+   *
+   * REGRAS (todas deliberadas, nenhuma muda o que já foi validado):
+   * · NUNCA bloqueia o import: roda fora do `setItens`, sem await no caminho
+   *   da UI — o vídeo aparece na lista na hora e o corte chega depois.
+   * · Só grava quando `aplicavel.superior` OU `aplicavel.inferior` é true.
+   *   `confiavel` (AND dos dois lados) NÃO é exigido: o video1 é o caso real —
+   *   barra legítima no topo com a base ambígua.
+   * · O lado com `aplicavel:false` entra com 0 (nunca com o número medido):
+   *  _fail-open_ — dúvida em um lado não aplica corte nele.
+   * · Percentuais passam por `limitarCorte` (MESMA função que o painel, o
+   *   arraste e o render usam) → prévia e vídeo final nunca divergem.
+   * · Se o vídeo já tem override MANUAL (usuário mexeu), a detecção NÃO
+   *   sobrescreve: a mão do usuário vence a máquina.
+   * · Se o vídeo foi removido da lista enquanto detectava, o resultado é
+   *   descartado (não deixa override órfão na config).
+   * · Falha/ilegível/sem confiança → nada é gravado (fail-open).
+   */
+  const detectarCorteAutomatico = useCallback(async (videoId, urlFonte) => {
+    if (!videoId || !urlFonte) return;
+    try {
+      const r = await detectarBordasDoVideo(urlFonte);
+      const aplicavel = r?.aplicavel;
+      const algumAplicavel = aplicavel?.superior === true || aplicavel?.inferior === true;
+      if (!algumAplicavel) return; // sem corte aplicável = não grava nada
+      const bruto = {
+        superior: aplicavel.superior ? Number(r.superior) || 0 : 0,
+        inferior: aplicavel.inferior ? Number(r.inferior) || 0 : 0,
+      };
+      if (bruto.superior <= 0 && bruto.inferior <= 0) return;
+      const limitado = limitarCorte(bruto.superior, bruto.inferior, 'superior');
+      setConfig((cfg) => {
+        // Vídeo removido do lote durante a detecção: descarta (fail-open).
+        if (!idsNoLoteRef.current.has(videoId)) return cfg;
+        const anterior = cfg?.overridesPorVideo?.[videoId];
+        // Ajuste MANUAL do usuário tem prioridade sobre a detecção automática.
+        if (anterior && anterior.origem === 'manual') return cfg;
+        return {
+          ...cfg,
+          overridesPorVideo: {
+            ...cfg?.overridesPorVideo,
+            [videoId]: {
+              ...anterior,
+              superior: limitado.superior,
+              inferior: limitado.inferior,
+              origem: 'auto',
+              em: Date.now(),
+            },
+          },
+        };
+      });
+    } catch {
+      // FAIL-OPEN: qualquer falha na detecção não impede o import.
+    }
   }, []);
+
+  const aoAdicionarVideo = useCallback(
+    (novo) => {
+      // Importou vídeo novo: o fluxo normal de auto-select volta a valer (não faz
+      // sentido manter o editor "sem vídeo base" depois de uma importação).
+      preservarSemBaseRef.current = false;
+      const urlFonte = novo.urlFonte || novo.url || null;
+      const novoId = novo.id || novo.bibliotecaId || null;
+      setItens((atual) => {
+        // Sem limite de quantidade — só evita duplicado (mesmo vídeo da
+        // biblioteca importado duas vezes).
+        if (atual.some((v) => v.id === novo.id)) return atual;
+        return [
+          ...atual,
+          {
+            id: novo.id,
+            bibliotecaId: novo.bibliotecaId || novo.id || null,
+            nome: novo.nome || null,
+            thumbnail: novo.thumbnail || null,
+            urlFonte: novo.urlFonte || novo.url || null,
+            duracao: novo.duracao || null,
+            status: novo.status || 'pronto',
+            percentual: 0,
+            filaId: null,
+            erroMensagem: null,
+          },
+        ];
+      });
+      // CORTE AUTOMÁTICO: dispara em FUNDO, logo após o vídeo entrar na lista.
+      // Não é aguardado — o import nunca trava por causa da detecção.
+      if (novoId && urlFonte) {
+        // Entra no espelho de ids ANTES de detectar: a detecção é assíncrona e
+        // pode terminar antes do re-render que popula `itens`.
+        idsNoLoteRef.current.add(novoId);
+        detectarCorteAutomatico(novoId, urlFonte);
+      }
+    },
+    [detectarCorteAutomatico]
+  );
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
 
@@ -662,6 +749,9 @@ export default function EditorLote() {
       if (!lista.some((it) => it.id === item.id)) return;
       const proximos = lista.filter((it) => it.id !== item.id);
       const eraBase = atual.idSelecionado === item.id;
+      // Sai do espelho de ids NA HORA: se a detecção automática desse vídeo
+      // ainda estiver rodando, o resultado é descartado (sem override órfão).
+      idsNoLoteRef.current.delete(item.id);
       if (eraBase) {
         preservarSemBaseRef.current = true; // mantém o editor SEM vídeo base
         setIdSelecionado(null);
@@ -975,48 +1065,112 @@ export default function EditorLote() {
       return;
     }
 
-    setEnfileirando(true);
-    try {
-      // 1) Config vira template REAL no servidor — UM ÚNICO template BASE para
-      //    TODO o lote. A areaVideo definida pelo usuário (x/y/largura/altura)
-      //    é propriedade do template e vale IGUAL para todos os vídeos:
-      //    SEM template por vídeo, SEM deslocamento por vídeo, SEM detecção.
-      const { templateId: templateBase } = await garantirTemplate(null);
-
-      // 2) Enfileira na fila REAL (Supabase) — a Oracle e o worker local
-      //    consomem com reserva atômica. O texto SUPERIOR do lote vai como
-      //    tituloIA (DOIS textos: superior + inferior, independentes).
-      const textoSup = config.textos?.superior || config.texto;
-      const videos = enfileiraveis.map((it) => ({
-        bibliotecaId: it.bibliotecaId,
-        tituloIA:
-          textoSup.visivel && String(textoSup.conteudo || '').trim() !== ''
-            ? String(textoSup.conteudo).trim()
-            : '',
-      }));
-      const resposta = await processarLote(templateBase, videos);
-      const ids = resposta.ids || [];
-
-      const mapaFila = new Map();
-      enfileiraveis.forEach((it, i) => {
-        // Chave = it.id (ÚNICO por item). Antes era it.bibliotecaId: se dois
-        // itens da sessão apontarem para o MESMO original (re-import), ambos
-        // recebiam o mesmo filaId e um final parecia "pertencer" ao outro.
-        if (ids[i]) mapaFila.set(it.id, ids[i]);
-      });
-
-      inicioFilaRef.current = Date.now();
-      avisoWorkerRef.current = false;
+    // mapaFila: `it.id` -> `filaId`. CHAVEADO POR ID, nunca por índice: com
+    // vários POST /api/lote (um por grupo de corte), cada `ids[]` é alinhado
+    // ao SEU grupo — achatá-los num array só e indexar por `enfileiraveis[i]`
+    // trocaria o final entre os vídeos. Como o consumidor é um `get()` por
+    // chave (abaixo), a ORDEM de inserção é irrelevante.
+    const mapaFila = new Map();
+    const publicarNaFila = () => {
+      if (mapaFila.size === 0) return;
       setItens((atual) =>
         atual.map((it) => {
           const filaId = mapaFila.get(it.id);
           return filaId ? { ...it, filaId, status: 'aguardando', percentual: 0, erroMensagem: null } : it;
         })
       );
-      iniciarPolling();
-      mostrarToast(`${ids.length} vídeo(s) na fila REAL de processamento.`);
+    };
+
+    setEnfileirando(true);
+    try {
+      // 1) TEMPLATE POR GRUPO DE CORTE (não UM ÚNICO PARA O LOTE TODO).
+      //    Cada ASSINATURA de corte tem o SEU template: o vídeo com corte
+      //    próprio vai com o dele e os demais vão com o corte global —
+      //    nunca mais o corte de um contaminando o outro.
+      //    `cortePorVideo` devolve null quando o vídeo NÃO tem override: ele
+      //    usa o corte global e NÃO gera assinatura/template novo. Passar o
+      //    objeto de `corteEfetivoDoVideo` direto (que NUNCA é null)
+      //    forçaria `corteBordas.ativo:true` no payload e criaria um
+      //    template à toa para todo vídeo sem corte.
+      const cortePorVideo = (videoId) => {
+        if (!videoId || !config.overridesPorVideo?.[videoId]) return null;
+        const { superior, inferior } = corteEfetivoDoVideo(config, videoId);
+        return { superior, inferior };
+      };
+      // Chave estável do override (null = corte global), na ordem de 1ª
+      // aparição da lista — só para não repetir o mesmo override N vezes.
+      const cortesPorIndice = enfileiraveis.map((it) => cortePorVideo(it.id));
+      const indicesPorChave = new Map();
+      const overridePorChave = new Map();
+      cortesPorIndice.forEach((override, i) => {
+        const chave = override ? `corte:${override.superior}/${override.inferior}` : 'corte:global';
+        if (!indicesPorChave.has(chave)) {
+          indicesPorChave.set(chave, []);
+          overridePorChave.set(chave, override);
+        }
+        indicesPorChave.get(chave).push(i);
+      });
+      // Chave do grupo = a ASSINATURA devolvida por `garantirTemplate` (a
+      // mesma que ele já usa como cache): overrides diferentes que rendem
+      // o mesmo payload caem no MESMO grupo e gastam UM POST /api/lote.
+      const grupos = new Map();
+      for (const [chave, indices] of indicesPorChave) {
+        const { templateId, assinatura } = await garantirTemplate(overridePorChave.get(chave));
+        const itens = indices.map((i) => enfileiraveis[i]);
+        const jaExistente = grupos.get(assinatura);
+        if (jaExistente) jaExistente.itens.push(...itens);
+        else grupos.set(assinatura, { templateId, itens });
+      }
+
+      // 2) Enfileira na fila REAL (Supabase) — um POST /api/lote por grupo.
+      //    A Oracle e o worker local consomem com reserva atômica. O texto
+      //    SUPERIOR do lote vai como tituloIA (DOIS textos: superior +
+      //    inferior, independentes).
+      const textoSup = config.textos?.superior || config.texto;
+      const tituloIA =
+        textoSup.visivel && String(textoSup.conteudo || '').trim() !== ''
+          ? String(textoSup.conteudo).trim()
+          : '';
+
+      let totalEnfileirado = 0;
+      for (const grupo of grupos.values()) {
+        const resposta = await processarLote(
+          grupo.templateId,
+          grupo.itens.map((it) => ({ bibliotecaId: it.bibliotecaId, tituloIA }))
+        );
+        const ids = resposta.ids || [];
+        // Zip DESTE grupo: `ids[i]` pertence a `grupo.itens[i]`, sempre.
+        grupo.itens.forEach((it, i) => {
+          if (ids[i]) mapaFila.set(it.id, ids[i]);
+        });
+        totalEnfileirado += ids.length;
+        // Publica a CADA grupo: se um grupo seguinte falhar, os anteriores
+        // JÁ estão na fila real e precisam ficar visíveis para o polling —
+        // senão viram órfãos (na fila, sem card acompanhando).
+        publicarNaFila();
+      }
+
+      inicioFilaRef.current = Date.now();
+      avisoWorkerRef.current = false;
+      publicarNaFila();
+      if (mapaFila.size > 0) iniciarPolling();
+      mostrarToast(`${totalEnfileirado} vídeo(s) na fila REAL de processamento.`);
     } catch (erro) {
-      mostrarToast(erro.message || 'Falha ao enfileirar o lote.', 'erro');
+      // FALHA PARCIAL: com vários grupos, os anteriores podem já estar na
+      // fila real. Eles NÃO podem sumir da UI — publica o que entrou e
+      // sobe o polling antes de avisar o erro.
+      if (mapaFila.size > 0) {
+        inicioFilaRef.current = Date.now();
+        avisoWorkerRef.current = false;
+        publicarNaFila();
+        iniciarPolling();
+        mostrarToast(
+          `${mapaFila.size} vídeo(s) entraram na fila; o restante falhou — ${erro.message || 'erro ao enfileirar'}.`,
+          'erro'
+        );
+      } else {
+        mostrarToast(erro.message || 'Falha ao enfileirar o lote.', 'erro');
+      }
     } finally {
       setEnfileirando(false);
     }
@@ -1080,6 +1234,7 @@ export default function EditorLote() {
         <aside className="edl-painel-direita min-w-0 flex flex-col border-l border-[color:var(--edl-borda)] h-full" aria-label="Template do lote">
           <PainelFluxo
             config={config}
+            itens={itens}
             aoAtualizarConfig={setConfig}
             previewAtivo={previewAtivo}
             aoAlternarPreview={setPreviewAtivo}

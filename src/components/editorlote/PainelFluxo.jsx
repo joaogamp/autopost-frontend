@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { Upload, Scan, Eye, LayoutTemplate, AlertCircle, X } from 'lucide-react';
+import { Upload, Scan, Eye, LayoutTemplate, AlertCircle, X, Scissors } from 'lucide-react';
 import EditorCanvas from './EditorCanvas';
-import { criarConfigPadrao, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/configEditorLote';
+import { criarConfigPadrao, rotuloDeVideo, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — PAINEL DIREITO ÚNICO (fluxo simplificado):
@@ -66,6 +66,7 @@ function lerImagemComoDataUrl(arquivo, limite, aoPronto, aoErro) {
 
 export default function PainelFluxo({
   config,
+  itens,
   aoAtualizarConfig,
   previewAtivo,
   aoAlternarPreview,
@@ -78,6 +79,34 @@ export default function PainelFluxo({
 
   const templateFundo = (config && config.templateFundo) || {};
   const temTemplate = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/');
+
+  /* --- CORTE AUTOMÁTICO DE BORDAS (INDICADOR MÍNIMO — somente leitura) ---
+   * O corte automático roda sozinho no import (EditorLote.aoAdicionarVideo) e
+   * grava `config.overridesPorVideo[videoId]` com `origem:'auto'`. Aqui só
+   * AVISAMOS que ele existe: um texto pequeno por vídeo, do lado aplicável.
+   * NÃO é controle novo: sem slider, sem toggle, sem botão. O usuário continua
+   * ajustando exatamente como já ajustava hoje (pela marcação manual) — e como
+   * a detecção nunca sobrescreve um override `origem:'manual'`, mexer à mão
+   * manda no corte final. */
+  const cortesAutomaticos = (Array.isArray(itens) ? itens : []).map((item, indice) => {
+    const over = config?.overridesPorVideo?.[item?.id];
+    if (!over || over.origem !== 'auto') return null;
+    const sup = Number(over.superior) || 0;
+    const inf = Number(over.inferior) || 0;
+    // Uma casa decimal, sem zero à direita: mostra o número QUE O DETECTOR
+    // GRAVOU (ex.: 34.5, 9.9) em vez de um inteiro arredondado que pareceria
+    // discordar do valor validado (arredondar 34.5 para "35%" seria enganoso).
+    const pct = (n) => `${Math.round(n * 10) / 10}%`;
+    const partes = [];
+    if (sup > 0) partes.push(`${pct(sup)} topo`);
+    if (inf > 0) partes.push(`${pct(inf)} base`);
+    if (partes.length === 0) return null;
+    return {
+      id: item.id,
+      nome: item.nome || rotuloDeVideo(indice),
+      texto: `corte automático: ${partes.join(' · ')}`,
+    };
+  }).filter(Boolean);
 
   /* ------------- IMPORTAR TEMPLATE (TEMPLATE BASE do lote) ------------- */
   function aoEscolherTemplate(e) {
@@ -294,6 +323,34 @@ export default function PainelFluxo({
           O Preview aplica este template e esta área em TODOS os vídeos importados.
           Antes dele, o centro mostra somente os vídeos.
         </p>
+
+        {/* CORTE AUTOMÁTICO DE BORDAS — INDICADOR MÍNIMO (somente leitura).
+            Aparece sozinho depois do import, sem o usuário tocar em nada:
+            um texto pequeno por vídeo com corte automático aplicado. NÃO é
+            controle novo (sem slider, sem toggle, sem botão) — o ajuste
+            continua sendo a marcação manual de sempre. */}
+        {cortesAutomaticos.length > 0 ? (
+          <div className="pt-3 mt-1 border-t border-[color:var(--edl-borda)]">
+            <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
+              Corte automático de bordas
+            </p>
+            <ul className="flex flex-col gap-1">
+              {cortesAutomaticos.map((c) => (
+                <li key={c.id} className="flex items-start gap-1.5 min-w-0">
+                  <Scissors className="w-3 h-3 shrink-0 mt-px edl-icone-a" />
+                  <span className="min-w-0">
+                    <span className="block text-[9px] font-bold truncate" style={{ color: 'var(--edl-texto-dim)' }}>
+                      {c.nome}
+                    </span>
+                    <span className="block text-[9px] font-semibold truncate" style={{ color: 'var(--edl-texto-mut)' }}>
+                      {c.texto}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
 
       {marcaAberta ? (

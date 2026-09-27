@@ -315,7 +315,17 @@ export function faixaExternaEstrutural(perfil, lado, altura) {
     if (run >= Math.min(janela, total) || (run >= minRun && fracaoConteudo >= FRACAO_JANELA_CONTEUDO)) {
       return 'conteudo';
     }
+    // Uma quebra espacial intermediária (3..7,999) imediatamente antes de
+    // textura persistente é a borda fina/separação de um bloco de texto. Ela
+    // também é outlier: sem esta exceção, classificarLinha() a chamaria de
+    // "lisa" e encerraria a faixa antes de alcançar o próprio texto.
+    // A textura pode começar até 3 linhas depois, atravessando as linhas
+    // pretas finas que separam o texto da transição do vídeo.
+    const texturaInternaImediata = [1, 2, 3].some((distancia) =>
+      ehTextura(doTopo ? y + distancia : y - distancia)
+    );
     if (
+      (perfil.desvioEspacial[y] >= LIMIAR_VARIACAO && perfil.desvioEspacial[y] < LIMIAR_CONTEUDO && texturaInternaImediata) ||
       perfil.desvioEspacial[y] >= LIMIAR_CONTEUDO ||
       (perfil.desvioTemporal[y] > LIMIAR_TEMPORAL_MEDIA && perfil.desvioEspacial[y] > LIMIAR_VARIACAO)
     ) {
@@ -422,6 +432,7 @@ export function detectarBordasDeFrames(frames, largura, altura) {
       superior: arredondar(sup.pct),
       inferior: arredondar(inf.pct),
       confiavel: !!sup.confiavel && !!inf.confiavel,
+      aplicavel: { superior: !!sup.confiavel, inferior: !!inf.confiavel },
       detalhes: {
         frames: perfil.n,
         largura,
