@@ -19,7 +19,7 @@ import {
 } from '../lib/configEditorLote';
 import { detectarBordasDoVideo } from '../lib/detectorBordas';
 import * as cofre from '../lib/cofreMidias';
-import { processarLote, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
+import { processarLote, buscarFila, buscarBiblioteca, listarFinais, urlArquivo } from '../lib/api';
 import {
   configParaTemplatePayload,
   assinarConfig,
@@ -149,7 +149,7 @@ function itensParaSalvar(itens) {
     .filter((it) => it && it.id && (it.urlFonte || it.thumbnail))
     .map((it) => {
       // PRONTO = concluído DE VERDADE (mesmo predicado do polling/contador).
-      const pronto = !!(it.filaId && it.status === 'concluido' && Number(it.percentual) === 100);
+      const pronto = ehVideoPronto(it);
       const dados = {
         id: it.id,
         bibliotecaId: it.bibliotecaId || it.id,
@@ -167,6 +167,35 @@ function itensParaSalvar(itens) {
       };
       return pronto ? { ...dados, status: 'concluido', percentual: 100 } : dados;
     });
+}
+
+/**
+ * PREDICADO ÚNICO DE "PRONTO" — concluído DE VERDADE.
+ *
+ * Um item só é considerado PRONTO quando tem `filaId` (não veio de um
+ * restauro avulso), o polling trouxe `status === 'concluido'` E o percentual é
+ * exatamente 100. Tudo que estiver fora disso — importado, aguardando,
+ * processando ou erro — NUNCA entra neste caminho.
+ *
+ * É a MESMA função usada pelo polling, pela persistência, pela reidratação e
+ * pela remoção automática: um único lugar decide o que é "terminado".
+ */
+export function ehVideoPronto(it) {
+  return !!(it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100);
+}
+
+/**
+ * SEPARADOR DE ARQUIVADOS (ids que já saíram da lista do Editor por conclusão).
+ *
+ * A remoção de concluídos é LOCAL, mas precisa sobreviver ao F5/reload: sem
+ * este registro, `carregarLoteSalvo` restauraria do localStorage o item que o
+ * usuário acabou de ver sumir e ele "ressuscitaria" na próxima montagem. O
+ * conjunto fica no próprio estado persistido do lote (chave `arquivados`) e é
+ * consultado tanto na gravação quanto na restauração.
+ */
+function arquivadosDoLote(dados) {
+  const brutos = dados && Array.isArray(dados.arquivados) ? dados.arquivados : [];
+  return new Set(brutos.filter((x) => typeof x === 'string' && x));
 }
 
 /** Chave do lote no localStorage (sessão atual). */
@@ -487,6 +516,11 @@ function carregarLoteSalvo() {
     }
     const mesmaSessao = !!loteIdSalvo && marcaSessao === loteIdSalvo;
     const config = mesmaSessao ? mesclarConfig(dados.config) : criarConfigLimpaDeLote();
+    // ARQUIVADOS — itens que já concluíram e saíram da lista do Editor. É um
+    // dado INDEPENDENTE da sessão: vale tanto na continuação do mesmo lote
+    // quanto numa sessão nova, porque não é config de edição, é o registro de
+    // "este vídeo já foi entregue" (o arquivo final segue no servidor).
+    const arquivados = arquivadosDoLote(dados);
     // LOGO REMOVIDA do fluxo: nenhuma restauração de logo — a config limpa já
     // nasce com logo inerte e configs antigas são neutralizadas em
     // configParaSalvar/mesclarConfig.
@@ -500,9 +534,16 @@ function carregarLoteSalvo() {
     // válidos depois de um F5/reload.
     const itens = dados.itens
       .filter((v) => v && v.id && (v.urlFonte || v.url || v.thumbnail))
+      // REMOÇÃO AUTOMÁTICA DE CONCLUÍDOS — o item que já saiu da lista por ter
+      // concluir NÃO volta, mesmo que uma gravação antiga ainda o traga no
+      // `dados.itens`. A lista `arquivados` é a fonte da verdade e é escrita
+      // no MESMO instante da remoção (ver o effect de concluídos), então um
+      // F5, uma navegação para outra aba ou um reload durante o processamento
+      // devolvem exatamente a lista que o usuário está vendo.
+      .filter((v) => !arquivados.has(v.id))
       .map((v) => {
         // PRONTO = concluído DE VERDADE (mesmo predicado do polling/contador).
-        const pronto = !!(v.filaId && v.status === 'concluido' && Number(v.percentual) === 100);
+        const pronto = ehVideoPronto({ filaId: v.filaId, status: v.status, percentual: v.percentual });
         return {
           id: v.id,
           bibliotecaId: v.bibliotecaId || v.id || null,
@@ -547,6 +588,9 @@ function carregarLoteSalvo() {
       // Marca da carga reduzida (persistência degradada por cota) para a
       // interface poder explicar o que o usuário vai ver.
       persistenciaReduzida: mesmaSessao ? dados.persistenciaReduzida === true : false,
+      // ARQUIVADOS — repassados adiante para que a gravação seguinte não
+      // perca o registro e o item removido não ressuscite.
+      arquivados: [...arquivados],
     };
   } catch {
     return null;
@@ -571,7 +615,7 @@ function carregarLoteSalvo() {
  * possa avisar o usuário quando algo realmente não coube — o `catch` vazio do
  * código anterior era justamente o que escondia a perda de dados.
  */
-function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura }) {
+function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura, arquivados }) {
   const resultado = { gravado: false, midiasNoCofre: false, midiasPerdidas: false };
   try {
     const configCompleta = configParaSalvar(config);
@@ -634,6 +678,11 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
       // Índice das mídias que vivem no cofre (FASE 4). Ausente em cargas
       // antigas e quando não há cofre — a leitura trata os dois casos.
       indiceMidias: indiceGravado,
+      // ARQUIVADOS (remoção automática de concluídos): ids dos itens que já
+      // saíram da lista do Editor e NÃO podem ressuscitar num F5/reload.
+      // Os PRONTOS que ainda estão na lista continuam sendo gravados acima —
+      // só saem do disco depois da confirmação do final (ver `carregarLoteSalvo`).
+      arquivados: Array.isArray(arquivados) ? arquivados : [],
     });
 
     try {
@@ -655,6 +704,7 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
               templateId: null,
               assinatura: null,
               indiceMidias: null,
+              arquivados: Array.isArray(arquivados) ? arquivados : [],
               persistenciaReduzida: true,
             }));
             resultado.gravado = true;
@@ -720,6 +770,11 @@ export default function EditorLote() {
   // vídeo continua mostrando o resultado do corte (automático ou manual).
   const [linhasCorteAtivas, setLinhasCorteAtivas] = useState(false);
   const [toast, setToast] = useState(null);
+  // ARQUIVADOS — ids dos vídeos que JÁ concluíram e saíram da lista do Editor
+  // em Lote. É o registro persistente da remoção automática: enquanto um id
+  // estiver aqui, ele não volta para a lista em nenhum F5/reload/navegação.
+  // Vive no estado (e não num ref) porque o autosave precisa gravá-lo.
+  const [arquivados, setArquivados] = useState(() => loteSalvo?.arquivados || []);
   // ELEMENTO SELECIONADO no Preview (Camadas ⇄ Preview ⇄ configuração à
   // esquerda): 'logo' | 'textoSuperior' | 'textoInferior' | 'identidadeNome' |
   // 'identidadeUsuario' | 'selo' | 'area' | 'corte' | 'video' | 'fundo' |
@@ -734,6 +789,10 @@ export default function EditorLote() {
   // de ressuscitar outro vídeo no lugar; ele volta a valer quando o usuário
   // escolhe outro vídeo (ou quando o lote fica vazio).
   const preservarSemBaseRef = useRef(false);
+  // Lista vazia CAUSADA por remoção automática de concluídos (o último vídeo
+  // do lote terminou). Distingue "o usuário limpou a lista" de "o lote foi
+  // processado por completo" — só no segundo caso a config do lote é preservada.
+  const vazioPorConclusaoRef = useRef(false);
 
   const pool = usePoolDeVideos(itens, idSelecionado);
 
@@ -834,41 +893,167 @@ export default function EditorLote() {
   // identidade/cortes/overrides. A config compartilhada dos vídeos que JÁ
   // estão no lote atual NUNCA é tocada aqui (o efeito só roda com a lista
   // vazia). Importar vídeo NÃO limpa nada (config compartilhada preservada).
+  //
+  // EXCEÇÃO — REMOÇÃO AUTOMÁTICA DE CONCLUÍDOS: quando a lista esvazia porque
+  // o ÚLTIMO vídeo terminou e foi arquivado, o usuário NÃO pediu um lote
+  // novo — ele acabou de processar um lote inteiro. Zerar a config aqui
+  // destruiria o trabalho de composição (template/textos/cortes) que ele
+  // provavelmente quer reaproveitar no próximo lote importado. Nesse caso a
+  // lista vazia é um resultado do PROCESSAMENTO, não uma decisão do usuário:
+  // a config é preservada e o próximo import continua com a mesma arte.
   useEffect(() => {
-    if (itens.length > 0) return;
+    if (itens.length > 0) {
+      vazioPorConclusaoRef.current = false;
+      return;
+    }
+    if (vazioPorConclusaoRef.current) return; // esvaziou por conclusão — não encerra o lote
     setConfig((atual) => (loteTemEdicoesAtivas(atual) ? criarConfigLimpaDeLote() : atual));
   }, [itens.length]);
 
-  // VÍDEOS PRONTOS PERMANECEM NO EDITOR: concluído NÃO é mais
-  // removido automaticamente. O item continua na lista com status 'concluido'
-  // e o polling já troca thumbnail/URL para o MP4 FINAL do servidor
-  // (/arquivos/publicados/{filaId}.mp4) — o card "✓ Pronto" reproduz o
-  // resultado REAL para conferência. O autosave
-  // persiste o item (URLs estáveis), então o PRONTO sobrevive ao reload.
-  // Itens 'aguardando'/'processando'/'erro' nunca são tocados.
+  // REGISTRO DOS IDs QUE JÁ SAÍRAM DA LISTA (espelho síncrono do estado).
+  // Declarado aqui porque `arquivarConcluidos` o usa; é reconciliado a cada
+  // render logo abaixo (junto com o espelho completo do lote).
+  const idsArquivadosRef = useRef(new Set());
+  // ESPELHO DE ESTADO PRÉVIO AO ARQUIVAMENTO — declarado aqui (e não junto do
+  // `estadoAtualRef` mais abaixo) porque `arquivarConcluidos` é declarado
+  // ANTES dele: referenciar uma `const` ainda não inicializada dentro de um
+  // `useCallback` só é seguro porque a leitura acontece na CHAMADA (depois do
+  // render inteiro), mas manter a ordem evita depender dessa sutileza.
+  const estadoPreArquivoRef = useRef(null);
+  // Quantos concluídos foram arquivados desde o último encerramento de ciclo —
+  // usado só para escolher a mensagem final do polling (sem toast duplicado).
+  const arquivadosNoCicloRef = useRef(0);
+
+  /**
+   * ARQUIVA (remove da lista) os vídeos CONFIRMADOS pelo backend — e só eles.
+   *
+   * Reaproveita exatamente a mecânica já validada da lixeira
+   * (`aoRemoverVideo`): filtra a lista, ajusta a seleção se o item removido era
+   * o VÍDEO BASE e regrava o localStorage NA HORA. Não há nenhuma chamada de
+   * rede aqui dentro — a confirmação já aconteceu antes, em
+   * `verificarFinaisEArquivar` —, então esta função é PURAMENTE local e não
+   * pode falhar por causa do servidor.
+   *
+   * Recebe a lista de itens CONFIRMADOS (pode ser mais de um: vários vídeos
+   * terminam juntos) e trata todos numa única transação de estado — nada de
+   * um `setItens` por vídeo (evita re-render intermediário e corrida entre
+   * effects concorrentes).
+   */
+  const arquivarConcluidos = useCallback((confirmados) => {
+    const ids = new Set(confirmados.map((it) => it.id));
+    if (ids.size === 0) return;
+    ids.forEach((id) => idsArquivadosRef.current.add(id));
+    arquivadosNoCicloRef.current += ids.size;
+    // Reflete o novo conjunto de arquivados ANTES do `setItens`: o próximo
+    // render já enxerga a lista finalizada e o autosave grava o estado certo.
+    setArquivados((atual) => {
+      const novo = new Set(atual);
+      ids.forEach((id) => novo.add(id));
+      return [...novo];
+    });
+    setItens((atual) => {
+      const proximos = atual.filter((it) => !ids.has(it.id));
+      // Lista vazia por CONCLUSÃO (não por lixeira): sinaliza para o effect de
+      // "lote vazio" não zerar a config de composição do usuário.
+      if (proximos.length === 0) vazioPorConclusaoRef.current = true;
+      return proximos;
+    });
+    // Seleção: se o VÍDEO BASE era um dos removidos, limpa (o auto-select
+    // escolhe o próximo da lista, ou deixa o editor sem base se não sobrou
+    // nenhum). Preserva a selection-effect já existente.
+    setIdSelecionado((atual) => (ids.has(atual) ? null : atual));
+    // PERSISTÊNCIA IMEDIATA — não espera o debounce de 350ms do autosave.
+    // Motivo: um F5/navegação nesse intervalo recarregaria o item na lista. O
+    // disco recebe a lista SEM os concluídos e COM os ids arquivados.
+    const anterior = estadoPreArquivoRef.current || { itens, config, idSelecionado, arquivados };
+    const listaSemConcluidos = (anterior.itens || []).filter((it) => !ids.has(it.id));
+    salvarEstadoNoDisco({
+      itens: listaSemConcluidos,
+      config: anterior.config || config,
+      idSelecionado: ids.has(anterior.idSelecionado) ? null : anterior.idSelecionado,
+      templateId: null,
+      assinatura: assinaturaBaseSalva,
+      arquivados: [...new Set([...(anterior.arquivados || []), ...ids])],
+    });
+    mostrarToast(
+      confirmados.length === 1
+        ? 'Vídeo concluído — removido do Editor (final salvo na Biblioteca).'
+        : `${confirmados.length} vídeos concluídos — removidos do Editor (finais salvos na Biblioteca).`
+    );
+  }, [mostrarToast, assinaturaBaseSalva, config, idSelecionado, itens, arquivados]);
+
+  // REMOÇÃO AUTOMÁTICA DE VÍDEOS CONCLUÍDOS — o item PRONTO sai da lista do
+  // Editor, mas NADA é apagado no servidor.
+  //
+  // O QUE É REMOVIDO (e só isso): o item no estado `itens` (a lista "Vídeos
+  // Importados" e a grade do centro) e a referência correspondente no
+  // localStorage. É a MESMA mecânica da lixeira (`aoRemoverVideo`) — nenhum
+  // DELETE é enviado. Consequentemente permanecem intactos:
+  //   · o MP4 final em /arquivos/publicados/{filaId}.mp4;
+  //   · a thumbnail em /arquivos/thumbnails/{filaId}.jpg;
+  //   · o registro do final (finais-store.json) → visível na BIBLIOTECA;
+  //   · a linha da fila e o AGENDAMENTO (inclusive o automático da regra).
+  //
+  // POR QUE CONFIRMAR EM GET /api/finais (e não confiar só no status): o
+  // servidor grava `status='concluido'` na fila ANTES de mover o MP4 para
+  // publicados e ANTES de registrar o final (ver POST
+  // /api/finais/receber-processado, passos 4 → 5 → 8). Remover no status
+  // poderia tirar da tela um vídeo cujo arquivo ainda não existe. A consulta
+  // só confirma o que já está gravado — por isso o item SAI da lista sempre
+  // que o final estiver de fato disponível, e NUNCA antes disso.
+  //
+  // FAIL-OPEN (regra inegociável): se GET /api/finais falhar, vier vazio,
+  // demorar ou o final ainda não existir, o vídeo PERMANECE no card e a
+  // verificação é refeita no próximo ciclo. Perder o card é ruim; sumir com
+  // um vídeo antes do final existir é pior.
+  //
+  // Itens 'aguardando'/'processando'/'erro' e os ainda não importados NUNCA
+  // entram neste caminho — o único predicado é `ehVideoPronto`.
   const concluidosAvisadosRef = useRef(new Set());
-  const prontosContadosRef = useRef(0);
+  const verificandoRef = useRef(false);
   useEffect(() => {
-    const prontos = itens.filter(
-      (it) => it && it.filaId && it.status === 'concluido' && Number(it.percentual) === 100
-    );
-    if (prontos.length === 0) return;
-    const novos = prontos.filter((it) => !concluidosAvisadosRef.current.has(it.filaId));
-    if (novos.length === 0) return;
-    novos.forEach((it) => concluidosAvisadosRef.current.add(it.filaId));
-    prontosContadosRef.current += novos.length;
-    // Restam itens ativos (aguardando/processando)? Se sim, avisa o PRONTO
-    // agora; se não, o effect "Fila vazia" (abaixo) mostra a mensagem final
-    // combinada ao parar o polling — sem toast duplicado.
-    const restamAtivos = itens.some(
-      (it) => it.status === 'aguardando' || it.status === 'processando'
-    );
-    if (restamAtivos) {
-      mostrarToast(
-        novos.length === 1
-          ? 'Vídeo PRONTO no Editor — confira o resultado no card.'
-          : `${novos.length} vídeos PRONTOS no Editor — confira os resultados.`
-      );
+    const prontos = itens.filter((it) => ehVideoPronto(it));
+    if (prontos.length === 0) return undefined;
+    // Reentrância: uma consulta em voo já cobre este ciclo (evita duas
+    // chamadas concorrentes a /api/finais quando vários vídeos terminam juntos).
+    if (verificandoRef.current) return undefined;
+    // Já tratados neste ciclo de vida (o item saiu da lista) — não repete.
+    const candidatos = prontos.filter((it) => !concluidosAvisadosRef.current.has(it.filaId));
+    if (candidatos.length === 0) return undefined;
+
+    let cancelado = false;
+    verificarFinaisEArquivar();
+    return () => { cancelado = true; };
+
+    /** Confere no backend se os candidatos já têm final gravado e arquiva-os. */
+    async function verificarFinaisEArquivar() {
+      verificandoRef.current = true;
+      try {
+        const lista = await listarFinais();
+        if (cancelado) return;
+        // Resposta inesperada (não-array) = falha de consulta: nada é removido.
+        if (!Array.isArray(lista)) return;
+        // O id do FINAL é o próprio `filaId` do job (o servidor registra
+        // `finais[filaId]`) — é por essa chave que o item casa com o seu
+        // resultado. Só entram os finais CONCLUÍDOS, nunca um item em erro.
+        const idsComFinal = new Set(
+          lista.filter((f) => f && f.status === 'concluido' && f.id).map((f) => String(f.id))
+        );
+        const confirmados = candidatos.filter((it) => idsComFinal.has(String(it.filaId)));
+        // Final ainda não gravado (ou consulta parcial): mantém os cards e
+        // tenta de novo no próximo tick.
+        if (confirmados.length === 0) return;
+        // Marca ANTES de tocar no estado: se dois efeitos em sequência
+        // enxergarem o mesmo PRONTO, o segundo já o ignora — um vídeo não é
+        // arquivado duas vezes nem gera dois toasts.
+        confirmados.forEach((it) => concluidosAvisadosRef.current.add(it.filaId));
+        arquivarConcluidos(confirmados);
+      } catch {
+        // FAIL-OPEN: /api/finais indisponível (rede/servidor) → o vídeo
+        // continua no Editor. Nada é removido e nada é gravado.
+      } finally {
+        verificandoRef.current = false;
+      }
     }
   }, [itens, mostrarToast]);
 
@@ -884,6 +1069,9 @@ export default function EditorLote() {
     // Não existe mais template salvo: nada de id para persistir.
     templateId: null,
     assinatura: assinaturaBaseSalva,
+    // ARQUIVADOS — vai junto do flush de unmount/pagehide para que um item
+    // removido por conclusão nunca ressuscite depois de recarregar a página.
+    arquivados,
   };
 
   // IDs presentes no lote, em espelho SÍNCRONO do estado. O `estadoAtualRef`
@@ -894,6 +1082,15 @@ export default function EditorLote() {
   // a cada render.
   const idsNoLoteRef = useRef(new Set());
   idsNoLoteRef.current = new Set(itens.map((it) => it.id));
+  // O espelho de arquivados precisa conhecer os ids removidos ANTES do
+  // re-render (mesma janela em que a detecção de bordas pode resolver), então
+  // ele também é reconciliado por cima do estado, sem perder o que o
+  // arquivamento acabou de acrescentar.
+  idsArquivadosRef.current = new Set(arquivados);
+  // Espelho usado pela gravação IMEDIATA do arquivamento (ver
+  // `arquivarConcluidos`): sempre o estado do render ANTERIOR, ou seja, a lista
+  // completa antes de os concluídos saírem.
+  estadoPreArquivoRef.current = { itens, config, idSelecionado, arquivados };
 
   // VALIDAÇÃO DA RESTAURAÇÃO (1× por mount): confere o `bibliotecaId` de cada
   // item vindo do localStorage contra a biblioteca REAL do servidor e limpa
@@ -1037,11 +1234,12 @@ export default function EditorLote() {
           idSelecionado,
           templateId: null,
           assinatura: assinaturaBaseSalva,
+          arquivados,
         }),
       350
     );
     return () => clearTimeout(timer);
-  }, [itens, config, idSelecionado, assinaturaBaseSalva, midiasProntas]);
+  }, [itens, config, idSelecionado, assinaturaBaseSalva, midiasProntas, arquivados]);
 
   // Flush no unmount: garante que o ÚLTIMO estado vá pro localStorage mesmo
   // que o usuário saia da aba dentro da janela do debounce (trocar de página
@@ -1210,6 +1408,10 @@ export default function EditorLote() {
         idSelecionado: eraBase ? null : atual.idSelecionado,
         templateId: atual.templateId,
         assinatura: atual.assinatura,
+        // A lixeira NÃO arquiva (é remoção do usuário, não de conclusão): o id
+        // segue como reimportável. O que passa adiante é o conjunto já
+        // existente, para não perder o registro dos concluídos anteriores.
+        arquivados: atual.arquivados || [],
       });
       mostrarToast(
         eraBase
@@ -1445,15 +1647,12 @@ export default function EditorLote() {
     const temAtivos = itens.some((it) => it.status === 'aguardando' || it.status === 'processando');
     if (!temAtivos && pollRef.current) {
       pararPolling();
-      const n = prontosContadosRef.current;
-      prontosContadosRef.current = 0;
-      mostrarToast(
-        n > 0
-          ? n === 1
-            ? 'Implementação concluída — 1 vídeo PRONTO no Editor para conferir.'
-            : `Implementação concluída — ${n} vídeos PRONTOS no Editor para conferir.`
-          : 'Implementação concluída.'
-      );
+      // Contador de concluídos ARQUIVADOS neste ciclo. A remoção já mostra o
+      // seu próprio toast; este só encerra o ciclo quando nada foi arquivado
+      // (fila só de erros, por exemplo) — sem mensagem duplicada.
+      const n = arquivadosNoCicloRef.current;
+      arquivadosNoCicloRef.current = 0;
+      mostrarToast(n > 0 ? 'Implementação concluída — processo finalizado.' : 'Implementação concluída.');
     }
     const temAguardando = itens.some((it) => it.status === 'aguardando');
     const temProcessando = itens.some((it) => it.status === 'processando');
@@ -1475,13 +1674,16 @@ export default function EditorLote() {
   const statusTexto = useMemo(() => {
     const aguardando = itens.filter((i) => i.status === 'aguardando').length;
     const processando = itens.filter((i) => i.status === 'processando').length;
+    // Os concluídos saem da lista assim que o backend confirma o final, então
+    // este contador cobre apenas a JANELA entre o status virar 'concluido' e a
+    // confirmação em GET /api/finais — nunca o resultado final do lote.
     const concluidos = itens.filter((i) => i.status === 'concluido').length;
     const erros = itens.filter((i) => i.status === 'erro').length;
     if (enfileirando) return 'Enfileirando...';
     if (processando > 0) return `Processando: ${processando} em andamento`;
     if (aguardando > 0) return `Na fila: ${aguardando} aguardando`;
     if (erros > 0) return `Concluído com ${erros} erro(s)`;
-    if (concluidos > 0) return `Pronto — ${concluidos} final(is)`;
+    if (concluidos > 0) return `Finalizando: ${concluidos} concluído(s)`;
     return 'Pronto';
   }, [itens, enfileirando]);
 
@@ -1492,7 +1694,7 @@ export default function EditorLote() {
       // a fila no POST /api/lote. O "Salvar" grava o estado do editor no
       // localStorage — vídeos importados + config de composição.
       const { assinatura } = garantirConfig();
-      salvarEstadoNoDisco({ itens, config, idSelecionado, templateId: null, assinatura });
+      salvarEstadoNoDisco({ itens, config, idSelecionado, templateId: null, assinatura, arquivados });
       mostrarToast(`Salvo — ${itens.length} vídeo(s) importado(s) + configuração do Editor.`);
     } catch (erro) {
       mostrarToast(erro.message || 'Não foi possível salvar.', 'erro');
