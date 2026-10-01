@@ -65,6 +65,13 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
           } else {
             // Cada vídeo entra na LISTA ÚNICA (ListaVideos) e no espaço CENTRAL —
             // sem lista duplicada: clicar num vídeo abre o vídeo no editor.
+            //
+            // `largura`/`altura` seguem o MESMO caminho do `thumbnail`/`duracao`:
+            // o servidor as preenche no `ffprobe` do upload. No 201 elas ainda
+            // podem vir `null` (o enriquecimento é assíncrono) — nesse caso a
+            // re-hidratação de `EditorLote` (GET /api/biblioteca) preenche.
+            // São elas que permitem ao card NÃO SELECIONADO calcular a MESMA
+            // geometria do render (mesma fonte do `compor.js`).
             videosEnviados.forEach((v) =>
               aoAdicionarVideo({
                 id: v.id,
@@ -73,6 +80,8 @@ export default function PainelDownloads({ aoAdicionarVideo }) {
                 thumbnail: v.thumbnailUrl ? urlArquivo(v.thumbnailUrl) : null,
                 urlFonte: urlOriginalDoEnviado(v),
                 duracao: v.duracaoSegundos ? `${v.duracaoSegundos}s` : null,
+                largura: v.largura || null,
+                altura: v.altura || null,
                 status: 'pronto',
               })
             );

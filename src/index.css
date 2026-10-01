@@ -232,17 +232,10 @@ select option {
 
 }
 
-/* Área do vídeo (guia): SEMPRE neutra — o preenchimento rosa/roxo antigo era
-   a "linha rosa permanente" no preview. O guia aparece SÓ como contorno
-   tracejado neutro quando a marcação está ligada (classe utilitária). */
-.edl-area-video {
-  border: 2px dashed transparent;
-  background-color: transparent;
-}
-.edl-area-video.edl-guia-ativa {
-  border-color: rgba(148, 163, 184, 0.65);
-  background-color: transparent;
-}
+/* (Removido) `.edl-area-video` / `.edl-guia-ativa` — a caixa tracejada da área do
+   vídeo. Não existia mais nenhuma elemento usando essas classes: a `areaVideo`
+   continua existindo como DADO (posicionamento no canvas + buraco do template),
+   mas NÃO tem representação visual nem interação no preview. */
 
 /* Selo "BASE" (card do vídeo base) — discreto, sem brilho/glow */
 .edl-selo-base {
@@ -441,9 +434,8 @@ select option {
   [data-edl-controles] button { width: 36px; height: 36px; }
   [data-edl-controles] input { min-height: 28px; width: 100%; }
   [data-edl-controles] input[aria-label="Progresso do vídeo"] { grid-column: 1 / -1; grid-row: 2; }
-  .edl-zoom-touch { display: flex; gap: 8px; justify-content: center; padding: 8px; }
-  .edl-zoom-touch button { min-width: 44px; min-height: 44px; }
 }
-.edl-zoom-touch { display: none; }
-@media (max-width: 768px) { .edl-zoom-touch { display: flex; } }
+/* (Removido) `.edl-zoom-touch` — os controles de zoom por toque do vídeo.
+   O vídeo não é mais enquadrável pela interface; a `areaVideo` continua no
+   estado/payload com os valores já calculados pelo sistema. */
 

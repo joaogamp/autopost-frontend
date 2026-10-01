@@ -1,31 +1,39 @@
-import { useRef, useState } from 'react';
-import { Upload, Scan, Eye, LayoutTemplate, AlertCircle, X, Scissors } from 'lucide-react';
-import EditorCanvas from './EditorCanvas';
-import { criarConfigPadrao, rotuloDeVideo, CANVAS_LARGURA, CANVAS_ALTURA } from '../../lib/configEditorLote';
+﻿import { useRef, useState } from 'react';
+import { Upload, LayoutTemplate, AlertCircle, X, Scissors, Wand2, RotateCcw, Power } from 'lucide-react';
+import {
+  criarConfigPadrao,
+  criarAreaTemplatePadrao,
+  rotuloDeVideo,
+  CANVAS_LARGURA,
+  CANVAS_ALTURA,
+  CORTE_MAXIMO,
+  corteAutomaticoDoVideo,
+  resumoDoCorteDoVideo,
+  atualizarCorteNoConfig,
+  usarCorteAutomaticoDoVideo,
+  limparCorteDoVideo,
+  editarTodosOsVideos,
+} from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — PAINEL DIREITO ÚNICO (fluxo simplificado):
  *
  *   TEMPLATE
- *   [ Importar template ]      → PNG/JPG/WebP do PC (input file direto)
- *   [ Marcar espaço do vídeo ] → modo de marcação: mostra SOMENTE o template
- *                                com o retângulo da área arrastável/
- *                                redimensionável (SEM vídeo — Estado A)
- *   [ Mostrar Preview ]        → aplica template + área em TODOS os vídeos
- *                                (Estado B)
+ *   [ Importar template ] → PNG/JPG/WebP do PC (input file direto)
+ *
+ * NÃO existe a ferramenta "Marcar espaço do vídeo", a gaveta "Área do vídeo",
+ * nem qualquer editor de posicionamento/enquadramento do vídeo: o template é
+ * composto assim que é importado e o vídeo aparece normalmente na prévia.
  *
  * NÃO recria elementos do template (a arte importada JÁ contém tudo — fundo,
  * textos, imagens, gráficos): o Editor em Lote apenas recebe o template,
- * define a área do vídeo e compõe. NADA de logo/overlay extra: o template é a
- * fonte visual completa. A marcação usa o MESMO EditorCanvas / arraste.js /
- * config.areaVideo — prévia e render compartilham a MESMA geometria
- * (x/y/largura/altura em px do canvas 1080×1920).
+ * compõe e corta. NADA de logo/overlay extra: o template é a fonte visual
+ * completa. A prévia usa o MESMO EditorCanvas / config.areaVideo — prévia e
+ * render compartilham a MESMA geometria (x/y/largura/altura em px do canvas
+ * 1080×1920). A `areaVideo` permanece no estado e no payload: ela é apenas
+ * calculada pelo sistema, nunca digitada/ajustada pelo usuário.
  */
 
-/** Área padrão ao importar template (antes de o usuário marcar): retângulo
- * central ~85% × ~70% — nunca cobre a arte inteira. */
-const AREA_TEMPLATE_LARGURA_PCT = 0.85;
-const AREA_TEMPLATE_ALTURA_PCT = 0.7;
 const LIMITE_TEMPLATE_BYTES = 6 * 1024 * 1024;
 
 /** Lê imagem do PC como dataURL (mesma mecânica do PainelCamadas antigo). */
@@ -68,31 +76,32 @@ export default function PainelFluxo({
   config,
   itens,
   aoAtualizarConfig,
-  previewAtivo,
-  aoAlternarPreview,
-  elementoSelecionado,
-  aoSelecionarElemento,
+  // VÍDEO EM FOCO no editor (o "Base" da área central / da lista). Todo o
+  // corte manual é INDIVIDUAL: os controles e as linhas pertencem a este id.
+  idSelecionado,
+  // Liga/desliga a FERRAMENTA de arrastar as linhas no canvas. É só interface:
+  // desligar as linhas NÃO desliga o corte, e ligar as linhas NÃO detecta nada.
+  linhasCorteAtivas,
+  aoAlternarLinhasCorte,
 }) {
   const inputTemplateRef = useRef(null);
   const [erro, setErro] = useState('');
-  const [marcaAberta, setMarcaAberta] = useState(false);
 
   const templateFundo = (config && config.templateFundo) || {};
   const temTemplate = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/');
 
-  /* --- CORTE AUTOMÁTICO DE BORDAS (INDICADOR MÍNIMO — somente leitura) ---
-   * O corte automático roda sozinho no import (EditorLote.aoAdicionarVideo) e
-   * grava `config.overridesPorVideo[videoId]` com `origem:'auto'`. Aqui só
-   * AVISAMOS que ele existe: um texto pequeno por vídeo, do lado aplicável.
-   * NÃO é controle novo: sem slider, sem toggle, sem botão. O usuário continua
-   * ajustando exatamente como já ajustava hoje (pela marcação manual) — e como
-   * a detecção nunca sobrescreve um override `origem:'manual'`, mexer à mão
-   * manda no corte final. */
+  /* --- DETECÇÃO AUTOMÁTICA DE BORDAS (INDICADOR MÍNIMO — somente leitura) ---
+   * A detecção roda sozinha no import (EditorLote.detectarCorteAutomatico) e
+   * grava SÓ INFORMAÇÃO em `config.overridesPorVideo[videoId].deteccao`. Ela
+   * NUNCA vira corte efetivo sozinha: o vídeo importado nasce sem edição.
+   * Aqui só AVISAMOS que a informação existe (texto pequeno por vídeo).
+   * NÃO é controle novo: sem slider, sem toggle, sem botão. O corte efetivo só
+   * nasce quando o usuário arrasta a linha/slider, ou clica em "Usar detecção". */
   const cortesAutomaticos = (Array.isArray(itens) ? itens : []).map((item, indice) => {
-    const over = config?.overridesPorVideo?.[item?.id];
-    if (!over || over.origem !== 'auto') return null;
-    const sup = Number(over.superior) || 0;
-    const inf = Number(over.inferior) || 0;
+    const det = corteAutomaticoDoVideo(config, item?.id);
+    if (!det) return null;
+    const sup = Number(det.superior) || 0;
+    const inf = Number(det.inferior) || 0;
     // Uma casa decimal, sem zero à direita: mostra o número QUE O DETECTOR
     // GRAVOU (ex.: 34.5, 9.9) em vez de um inteiro arredondado que pareceria
     // discordar do valor validado (arredondar 34.5 para "35%" seria enganoso).
@@ -108,6 +117,44 @@ export default function PainelFluxo({
     };
   }).filter(Boolean);
 
+  /* --- CORTE MANUAL POR LINHAS (o MESMO vídeo, ajuste do usuário) -----------
+   * FONTE SEPARADA da detecção: aqui NENHUM pixel é analisado. O usuário liga
+   * a ferramenta, arrasta a linha superior/inferior no canvas ou usa os
+   * sliders, e o valor é gravado em `overridesPorVideo[videoId]` com
+   * `origem:'manual'`. O `automatico` (bruto do detector) fica guardado ao
+   * lado para a interface comparar e para o botão "Usar detecção automática".
+   * Cada vídeo tem o SEU estado: trocar de vídeo e voltar encontra o corte
+   * que foi deixado. */
+  const videoEmFoco = (Array.isArray(itens) ? itens : []).find((v) => v && v.id === idSelecionado) || null;
+  const indiceFoco = videoEmFoco ? (Array.isArray(itens) ? itens : []).findIndex((v) => v && v.id === idSelecionado) : -1;
+  const nomeFoco = videoEmFoco ? (videoEmFoco.nome || rotuloDeVideo(indiceFoco)) : null;
+  const resumo = resumoDoCorteDoVideo(config, idSelecionado);
+  // ESCOPO DE EDIÇÃO (toggle OFF = "Editando apenas este vídeo" /
+  // ON = "Editando todos os vídeos"). A chave mora na
+  // PRÓPRIA config (persistida com o lote), então o modo sobrevive a F5 e é
+  // lido pelas funções puras (`editarTodosOsVideos`) tanto pela interface
+  // quanto pelas escritas de área/corte.
+  const todosOsVideos = editarTodosOsVideos(config);
+  // ALTERNAR O ESCOPO só muda a chave `editarTodos`: NENHUM override é apagado
+  // aqui. Só o ato de EDITAR o corte com "Todos os vídeos" ligado substitui os
+  // ajustes individuais de corte (e aí a página avisa com "Desfazer"). Área e
+  // posição nunca são apagadas por essa troca.
+  const aoAlternarEscopo = (ligado) => aoAtualizarConfig((cfg) => ({ ...cfg, editarTodos: !!ligado }));
+  // Escrita MANUAL do corte — MESMA fonte de escrita das linhas arrastadas no
+  // preview (`atualizarCorteNoConfig`), agora ciente do ESCOPO do toggle:
+  //   · "Todos"      → grava no corteBordas global e SUBSTITUI os ajustes
+  //     individuais de corte do lote (FASE 2: o escopo é literal); a área, a
+  //     posição e a detecção automática não são tocadas;
+  //   · "Apenas este" → grava no override DESTE vídeo (os outros intactos).
+  // Assim slider, linha arrastada e detecção automática nunca divergem.
+  const aoMudarManual = (campo, valor) =>
+    aoAtualizarConfig((cfg) => atualizarCorteNoConfig(cfg, idSelecionado, { [campo]: valor }));
+  // Volta ao valor bruto do detector (ou limpa o corte se nunca detectou).
+  const aoUsarAutomatico = () => aoAtualizarConfig((cfg) => usarCorteAutomaticoDoVideo(cfg, idSelecionado));
+  // Desliga o corte DESTE vídeo (prévia e render juntos).
+  const aoDesligarCorte = () => aoAtualizarConfig((cfg) => limparCorteDoVideo(cfg, idSelecionado));
+  const pct = (n) => `${Math.round((Number(n) || 0) * 10) / 10}%`;
+
   /* ------------- IMPORTAR TEMPLATE (TEMPLATE BASE do lote) ------------- */
   function aoEscolherTemplate(e) {
     const arquivo = e.target.files ? e.target.files[0] : null;
@@ -116,34 +163,37 @@ export default function PainelFluxo({
     setErro('');
     lerImagemComoDataUrl(arquivo, LIMITE_TEMPLATE_BYTES, (dataUrl, nome, wNat, hNat) => {
       aoAtualizarConfig((cfg) => {
-        // REGRA 14 — estado antigo ZERADO: o template novo SUBSTITUI por
-        // completo a base visual anterior. A config nasce limpa
-        // (`criarConfigPadrao`) e só o lote atual (loteId/loteCriadoEm) é
-        // preservado: sem textos, logo, imagens, identidade, cortes ou
-        // enquadramento herdados de template/lote anterior.
+        // O template é uma CAMADA por cima do vídeo — ele NUNCA encolhe o
+        // vídeo. Dois conceitos separados (Opção B):
+        //
+        //  · `areaVideo`   → posição FÍSICA do vídeo. Fica no canvas INTEIRO
+        //                     (0,0,1080×1920) para o vídeo ocupar a tela toda,
+        //                     exatamente como antes de importar o template.
+        //  · `areaTemplate`→ o retângulo VAZADO do template (o buraco que
+        //     revela o vídeo). Recebe a MESMA geometria central de 85%×70%
+        //     que antes era gravada em `areaVideo`, então a moldura visual do
+        //     template fica IDÊNTICA — só o vídeo deixa de ser reduzido.
+        //
+        // PRESERVAÇÃO: a configuração atual é mantida. Trocar a arte do
+        // template NÃO pode apagar `corteBordas` (o corte de bordas global),
+        // `overridesPorVideo` (cortes automáticos/manuais por vídeo),
+        // `areaPorVideo` (ajustes individuais de área/enquadramento),
+        // textos, identidade, imagens e enquadramento. A única geometria
+        // realmente trocada é a do VÍDEO, que volta ao canvas inteiro
+        // (config nova do lote = geometricamente neutra).
         const base = criarConfigPadrao();
-        const larguraArea = Math.round(CANVAS_LARGURA * AREA_TEMPLATE_LARGURA_PCT);
-        const alturaArea = Math.round(CANVAS_ALTURA * AREA_TEMPLATE_ALTURA_PCT);
         return {
-          ...base,
-          loteId: cfg?.loteId || null,
-          loteCriadoEm: cfg?.loteCriadoEm || null,
+          ...cfg,
+          // Geometria do vídeo: canvas inteiro (neutra) — o vídeo sempre
+          // ocupa 100% da tela, com ou sem template.
+          areaVideo: { ...base.areaVideo },
+          // Retângulo vazado do template: o buraco de 85%×70% centralizado.
+          areaTemplate: criarAreaTemplatePadrao(),
           templateFundo: { url: dataUrl, nome: nome || 'Template', larguraNatural: wNat || 0, alturaNatural: hNat || 0, visivel: true },
-          areaVideo: {
-            ...base.areaVideo,
-            x: Math.round((CANVAS_LARGURA - larguraArea) / 2),
-            y: Math.round((CANVAS_ALTURA - alturaArea) / 2),
-            largura: larguraArea,
-            altura: alturaArea,
-            mostrarMarcacao: true,
-          },
         };
       });
-      // O template NÃO vai para o centro: ele fica disponível para a marcação
-      // e para o Preview. Fecha a marcação/preview anteriores para o usuário
-      // seguir o fluxo (marcar → Mostrar Preview).
-      setMarcaAberta(false);
-      if (typeof aoAlternarPreview === 'function') aoAlternarPreview(false);
+      // O template passa a compor o centro NA HORA: não há mais gaveta de
+      // marcação nem "Estado A" (template sem vídeo) para fechar.
     }, setErro);
   }
 
@@ -152,68 +202,6 @@ export default function PainelFluxo({
       ...cfg,
       templateFundo: { url: null, nome: '', larguraNatural: 0, alturaNatural: 0, visivel: true },
     }));
-    setMarcaAberta(false);
-    if (typeof aoAlternarPreview === 'function') aoAlternarPreview(false);
-  }
-
-  /* -------- ÁREA DO VÍDEO (marcação reusa o EditorCanvas existente) -------- */
-  // O painel de marcação mostra o template com o retângulo arrastável/
-  // redimensionável — o MESMO canvas, o MESMO arraste.js e a MESMA
-  // config.areaVideo que a prévia e o render usam (prévia = render).
-  function painelMarcacao() {
-    if (!marcaAberta || !temTemplate) return null;
-    return (
-      // GAVETA LATERAL DIREITA (NÃO um modal sobre o centro): o template com o
-      // retângulo da área aparece SOMENTE aqui, ao lado do painel direito, e o
-      // centro continua mostrando apenas os vídeos importados.
-      <div
-        className="fixed inset-y-0 right-0 z-40 w-[min(660px,94vw)] flex flex-col border-l border-[color:var(--edl-borda)]"
-        style={{ background: 'var(--edl-painel)', boxShadow: '-18px 0 50px -14px rgba(0,0,0,0.85)' }}
-        role="dialog"
-        aria-label="Marcar espaço do vídeo"
-      >
-        <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-[color:var(--edl-borda)]">
-          <div className="flex items-center gap-2">
-            <Scan className="w-4 h-4 edl-icone-a" />
-            <h3 className="font-display text-xs font-extrabold text-white">Marcar espaço do vídeo</h3>
-          </div>
-          <button
-            type="button"
-            onClick={() => { setMarcaAberta(false); }}
-            aria-label="Fechar marcação"
-            className="edl-ring-foco w-7 h-7 rounded-lg flex items-center justify-center text-[color:var(--edl-texto-dim)] hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <p className="shrink-0 px-4 py-2 text-[10px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
-          Arraste o retângulo e use as alças para definir EXATAMENTE onde o vídeo
-          aparece no resultado final. O template NÃO é alterado — só a posição e o
-          tamanho (x, y, largura, altura) da área do vídeo. O resultado final usa
-          esta MESMA geometria.
-        </p>
-        <div className="min-h-0 overflow-auto px-4 pb-4">
-          {/* MESMO EditorCanvas da prévia, mas no ESTADO A (marcação): só o
-              TEMPLATE + o RETÂNGULO da área — SEM vídeo nenhum. Nenhum vídeo
-              (nem thumbnail) é renderizado dentro do retângulo; ele é apenas
-              marcação geométrica (x/y/largura/altura) que o Preview usará
-              depois. Interativo para arrastar/redimensionar o retângulo. */}
-          <EditorCanvas
-            config={config}
-            aoAtualizarConfig={aoAtualizarConfig}
-            itemSelecionado={null}
-            urlVideoAtiva={null}
-            interativo
-            alturaMaxima={620}
-            mostrarRodape={false}
-            forcarTemplateVisivel
-            previewAtivo={false}
-            elementoSelecionado={elementoSelecionado}
-            aoSelecionarElemento={aoSelecionarElemento}
-          />
-        </div>
-      </div>
-    );
   }
   return (
     <div className="relative h-full min-h-0 flex flex-col bg-[color:var(--edl-painel)] overflow-y-auto">
@@ -226,7 +214,45 @@ export default function PainelFluxo({
       </div>
 
       <div className="px-3 py-3 space-y-3">
-        {/* 1) IMPORTAR TEMPLATE — abre o seletor de arquivos direto do PC */}
+        {/* 0) ESCOPO DE EDIÇÃO — toggle único. Só muda `editarTodos`; a escrita continua igual. */}
+        <div
+          className="rounded-lg border p-2.5"
+          style={{
+            borderColor: todosOsVideos ? 'var(--edl-rosa)' : 'rgba(56,189,248,0.55)',
+            background: todosOsVideos ? 'rgba(236,72,153,0.10)' : 'rgba(56,189,248,0.10)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--edl-texto-mut)' }}>
+                Escopo da edição
+              </p>
+              <p className="text-[11px] font-extrabold text-white leading-tight truncate">
+                {todosOsVideos ? 'Editando todos os vídeos' : 'Editando apenas este vídeo'}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={todosOsVideos}
+              aria-label={todosOsVideos ? 'Editando todos os vídeos' : 'Editando apenas este vídeo'}
+              title={todosOsVideos
+                ? 'Ligado: editando todos os vídeos. Desligue para editar apenas este vídeo.'
+                : 'Desligado: editando apenas este vídeo. Ligue para editar todos os vídeos.'}
+              onClick={() => aoAlternarEscopo(!todosOsVideos)}
+              className="edl-ring-foco shrink-0 w-[46px] h-[26px] rounded-full relative transition-colors"
+              style={{ background: todosOsVideos ? 'var(--edl-rosa)' : 'rgba(56,189,248,0.35)', border: '1.5px solid rgba(255,255,255,0.35)' }}
+            >
+              <span
+                aria-hidden="true"
+                className="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-all"
+                style={{ left: todosOsVideos ? 24 : 4 }}
+              />
+            </button>
+          </div>
+        </div>
+
+        {/* 1) IMPORTAR TEMPLATE */}
         <input ref={inputTemplateRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={aoEscolherTemplate} />
         <button
           type="button"
@@ -263,107 +289,197 @@ export default function PainelFluxo({
           </p>
         ) : null}
 
-        {/* 2) MARCAR ESPAÇO DO VÍDEO — só disponível com template importado.
-            Abre a GAVETA DE MARCAÇÃO à direita (o centro continua só com os
-            vídeos): o retângulo define x/y/largura/altura usados no preview e
-            no render final. */}
-        <button
-          type="button"
-          disabled={!temTemplate}
-          onClick={() => {
-            const abrindo = !marcaAberta;
-            setMarcaAberta(abrindo);
-            // REGRA DO FLUXO — ao ABRIR a marcação o Preview é FECHADO: durante
-            // a marcação existe SOMENTE o template + o retângulo (Estado A), sem
-            // nenhum vídeo enquadrado em lugar nenhum. O vídeo só volta a ser
-            // ENQUADRADO dentro da área marcada quando o usuário clicar em
-            // "Mostrar Preview" (Estado B). Ao FECHAR, nada é ligado
-            // automaticamente — o usuário controla o Preview.
-            if (abrindo && typeof aoAlternarPreview === 'function') aoAlternarPreview(false);
-            // Seleciona a camada "Área do vídeo" ao ABRIR a marcação: as 8
-            // alças (4 lados + 4 cantos) nascem visíveis — o usuário segura
-            // qualquer linha/borda imediatamente, sem um clique prévio no
-            // retângulo. Ao FECHAR, a seleção é limpa.
-            if (typeof aoSelecionarElemento === 'function') {
-              aoSelecionarElemento(abrindo ? 'area' : null);
-            }
-          }}
-          title={temTemplate ? 'Abrir o modo de marcação da área do vídeo' : 'Importe um template primeiro'}
-          className="edl-botao-fantasma edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg disabled:opacity-50 disabled:cursor-default"
-        >
-          <Scan className="w-3.5 h-3.5 edl-icone-a" />
-          {marcaAberta ? 'Fechar marcação' : 'Marcar espaço do vídeo'}
-        </button>
-        {temTemplate && config.areaVideo ? (
-          <p className="text-[9px] font-mono font-bold px-1" style={{ color: 'var(--edl-texto-mut)' }}>
-            Área: x {Math.round(config.areaVideo.x)} · y {Math.round(config.areaVideo.y)} · {Math.round(config.areaVideo.largura)}×{Math.round(config.areaVideo.altura)} px
-          </p>
-        ) : null}
-
-        {/* 3) MOSTRAR PREVIEW — aplica o MESMO template + a MESMA área em TODOS
-            os vídeos importados (6 por fileira). Antes do clique o centro
-            mostra SOMENTE os vídeos. */}
-        <button
-          type="button"
-          disabled={!temTemplate}
-          onClick={() => { if (typeof aoAlternarPreview === 'function') aoAlternarPreview(!previewAtivo); }}
-          aria-pressed={!!previewAtivo}
-          title={!temTemplate
-            ? 'Importe um template primeiro'
-            : previewAtivo
-              ? 'Voltar à visualização dos vídeos (sem template)'
-              : 'Aplicar o template + área em TODOS os vídeos'}
-          className={`edl-ring-foco w-full flex items-center justify-center gap-2 text-xs font-extrabold py-2.5 rounded-lg disabled:opacity-50 disabled:cursor-default ${previewAtivo ? '' : 'edl-botao-grad'}`}
-          style={previewAtivo ? { background: 'rgba(236,72,153,0.14)', border: '1.5px solid var(--edl-rosa)', color: '#fff' } : undefined}
-        >
-          <Eye className="w-3.5 h-3.5" />
-          {previewAtivo ? 'Ocultar Preview' : 'Mostrar Preview'}
-        </button>
-        <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
-          O Preview aplica este template e esta área em TODOS os vídeos importados.
-          Antes dele, o centro mostra somente os vídeos.
-        </p>
-
-        {/* CORTE AUTOMÁTICO DE BORDAS — INDICADOR MÍNIMO (somente leitura).
-            Aparece sozinho depois do import, sem o usuário tocar em nada:
-            um texto pequeno por vídeo com corte automático aplicado. NÃO é
-            controle novo (sem slider, sem toggle, sem botão) — o ajuste
-            continua sendo a marcação manual de sempre. */}
-        {cortesAutomaticos.length > 0 ? (
-          <div className="pt-3 mt-1 border-t border-[color:var(--edl-borda)]">
-            <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
-              Corte automático de bordas
+        {/* TEMPLATE SEMPRE VISÍVEL. O template compõe assim que é importado e o
+            vídeo aparece no preview normalmente, dentro do retângulo que o
+            próprio template deixa vazar. A `areaVideo` continua existindo como
+            DADO interno (posicionamento no canvas + buraco do template) — ela
+            não é mais mostrada nem editada pelo usuário aqui. */}
+        {temTemplate ? (
+          <div className="edl-superficie rounded-lg p-2 space-y-1">
+            <p className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--edl-texto-mut)' }}>
+              Template aplicado em todos os vídeos
             </p>
-            <ul className="flex flex-col gap-1">
-              {cortesAutomaticos.map((c) => (
-                <li key={c.id} className="flex items-start gap-1.5 min-w-0">
-                  <Scissors className="w-3 h-3 shrink-0 mt-px edl-icone-a" />
-                  <span className="min-w-0">
-                    <span className="block text-[9px] font-bold truncate" style={{ color: 'var(--edl-texto-dim)' }}>
-                      {c.nome}
-                    </span>
-                    <span className="block text-[9px] font-semibold truncate" style={{ color: 'var(--edl-texto-mut)' }}>
-                      {c.texto}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+              O template fica visível com o vídeo aparecendo normalmente ao lado.
+            </p>
           </div>
         ) : null}
+
+        {/* CORTE DE BORDAS — AS DUAS FONTES, SEPARADAS E VISÍVEIS.
+            (1) AUTOMÁTICO: o que o `detectorBordas.js` encontrou sozinho no
+                import (leitura pura — este painel não o recalcula, não o
+                sobrescreve e não depende dele);
+            (2) MANUAL: o ajuste do usuário pelas LINHAS arrastáveis do canvas
+                (ou pelos sliders abaixo) — gravado só neste vídeo.
+            As duas se informam, nunca se misturam: "Usar detecção automática"
+            volta ao bruto; o corte efetivo que vai pro vídeo final é sempre o
+            mesmo que a prévia mostra. */}
+        <div className="pt-3 mt-1 border-t border-[color:var(--edl-borda)] space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Scissors className="w-3.5 h-3.5 edl-icone-a shrink-0" />
+            <h3 className="font-display text-[11px] font-extrabold text-white">Corte de bordas</h3>
+          </div>
+
+          {!videoEmFoco ? (
+            <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>
+              Selecione um vídeo (na lista ou no centro) para ver e ajustar o
+              corte dele. Cada vídeo tem o seu próprio corte.
+            </p>
+          ) : (
+            <>
+              {/* Vídeo em foco + o que realmente vai para o vídeo final. */}
+              <div className="rounded-lg px-2.5 py-2 edl-superficie">
+                <p className="text-[9px] font-bold truncate mb-1" style={{ color: 'var(--edl-texto-dim)' }} title={nomeFoco}>
+                  {nomeFoco}
+                </p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--edl-texto-mut)' }}>
+                    Vai para o vídeo final
+                  </span>
+                  <span className="text-[10px] font-black text-white">
+                    {pct(resumo.efetivo.superior)} · {pct(resumo.efetivo.inferior)}
+                  </span>
+                </div>
+                <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+                  {resumo.temCorte
+                    ? 'origem: ajuste manual (linha)'
+                    : 'origem: sem corte'}
+                </p>
+              </div>
+
+              {/* (1) DETECÇÃO AUTOMÁTICA — somente leitura (diagnóstico). */}
+              <div className="rounded-lg px-2.5 py-2 border" style={{ borderColor: 'rgba(236,72,153,0.35)', background: 'rgba(236,72,153,0.06)' }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Wand2 className="w-3 h-3 shrink-0 edl-icone-a" />
+                  <span className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--edl-texto-mut)' }}>
+                    Detecção automática
+                  </span>
+                </div>
+                {resumo.automatico ? (
+                  <p className="text-[10px] font-bold text-white">
+                    Superior {pct(resumo.automatico.superior)} · Inferior {pct(resumo.automatico.inferior)}
+                  </p>
+                ) : (
+                  <p className="text-[9px] font-semibold" style={{ color: 'var(--edl-texto-mut)' }}>
+                    Nenhuma borda detectada neste vídeo.
+                  </p>
+                )}
+                {resumo.automatico && !resumo.temCorte ? (
+                  <button
+                    type="button"
+                    onClick={aoUsarAutomatico}
+                    title="Aplicar o valor detectado como corte manual deste vídeo (só entra no vídeo final depois disso)"
+                    className="edl-ring-foco mt-1.5 w-full flex items-center justify-center gap-1.5 text-[10px] font-extrabold py-1.5 rounded-lg"
+                    style={{ background: 'rgba(236,72,153,0.18)', color: '#fff' }}
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Usar detecção
+                  </button>
+                ) : null}
+              </div>
+
+              {/* (2) MANUAL — a ferramenta do usuário. Nenhum pixel é lido
+                  aqui: o usuário move a linha (ou o slider) e o valor vai para
+                  `overridesPorVideo[<este vídeo>]` com origem 'manual'. */}
+              <div className="rounded-lg px-2.5 py-2 border" style={{ borderColor: 'rgba(56,189,248,0.4)', background: 'rgba(56,189,248,0.07)' }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Scissors className="w-3 h-3 shrink-0" style={{ color: '#38bdf8' }} />
+                  <span className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--edl-texto-mut)' }}>
+                    Ajuste manual
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => aoAlternarLinhasCorte && aoAlternarLinhasCorte(!linhasCorteAtivas)}
+                  aria-pressed={!!linhasCorteAtivas}
+                  title={linhasCorteAtivas
+                    ? 'Ocultar as linhas de corte no vídeo'
+                    : 'Mostrar as linhas de corte para arrastar'}
+                  className="edl-ring-foco w-full flex items-center justify-center gap-1.5 text-[10px] font-extrabold py-1.5 rounded-lg"
+                  style={linhasCorteAtivas
+                    ? { background: 'rgba(56,189,248,0.22)', border: '1.5px solid #38bdf8', color: '#fff' }
+                    : { background: 'rgba(255,255,255,0.05)', border: '1px solid var(--edl-borda)', color: 'var(--edl-texto-dim)' }}
+                >
+                  {linhasCorteAtivas ? 'Ocultar linhas' : 'Corte manual por linhas'}
+                </button>
+                {linhasCorteAtivas ? (
+                  <p className="text-[9px] font-semibold leading-relaxed mt-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
+                    Arraste a linha azul no vídeo (topo e base) ou use os controles abaixo.{' '}
+                    {todosOsVideos
+                      ? 'Com "Todos os vídeos" ligado, o corte vale para o lote inteiro.'
+                      : 'Vale só para este vídeo; os demais mantêm o corte deles.'}
+                  </p>
+                ) : null}
+                {/* Sliders = MESMA escrita das linhas (fonte única) para quem
+                    prefere número exato. Ao mexer, o corte vira 'manual'. */}
+                {[
+                  { campo: 'superior', rotulo: 'Superior', valor: resumo.efetivo.superior },
+                  { campo: 'inferior', rotulo: 'Inferior', valor: resumo.efetivo.inferior },
+                ].map((linha) => (
+                  <label key={linha.campo} className="block mt-1.5">
+                    <span className="flex items-center justify-between text-[9px] font-bold" style={{ color: 'var(--edl-texto-mut)' }}>
+                      <span>{linha.rotulo}</span>
+                      <span className="font-mono text-white">{pct(linha.valor)}</span>
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={CORTE_MAXIMO}
+                      step={0.5}
+                      value={Number(linha.valor) || 0}
+                      onChange={(e) => aoMudarManual(linha.campo, Number(e.target.value))}
+                      className="w-full mt-0.5"
+                      aria-label={`Corte ${linha.rotulo.toLowerCase()} (ajuste manual)`}
+                    />
+                  </label>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={aoDesligarCorte}
+                disabled={!resumo.temCorte}
+                title="Remover o corte deste vídeo (a prévia e o vídeo final voltam ao vídeo inteiro)"
+                className="edl-ring-foco w-full flex items-center justify-center gap-1.5 text-[10px] font-bold py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-default"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--edl-borda)', color: 'var(--edl-texto-dim)' }}
+              >
+                <Power className="w-3 h-3" />
+                Desligar corte deste vídeo
+              </button>
+            </>
+          )}
+
+          {/* Panorâmica do LOTE: cada vídeo com corte DETECTADO (origem auto),
+              em qualquer modo. Leitura pura. */}
+          {cortesAutomaticos.length > 0 ? (
+            <div className="pt-2 border-t border-[color:var(--edl-borda)]">
+              <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
+                Automático no lote
+              </p>
+              <ul className="flex flex-col gap-1">
+                {cortesAutomaticos.map((c) => (
+                  <li key={c.id} className="flex items-start gap-1.5 min-w-0">
+                    <Scissors className="w-3 h-3 shrink-0 mt-px edl-icone-a" />
+                    <span className="min-w-0">
+                      <span className="block text-[9px] font-bold truncate" style={{ color: 'var(--edl-texto-dim)' }}>
+                        {c.nome}
+                      </span>
+                      <span className="block text-[9px] font-semibold truncate" style={{ color: 'var(--edl-texto-mut)' }}>
+                        {c.texto}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      {marcaAberta ? (
-        <p className="mt-auto px-3 py-2 text-[9px] font-semibold border-t border-[color:var(--edl-borda)]" style={{ color: 'var(--edl-texto-mut)' }}>
-          Marcação aberta à direita — só o template + o retângulo (sem vídeo). O Preview aplica a geometria marcada em todos os vídeos.
-        </p>
-      ) : (
-        <p className="mt-auto px-3 py-2 text-[9px] font-semibold border-t border-[color:var(--edl-borda)]" style={{ color: 'var(--edl-texto-mut)' }}>
-          Importe vídeos à esquerda · importe o template · marque a área · mostre o Preview.
-        </p>
-      )}
-
-      {painelMarcacao()}
+      <p className="mt-auto px-3 py-2 text-[9px] font-semibold border-t border-[color:var(--edl-borda)]" style={{ color: 'var(--edl-texto-mut)' }}>
+        Importe vídeos à esquerda e o template acima: o template já aparece
+        no centro, com o vídeo dentro do retângulo.
+      </p>
     </div>
   );
 }

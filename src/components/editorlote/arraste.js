@@ -10,7 +10,27 @@
  * NUNCA altera o outro.
  */
 
-import { atualizarCorteNoConfig, CANVAS_LARGURA, caixaConteudoExplicita, caixaEnquadramentoVideo, congelarConteudoVideo, deslocamentoPorArraste, ENQUADRAMENTO_VIDEO_PADRAO, molduraContemConteudo } from '../../lib/configEditorLote';
+import { atualizarCorteNoConfig, atualizarAreaVideoNoConfig, atualizarPosicaoVideoNoConfig, editarTodosOsVideos, areaVideoEfetivaDoVideo, areaSemCaixaDeConteudo, CANVAS_ALTURA, CANVAS_LARGURA, caixaConteudoExplicita, caixaEnquadramentoVideo, deslocamentoPorArraste, ENQUADRAMENTO_VIDEO_PADRAO, limitarMovimentoVideo } from '../../lib/configEditorLote';
+
+/** ESCOPO da edição do vídeo, resolvido a partir da config.
+ *
+ * O toggle "Editar todos / Apenas este vídeo" (`config.editarTodos`) decide se
+ * as alterações de ÁREA/enquadramento vão para o global (`areaVideo`) ou para
+ * o override DESTE vídeo (`areaPorVideo[id]`). `videoId` é o da célula editável.
+ * Sem vídeo selecionado não há escopo individual: cai no global.
+ *
+ * Esta é a ÚNICA porta de entrada do `arraste.js` para a área — o `arraste.js`
+ * não conhece a estrutura do override, só chama a fonte única de escrita
+ * (`atualizarAreaVideoNoConfig`), que aplica a precedência global ⊕ override. */
+function escopoDaEdicao(cfg, videoId) {
+  return { todos: editarTodosOsVideos(cfg) || !videoId, videoId: videoId || null };
+}
+
+/** Grava a área (moldura) respeitando o escopo. Substitui a escrita direta em
+ * `cfg.areaVideo` — mesma matemática, agora com override individual. */
+function gravarArea(cfg, videoId, mudancas) {
+  return atualizarAreaVideoNoConfig(cfg, { ...escopoDaEdicao(cfg, videoId), mudancas });
+}
 
 /** Aplica `cambios` em uma ruta anidada da config (1 ou 2 niveles). */
 function atualizarRuta(config, ruta, cambios) {
@@ -92,6 +112,138 @@ function limitar(valor, minimo, maximo) {
   return Math.min(maximo, Math.max(minimo, valor));
 }
 
+/** ESCALA de um canvas (`data-escala`) — nunca zero/NaN. */
+function escalaDoCanvas(canvasEl) {
+  const n = parseFloat(canvasEl?.dataset?.escala || '1');
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/** Canvas que COMPÕEM a área: onde o vídeo é posicionado por `areaVideo`.
+ * O EditorCanvas marca a raiz com `[data-area-composicao]` quando a composição
+ * está ativa (Preview) e a camada do vídeo é montada. A grade do centro mostra
+ * o MESMO vídeo na MESMA área em VÁRIAS células (1X/2X/3X/6X) — todas precisam
+ * acompanhar o arraste, não só a célula onde o ponteiro está. */
+function canvasesDeComposicao() {
+  try {
+    return Array.from(document.querySelectorAll('[data-area-composicao]'));
+  } catch {
+    return [];
+  }
+}
+
+/** Conjunto de canvases que devem acompanhar o arraste da ÁREA: o canvas onde
+ * o ponteiro está (a gaveta de marcação, por exemplo — que não tem vídeo
+ * montado) + TODOS os canvas de composição da página. */
+function canvasesParaSincronizar(canvasEl) {
+  const conjunto = new Set();
+  if (canvasEl) conjunto.add(canvasEl);
+  for (const canvas of canvasesDeComposicao()) conjunto.add(canvas);
+  return Array.from(conjunto);
+}
+
+/** Enquadramento (zoom/deslocamentos) MOSTRADO pela camada do vídeo de um
+ * canvas — lido do PRÓPRIO dataset (sempre atual, nunca closure velha). */
+function enquadramentoDaCamada(camada) {
+  if (!camada) return { ...ENQUADRAMENTO_VIDEO_PADRAO };
+  const numero = (valor, padrao) => {
+    const n = parseFloat(valor);
+    return Number.isFinite(n) ? n : padrao;
+  };
+  return {
+    zoom: numero(camada.dataset.enqZoom, ENQUADRAMENTO_VIDEO_PADRAO.zoom),
+    deslocamentoX: numero(camada.dataset.enqX, ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX),
+    deslocamentoY: numero(camada.dataset.enqY, ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY),
+  };
+}
+
+/** CAIXA DE CONTEÚDO em coords ABSOLUTAS do canvas para uma moldura + um
+ * enquadramento — a MESMA conta do render (`caixaEnquadramentoVideo`), SEM os
+ * campos `conteudo*`: a caixa congelada por um redimensionamento do vídeo fica
+ * obsoleta assim que a MOLDURA muda (é exatamente o que o commit grava). */
+function caixaAbsolutaDaMoldura(moldura, enquadramento = {}) {
+  const caixa = caixaEnquadramentoVideo({
+    x: moldura.x,
+    y: moldura.y,
+    largura: moldura.largura,
+    altura: moldura.altura,
+    zoom: enquadramento.zoom,
+    deslocamentoX: enquadramento.deslocamentoX,
+    deslocamentoY: enquadramento.deslocamentoY,
+  });
+  return {
+    x: moldura.x + caixa.x,
+    y: moldura.y + caixa.y,
+    largura: caixa.largura,
+    altura: caixa.altura,
+  };
+}
+
+/**
+ * GEOMETRIA DA ÁREA NA TELA (durante o arraste, sem re-render do React).
+ *
+ * ÁREA DE MARCAÇÃO ≠ CAMADA VISUAL DO VÍDEO — `alvos` separa as duas coisas:
+ *  · 'guia'  → escreve SOMENTE o retângulo de marcação
+ *    (`[data-elemento="area"]`). É o caso do arraste/alças do GUIA: mexer na
+ *    marcação NÃO reposiciona o vídeo (ele continua exatamente onde estava; só
+ *    é re-enquadrado na nova área quando a composição é (re)ATIVADA —
+ *    "Mostrar Preview" — ver EditorCanvas);
+ *  · 'todos' → escreve a MOLDURA (guia + camada `[data-elemento="video"]` +
+ *    caixa de seleção) e a CAIXA DE CONTEÚDO (`[data-elemento="video-caixa"]`).
+ *    É o caso do PRÓPRIO VÍDEO sendo editado (arraste do corpo no Preview,
+ *    `origemArraste === 'video'` e as alças do objeto de vídeo): aí o vídeo É o
+ *    alvo do gesto e acompanha o ponteiro em TEMPO REAL — o commit do
+ *    `pointerup` grava essa MESMA geometria, então não há salto no release.
+ *
+ * `caixaAbs` (coords absolutas do canvas) é OPCIONAL: sem ela a caixa é
+ * derivada da moldura + enquadramento da própria camada.
+ */
+function sincronizarGeometriaDaArea(canvasEl, moldura, { caixaAbs = null, alvos = 'todos' } = {}) {
+  if (!moldura) return;
+  const x = Number(moldura.x) || 0;
+  const y = Number(moldura.y) || 0;
+  const largura = Math.max(2, Number(moldura.largura) || 0);
+  const altura = Math.max(2, Number(moldura.altura) || 0);
+  // 'guia' → a marcação NUNCA toca na camada visual do vídeo.
+  const movimentaVideo = alvos !== 'guia';
+  for (const canvas of canvasesParaSincronizar(canvasEl)) {
+    const esc = escalaDoCanvas(canvas);
+    const px = `${x * esc}px`;
+    const py = `${y * esc}px`;
+    const pw = `${largura * esc}px`;
+    const ph = `${altura * esc}px`;
+    const camada = canvas.querySelector('[data-elemento="video"][data-enq-zoom]');
+    if (camada && movimentaVideo) {
+
+      camada.style.left = px;
+      camada.style.top = py;
+      camada.style.width = pw;
+      camada.style.height = ph;
+      const caixa = caixaAbs
+        || caixaAbsolutaDaMoldura({ x, y, largura, altura }, enquadramentoDaCamada(camada));
+      for (const no of camada.querySelectorAll('[data-elemento="video-caixa"]')) {
+        no.style.left = `${(caixa.x - x) * esc}px`;
+        no.style.top = `${(caixa.y - y) * esc}px`;
+        no.style.width = `${caixa.largura * esc}px`;
+        no.style.height = `${caixa.altura * esc}px`;
+      }
+      const selecao = canvas.querySelector('[data-elemento="selecao-video"]');
+      if (selecao) {
+        selecao.style.left = px;
+        selecao.style.top = py;
+        selecao.style.width = pw;
+        selecao.style.height = ph;
+      }
+    }
+    const guia = canvas.querySelector('[data-elemento="area"]');
+    if (guia) {
+      guia.style.left = px;
+      guia.style.top = py;
+      guia.style.width = pw;
+      guia.style.height = ph;
+    }
+  }
+}
+
 /**
  * MOVE O VÍDEO (região de composição `areaVideo.x/y`, px do canvas) —
  * usado pelo GUIA da área E PELO PRÓPRIO VÍDEO no Preview (um único
@@ -102,6 +254,16 @@ function limitar(valor, minimo, maximo) {
  * `MARGEM_MINIMA_VISIVEL` visível — assim o vídeo segue o mouse em todas as
  * direções mesmo quando preenche a área inteira (padrão).
  *
+ * DOIS CASOS, DOIS ALVOS:
+ * · GUIA da área (`somenteGuia: true`) — MARCAR a área é geometria PURA: o
+ *   retângulo tracejado ANDA (e só ele). A CAMADA VISUAL DO VÍDEO não é tocada:
+ *   ela é enquadrada na nova área quando a composição é (re)ativada (Mostrar
+ *   Preview). Marcar a área NUNCA move o vídeo;
+ * · VÍDEO no Preview (`somenteGuia: false` — arrastar o próprio vídeo com
+ *   zoom ≤ 1) — o vídeo É o alvo do gesto: MOLDURA e CAIXA de conteúdo andam
+ *   com o ponteiro em TEMPO REAL em TODOS os canvas que compõem a área e o
+ *   commit grava essa MESMA geometria → zero salto no `pointerup`.
+ *
  * Só a BARRA de controles do player (`[data-edl-controles]`: play/seek/volume)
  * NÃO arrasta; o vídeo em si segue arrastável.
  *
@@ -109,7 +271,7 @@ function limitar(valor, minimo, maximo) {
  * arraste — usados para o cursor "grabbing" e a dica discreta no Preview.
  */
 export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
-  const { aoInteragir = null, aoFinalizar = null } = opcoes || {};
+  const { aoInteragir = null, aoFinalizar = null, somenteGuia = false, videoId = null } = opcoes || {};
   return function aoPointerDown(e) {
     const objetivo = e.target;
     if (typeof objetivo.closest === 'function' && objetivo.closest('[data-edl-controles]')) return;
@@ -137,22 +299,33 @@ export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
     const startX = e.clientX;
     const startY = e.clientY;
 
+    // VÍDEO (somenteGuia=false): congela a caixa explícita ATUAL (coords
+    // absolutas do canvas, via data-conteudo-* da camada) para que o conteúdo
+    // acompanhe a moldura durante o arraste. GUIA (somenteGuia=true): null —
+    // comportamento da Fase 3 inalterado (conteúdo parado).
+    let caixaInicial = null;
+    if (!somenteGuia) {
+      const camadaVideo = (canvasEl && typeof canvasEl.querySelector === 'function'
+        ? canvasEl.querySelector('[data-elemento="video"][data-enq-zoom]')
+        : null) || null;
+      if (camadaVideo && camadaVideo.dataset) {
+        caixaInicial = caixaConteudoExplicita({
+          conteudoX: parseFloat(camadaVideo.dataset.conteudoX),
+          conteudoY: parseFloat(camadaVideo.dataset.conteudoY),
+          conteudoLargura: parseFloat(camadaVideo.dataset.conteudoLargura),
+          conteudoAltura: parseFloat(camadaVideo.dataset.conteudoAltura),
+        });
+      }
+    }
+
     if (typeof aoInteragir === 'function') aoInteragir({ ativo: true });
 
-    // TEMPO REAL — durante o arraste a posição é aplicada DIRETO no DOM
-    // (estado local, sem passar pelo config compartilhado), com rAF como
-    // limitador; o `aoAtualizarConfig` (re-render de toda a árvore, incluindo
-    // o <video> tocando) acontece UMA só vez, no `pointerup`.
-    //
-    // REGRA DA MARCAÇÃO — o VÍDEO FICA PARADO: só os nós que representam o
-    // RETÂNGULO da área (o guia [data-elemento="area"] e/ou o próprio alvo)
-    // são movidos no DOM. A camada do vídeo ([data-elemento="video"]) NUNCA
-    // é tocada aqui — ela é o conteúdo que será ENQUADRADO depois (Preview),
-    // não parte da marcação geométrica.
+    // TEMPO REAL — a geometria da área é aplicada DIRETO no DOM (estado local,
+    // sem passar pelo config compartilhado), com rAF como limitador; o
+    // `aoAtualizarConfig` (re-render de toda a árvore, incluindo o <video>
+    // tocando) acontece UMA só vez, no `pointerup` — e grava EXATAMENTE o que
+    // o arraste já colocou na tela (ver a REGRA ANTI-SALTO acima).
     const esc = Math.max(escala, 0.05);
-    const nosMover = new Set(
-      [el, canvasEl.querySelector('[data-elemento="area"]')].filter(Boolean)
-    );
     let atual = { x: inicial.x, y: inicial.y };
     let pendente = false;
     let rafId = 0;
@@ -161,12 +334,26 @@ export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
       rafId = 0;
       if (!pendente) return;
       pendente = false;
-      const px = `${atual.x * esc}px`;
-      const py = `${atual.y * esc}px`;
-      for (const no of nosMover) {
-        no.style.left = px;
-        no.style.top = py;
-      }
+      // A moldura NÃO muda de tamanho aqui (só x/y). 'guia' = marcação: escreve
+      // só o retângulo (a camada visual do vídeo fica onde está); 'todos' =
+      // arraste do PRÓPRIO vídeo: moldura + caixa acompanham o ponteiro.
+      // VÍDEO com caixa explícita: a caixa acompanha a moldura pelo MESMO delta
+      // (offset relativo constante => sem salto). GUIA: caixaAbs=null (ignorado
+      // com alvos:'guia'); VÍDEO sem caixa: null => fórmula legada (inalterado).
+      const deslocX = atual.x - inicial.x;
+      const deslocY = atual.y - inicial.y;
+      const caixaAcompanha = (!somenteGuia && caixaInicial) ? {
+        x: caixaInicial.x + deslocX,
+        y: caixaInicial.y + deslocY,
+        largura: caixaInicial.largura,
+        altura: caixaInicial.altura,
+      } : null;
+      sincronizarGeometriaDaArea(canvasEl, {
+        x: atual.x,
+        y: atual.y,
+        largura: inicial.largura,
+        altura: inicial.altura,
+      }, { caixaAbs: caixaAcompanha, alvos: somenteGuia ? 'guia' : 'todos' });
     }
 
     function aoMover(ev) {
@@ -186,14 +373,33 @@ export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       aplicarNoDom();
       // COMMIT ÚNICO — só agora o estado compartilhado é atualizado (re-render).
-      aoAtualizarConfig((cfg) => ({
-        ...cfg,
-        areaVideo: {
-          ...(cfg.areaVideo || {}),
-          x: atual.x,
-          y: atual.y,
-        },
-      }));
+      // Grava a MESMA geometria que o arraste já aplicou no DOM. POLÍTICA A
+      // (GUIA, somenteGuia=true): a caixa de conteúdo (conteudo* — coords
+      // ABSOLUTAS do canvas) é PRESERVADA: mover só a moldura desloca a JANELA
+      // sobre o MESMO conteúdo (as coords absolutas continuam válidas depois
+      // do movimento — não há o que reancorar). VÍDEO (somenteGuia=false) com
+      // caixa explícita: translada conteudoX/Y pelo MESMO delta da moldura
+      // (largura/altura preservadas) — o conteúdo acompanha o arraste sem
+      // salto. Sem caixa explícita (config antiga) nada é criado: fallback
+      // legado intacto. O ENQUADRAMENTO (zoom/deslocamentoX/Y) também é
+      // preservado — o re-render do `pointerup` reproduz a tela (o vídeo NÃO
+      // pula ao soltar).
+      //
+      // ESCOPO: a escrita passa por `gravarArea`, que respeita o toggle
+      // "Editar todos / Apenas este vídeo" (global x `areaPorVideo[id]`).
+      aoAtualizarConfig((cfg) => {
+        const deslocFinalX = atual.x - inicial.x;
+        const deslocFinalY = atual.y - inicial.y;
+        // ÁREA EFETIVA deste vídeo (global ⊕ override) como base do commit —
+        // arrastar a partir de uma área já individual não apaga o resto.
+        const base = areaVideoEfetivaDoVideo(cfg, (cfg.editarTodos === false ? (videoId || null) : null));
+        const mudancas = { x: atual.x, y: atual.y };
+        if (!somenteGuia && caixaInicial) {
+          mudancas.conteudoX = Math.round((caixaInicial.x + deslocFinalX) * 100) / 100;
+          mudancas.conteudoY = Math.round((caixaInicial.y + deslocFinalY) * 100) / 100;
+        }
+        return gravarArea({ ...cfg, areaVideo: base }, videoId, mudancas);
+      });
       if (typeof aoFinalizar === 'function') aoFinalizar();
     }
     window.addEventListener('pointermove', aoMover);
@@ -221,39 +427,50 @@ export function gerarArrastreArea(aoAtualizarConfig, opcoes = {}) {
  * marcação é geometria livre x/y/largura/altura.
  *
  * TEMPO REAL: durante o arraste a geometria é aplicada DIRETO no DOM (via
- * rAF) nos nós que REPRESENTAM o objeto redimensionado — NUNCA na própria
- * alça (o `currentTarget`): as alças são filhas ancoradas por
- * left/right/top/bottom, então acompanham as bordas sozinhas quando o nó muda.
- * A origem decide QUAIS nós: alça do GUIA da área (MARCAÇÃO) → só o retângulo
- * ([data-elemento="area"]) muda — vídeo/template 100% parados; alça do VÍDEO
- * selecionado (Preview) → camada + caixa do vídeo acompanham (recurso
- * estilo Canva, comportamento antigo preservado). O `aoAtualizarConfig`
- * (estado definitivo, com re-render) acontece UMA única vez, no `pointerup`. */
+ * rAF) nos nós que REPRESENTAM a área — NUNCA na própria alça (o
+ * `currentTarget`): as alças são filhas ancoradas por left/right/top/bottom,
+ * então acompanham as bordas sozinhas quando o nó muda.
+ * O QUE é sincronizado depende da ORIGEM do arraste (ver `origemArraste`):
+ * · GUIA da área (marcação) → SÓ o retângulo ([data-elemento="area"]). A camada
+ *   visual do vídeo NÃO anda com a marcação: ela permanece exatamente onde
+ *   estava e só é re-enquadrada na nova área quando a composição é (re)ativada
+ *   (Mostrar Preview) — ver EditorCanvas;
+ * · VÍDEO (alças do objeto de vídeo) → moldura + caixa de conteúdo em TODOS os
+ *   canvas que compõem a área, cada um com a sua escala: o vídeo acompanha o
+ *   gesto e o commit grava a MESMA geometria → zero salto no release.
+ * O `aoAtualizarConfig` (estado definitivo, com re-render) acontece UMA única
+ * vez, no `pointerup`. */
 export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
-  const { aoInteragir = null, aoFinalizar = null } = opcoes || {};
+  const { aoInteragir = null, aoFinalizar = null, videoId = null } = opcoes || {};
   return function aoPointerDown(e) {
     e.preventDefault();
     e.stopPropagation();
     if (typeof aoInteragir === 'function') aoInteragir();
     const canvasEl = encontrarCanvas(e.currentTarget);
     if (!canvasEl) return;
-    const escala = parseFloat(canvasEl.dataset.escala || '1');
-    const cW = parseFloat(canvasEl.dataset.canvasLargura || '1080');
-    const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');
+    const escala = parseFloat(canvasEl.dataset.escala) || 1;
+    // FASE 8 — canvasLargura/canvasAltura: o fallback vai DEPOIS do parseFloat
+    // (mesmo invariante da `escala` acima, e mesma razão). Com o fallback
+    // ANTES — `parseFloat(ds || '1080')` — uma string não-numérica mas
+    // truthy (ex.: 'abc') passava pelo `||` e virava `NaN`; aí `cW - inicial.x`
+    // é NaN, `limitar(…, TAM_MIN, NaN)` devolve NaN e o NaN é GRAVADO na config
+    // (o objeto do vídeo some e o payload/render herdam geometria inválida).
+    // `Number.isFinite` fecha também o caso `Infinity`/`-Infinity`.
+    // Usa as CONSTANTES importadas (e não '1080'/'1920' literais), como já
+    // fazem as linhas de logo/imagem/selo abaixo.
+    const cW = parseFloat(canvasEl.dataset.canvasLargura);
+    const cH = parseFloat(canvasEl.dataset.canvasAltura);
+    const larguraCanvas = Number.isFinite(cW) && cW > 0 ? cW : CANVAS_LARGURA;
+    const alturaCanvas = Number.isFinite(cH) && cH > 0 ? cH : CANVAS_ALTURA;
 
-    // REGRA DA MARCAÇÃO — só o RETÂNGULO muda: quando o arraste vem de uma
-    // alça do GUIA da área ([data-elemento="area"] — modo "Marcar espaço do
-    // vídeo"), o ÚNICO nó manipulado em tempo real é esse guia. A camada do
-    // vídeo ([data-elemento="video"]) e a caixa interna
-    // ([data-elemento="video-caixa"]) NUNCA entram aqui: o TEMPLATE e o VÍDEO
-    // ficam parados durante a marcação — o vídeo só é ENQUADRADO dentro da
-    // área quando o usuário clicar em "Mostrar Preview" (e o processamento
-    // final usa a MESMA geometria da config.areaVideo).
+    // GEOMETRIA DA ÁREA — as alças do GUIA (`[data-elemento="area"]`, modo
+    // "Marcar espaço do vídeo") e as ALÇAS DO VÍDEO selecionado (Preview,
+    // recurso estilo Canva) mudam a MESMA coisa: a moldura `areaVideo`
+    // (x/y/largura/altura). Por isso as duas seguem o MESMO caminho.
     //
-    // EXCEÇÃO (Preview, fora da marcação): as ALÇAS DO PRÓPRIO VÍDEO
-    // selecionado (`[data-elemento="video"]` — recurso estilo Canva) usam esta
-    // MESMA função; aí o objeto que o usuário redimensiona É o vídeo, e a
-    // camada/caixa continuam recebendo o tamanho em tempo real como antes.
+    // TEMPO REAL (ver o cabeçalho): a ORIGEM decide o alvo. Alças do GUIA
+    // (marcação) escrevem SÓ o retângulo — a camada visual do vídeo não é
+    // tocada; alças do VÍDEO escrevem moldura + caixa em todos os canvas.
     const guia = canvasEl.querySelector('[data-elemento="area"]');
     // SELEÇÃO DAS CAMADAS (Preview): a camada do vídeo é a ÚNICA
     // `[data-elemento="video"]` com `data-enq-zoom` (a caixa de seleção agora é
@@ -263,15 +480,9 @@ export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
       ? (e.currentTarget.closest('[data-elemento="selecao-video"]')
         || e.currentTarget.closest('[data-elemento="video"]'))
       : null;
-    const alvoVideo = noSelecao ? camadaVideo : null;
-    const nosVideo = camadaVideo && noSelecao ? [camadaVideo] : [];
-    const nosCaixa = camadaVideo && noSelecao
-      ? [...camadaVideo.querySelectorAll('[data-elemento="video-caixa"]')]
-      : [];
-    const nosTamanho = alvoVideo ? [...nosVideo, ...nosCaixa] : [guia].filter(Boolean);
-    const nosOrigem = alvoVideo ? [...nosVideo] : [guia].filter(Boolean);
-    // Origem do arraste: 'area' = marcação (só retângulo) · 'video' = alças do vídeo.
-    const origemArraste = alvoVideo ? 'video' : 'area';
+    // Origem do arraste: 'area' = alças do GUIA (só a moldura muda) ·
+    // 'video' = alças do VÍDEO selecionado (a caixa de conteúdo fica FIXA).
+    const origemArraste = noSelecao && camadaVideo ? 'video' : 'area';
 
     // CAIXA DE CONTEÚDO FIXA (origem 'video', opção A): congelada no
     // pointerdown em coords do canvas (cx, cy, cw, ch) via
@@ -378,7 +589,7 @@ export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
           nova.largura = inicial.x + inicial.largura - xNova;
         } else {
           // Borda direita segue o mouse; a esquerda fica FIXA.
-          nova.largura = limitar(inicial.largura + dx, TAM_MIN, cW - inicial.x);
+          nova.largura = limitar(inicial.largura + dx, TAM_MIN, larguraCanvas - inicial.x);
         }
       }
       if (mudaAltura) {
@@ -389,7 +600,7 @@ export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
           nova.altura = inicial.y + inicial.altura - yNova;
         } else {
           // Borda inferior segue o mouse; a superior fica FIXA.
-          nova.altura = limitar(inicial.altura + dy, TAM_MIN, cH - inicial.y);
+          nova.altura = limitar(inicial.altura + dy, TAM_MIN, alturaCanvas - inicial.y);
         }
       }
       // CLAMP COVER (origem 'video' com caixa fixa): a moldura NÃO pode passar
@@ -430,58 +641,23 @@ export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
       rafId = 0;
       if (!pendente) return;
       pendente = false;
-      // ORIGEM 'video' COM CAIXA FIXA: altera SÓ a moldura no DOM direto e
-      // reposiciona o video-caixa para o conteúdo ficar parado:
-      // left=(cx-novoX)*esc, top=(cy-novoY)*esc, width=cw*esc, height=ch*esc.
-      if (origemArraste === 'video' && caixaFixa && alvoVideo) {
-        const mx = `${atual.x * esc}px`;
-        const my = `${atual.y * esc}px`;
-        const mw = `${atual.largura * esc}px`;
-        const mh = `${atual.altura * esc}px`;
-        for (const no of nosVideo) {
-          no.style.left = mx;
-          no.style.top = my;
-          no.style.width = mw;
-          no.style.height = mh;
-        }
-        if (guia) {
-          guia.style.left = mx;
-          guia.style.top = my;
-          guia.style.width = mw;
-          guia.style.height = mh;
-        }
-        for (const cxNo of nosCaixa) {
-          cxNo.style.left = `${(caixaFixa.cx - atual.x) * esc}px`;
-          cxNo.style.top = `${(caixaFixa.cy - atual.y) * esc}px`;
-          cxNo.style.width = `${caixaFixa.cw * esc}px`;
-          cxNo.style.height = `${caixaFixa.ch * esc}px`;
-        }
-        // Caixa de seleção do vídeo (irmã, fora da camada): acompanha a moldura.
-        const selecao = canvasEl.querySelector('[data-elemento="selecao-video"]');
-        if (selecao) {
-          selecao.style.left = mx;
-          selecao.style.top = my;
-          selecao.style.width = mw;
-          selecao.style.height = mh;
-        }
-        return;
-      }
-      const w = `${atual.largura * esc}px`;
-      const h = `${atual.altura * esc}px`;
-      // Alças de esquerda/topo também MOVEM a origem (left/top), não só o
-      // tamanho — a borda oposta (âncora) fica parada no valor original.
-      if (atual.x !== inicial.x || atual.y !== inicial.y) {
-        const px = `${atual.x * esc}px`;
-        const py = `${atual.y * esc}px`;
-        for (const no of nosOrigem) {
-          no.style.left = px;
-          no.style.top = py;
-        }
-      }
-      for (const no of nosTamanho) {
-        no.style.width = w;
-        no.style.height = h;
-      }
+      // TEMPO REAL EM TODOS OS CANVAS (cada um com a sua escala) — mas com
+      // ALVOS diferentes por origem (área de marcação ≠ camada visual do vídeo):
+      //  · ALÇAS DO VÍDEO (origem 'video'): a CAIXA DE CONTEÚDO fica FIXA
+      //    (caixaFixa, coords absolutas do canvas) e só a moldura muda → a
+      //    caixa é reposicionada relativa à nova moldura, então o conteúdo fica
+      //    PARADO na tela (recorte). Sem caixaFixa (cálculo falhou) o commit cai
+      //    no enquadramento padrão → a caixa é derivada desse padrão.
+      //  · ALÇAS DO GUIA (origem 'area'): SÓ o retângulo de marcação é escrito —
+      //    a camada visual do vídeo não é tocada (ele continua exatamente onde
+      //    estava; só é re-enquadrado quando a composição é (re)ativada).
+      const caixaAbs = origemArraste === 'video'
+        ? (caixaFixa || caixaAbsolutaDaMoldura(atual, ENQUADRAMENTO_VIDEO_PADRAO))
+        : null;
+      sincronizarGeometriaDaArea(canvasEl, atual, {
+        caixaAbs,
+        alvos: origemArraste === 'video' ? 'todos' : 'guia',
+      });
     }
 
     function aoMover(ev) {
@@ -501,44 +677,64 @@ export function gerarRedimensionarArea(eixo, aoAtualizarConfig, opcoes = {}) {
       aplicarNoDom();
       // COMMIT ÚNICO (pointerup) — estado definitivo, com re-render.
       //
-      // MARCAÇÃO (origem 'area'): altera SOMENTE a geometria da área
-      // (x/y/largura/altura de config.areaVideo). O enquadramento do vídeo
-      // (zoom/deslocamentoX/deslocamentoY) NÃO é tocado: o vídeo é ENQUADRADO
-      // (resize/crop para preencher exatamente a área marcada) apenas no
-      // Preview — `caixaEnquadramentoVideo` lê a MESMA config.areaVideo, então
-      // preview e render final coincidem sempre.
+      // A geometria gravada é EXATAMENTE a que já está na tela
+      // (`sincronizarGeometriaDaArea` durante o arraste): o re-render do React
+      // não muda nada visualmente — o vídeo NÃO pula ao soltar a área.
       //
-      // ALÇAS DO VÍDEO (origem 'video', Preview): preserva o anti-vão antigo —
-      // reseta zoom/deslocamentos para o padrão, pois ali o objeto redimensionado
-      // É o vídeo e ele deve voltar a preencher 100% do novo tamanho (cover
-      // nunca deixa vão).
-      // ALÇAS DO VÍDEO (origem 'video', Preview): a caixa de conteúdo fica FIXA
-      // (opção A — campos explícitos conteudoX/Y/Largura/Altura em coords do
-      // canvas). Commit único grava a nova moldura + a caixa congelada no
+      // ALÇAS DO VÍDEO (origem 'video', Preview): mantém o anti-vão antigo — a
+      // caixa de conteúdo fica FIXA (opção A — campos explícitos
+      // conteudoX/Y/Largura/Altura em coords do canvas), congelada no
       // pointerdown: caixaEnquadramentoVideo(novaArea) devolve a MESMA caixa
-      // (erro < 0.5px). NUNCA reseta para ENQUADRAMENTO_VIDEO_PADRAO. Se a
-      // caixa não pôde ser congelada (caixaFixa=null), cai no legado (reset).
+      // (erro < 0.5px). Se a caixa não pôde ser congelada (caixaFixa=null), cai
+      // no legado: enquadramento padrão (cover 100% centralizado).
+      //
+      // ALÇAS DO GUIA (origem 'area'/'mover'): a moldura mudou, mas a CAIXA DE
+      // CONTEÚDO (conteudo* — coords ABSOLUTAS do canvas) representa o MESMO
+      // conteudo na tela: mover/redimensionar a moldura NÃO mexe nela (janela
+      // sobre o mesmo conteúdo — Política A). Ela é PRESERVADA como está; sem
+      // caixa explícita (config antiga) o fallback legado continua valendo.
+      // O ENQUADRAMENTO (zoom/deslocamentoX/Y) também é PRESERVADO. Quem volta
+      // ao estado legado (cover) é o botão "↺ Redefinir" (limpa conteudo*).
+      //
+      // ÁREA MARCADA = CONTAINER REAL DO VÍDEO: quando o gesto é sobre o GUIA
+      // (a marcação do espaço), o vídeo tem de se RE-ENQUADRAR na caixa nova.
+      // Uma `conteudo*` herdada de outra área descreveria o conteúdo ANTIGO e
+      // a prévia mostraria um recorte que não corresponde à caixa marcada — por
+      // isso o commit do GUIA descarta a caixa de conteúdo herdada
+      // (`areaSemCaixaDeConteudo`): o vídeo volta ao cover sobre a área nova,
+      // exatamente como o `drawbox`/`scale+crop` do render faz com a área nova.
+      // (Nas alças do VÍDEO — `origem === 'video'` — a caixa é preservada: aí o
+      // usuário está posicionando o CONTEÚDO, não marcando a área.)
+      //
+      // ESCOPO: a escrita passa por `gravarArea`, que respeita o toggle
+      // "Editar todos / Apenas este vídeo" (global x `areaPorVideo[id]`).
       aoAtualizarConfig((cfg) => {
-        const area = {
-          ...(cfg.areaVideo || {}),
+        const mudancas = {
           x: atual.x,
           y: atual.y,
           largura: atual.largura,
           altura: atual.altura,
         };
+        let base = areaVideoEfetivaDoVideo(cfg, videoId || null);
         if (origemArraste === 'video') {
           if (caixaFixa) {
-            area.conteudoX = Math.round(caixaFixa.cx * 100) / 100;
-            area.conteudoY = Math.round(caixaFixa.cy * 100) / 100;
-            area.conteudoLargura = Math.round(caixaFixa.cw * 100) / 100;
-            area.conteudoAltura = Math.round(caixaFixa.ch * 100) / 100;
+            mudancas.conteudoX = Math.round(caixaFixa.cx * 100) / 100;
+            mudancas.conteudoY = Math.round(caixaFixa.cy * 100) / 100;
+            mudancas.conteudoLargura = Math.round(caixaFixa.cw * 100) / 100;
+            mudancas.conteudoAltura = Math.round(caixaFixa.ch * 100) / 100;
           } else {
-            area.zoom = ENQUADRAMENTO_VIDEO_PADRAO.zoom;
-            area.deslocamentoX = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX;
-            area.deslocamentoY = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY;
+            mudancas.zoom = ENQUADRAMENTO_VIDEO_PADRAO.zoom;
+            mudancas.deslocamentoX = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX;
+            mudancas.deslocamentoY = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY;
           }
+        } else {
+          // GUIA/ÁREA: re-enquadra o vídeo na caixa nova (container real).
+          base = areaSemCaixaDeConteudo(base);
+          mudancas.zoom = ENQUADRAMENTO_VIDEO_PADRAO.zoom;
+          mudancas.deslocamentoX = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoX;
+          mudancas.deslocamentoY = ENQUADRAMENTO_VIDEO_PADRAO.deslocamentoY;
         }
-        return { ...cfg, areaVideo: area };
+        return gravarArea({ ...cfg, areaVideo: base }, videoId, mudancas);
       });
       if (typeof aoFinalizar === 'function') aoFinalizar();
     }
@@ -768,12 +964,30 @@ export function gerarRedimensionarTextoTamanho(ruta, aoAtualizarConfig, minPx = 
 }
 
 /* ---------------------------------------------------------------------------
- * CORTE DE BORDAS — arrastar linhas superior/inferior (em % do canvas).
- * Superior e inferior são INDEPENDENTES: mudar uma linha NUNCA altera a outra.
- * AMBAS escrevem pela MESMA função do painel (atualizarCorteNoConfig) — slider
- * ⇄ linha ficam sempre sincronizados e a margem mínima visível é imposta na
- * escrita (a linha que se move para antes de cruzar a outra).
+ * CORTE DE BORDAS — arrastar linhas superior/inferior (em % da ALTURA DO
+ * VÍDEO). Superior e inferior são INDEPENDENTES: mudar uma linha NUNCA altera a
+ * outra. AMBAS escrevem pela MESMA função do painel (atualizarCorteNoConfig) —
+ * slider ⇄ linha ficam sempre sincronizados e a margem mínima visível é imposta
+ * na escrita (a linha que se move para antes de cruzar a outra).
+ *
+ * A linha é uma TESOURA: o arraste dela só escreve `corteBordas.*` e NUNCA
+ * toca em `posicaoVideo` — o vídeo não se move quando a tesoura se move.
+ *
+ * BASE DA CONVERSÃO: `corteBordas.superior/inferior` é fração da ALTURA DO
+ * VÍDEO, e o preview calcula `topPx`/`basePx` sobre a altura do vídeo JÁ
+ * ESCALADO. Então o delta de tela precisa ser convertido contra a MESMA altura
+ * escalada (`data-altura-video` da linha), e não contra a altura do canvas —
+ * com o canvas a tesoura escapava da linha que o usuário arrasta sempre que o
+ * vídeo não ocupava a altura toda. Sem o atributo, cai na altura do canvas
+ * (comportamento anterior).
  * ------------------------------------------------------------------------- */
+
+/** Altura-base da conversão de % (px escalados do vídeo; fallback = canvas). */
+function alturaBaseDoCorte(el, canvasEl) {
+  const doVideo = parseFloat(el?.dataset?.alturaVideo || '0');
+  if (Number.isFinite(doVideo) && doVideo > 0) return doVideo;
+  return parseFloat(canvasEl?.dataset?.canvasAltura || '1920');
+}
 
 /** Handler de arrastre da linha de corte SUPERIOR (`data-posy` = % desde o
  * topo). Mueve solo `corteBordas.superior` (0..CORTE_MAXIMO). */
@@ -784,27 +998,39 @@ export function gerarArrastarCorteSuperior(aoAtualizarConfig, videoId = null) {
     const canvasEl = e.currentTarget.parentElement;
     if (!canvasEl) return;
     const escala = parseFloat(canvasEl.dataset.escala || '1');
-    const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');
+    const cH = alturaBaseDoCorte(e.currentTarget, canvasEl);
 
     const el = e.currentTarget;
+    const pointerId = e.pointerId;
+    if (pointerId !== undefined && typeof el.setPointerCapture === 'function') {
+      try { el.setPointerCapture(pointerId); } catch {}
+    }
     const inicialPos = parseFloat(el.dataset.posy) || 0;
 
     const startY = e.clientY;
 
     function aoMover(ev) {
       const dy = (ev.clientY - startY) / Math.max(escala, 0.05);
+      // A linha vive em `top: superior%`: arrastar para BAIXO (dy > 0) leva a
+      // linha mais para baixo e CORTE mais topo. `inferior` fica EXATAMENTE
+      // como estava (as duas bordas são independentes).
       const pct = clampPct(inicialPos + percentFromDelta(cH, dy));
-      // FONTE ÚNICA (mesma escrita do slider do painel): global + override do
-      // vídeo atual, margem mínima visível imposta. Mover para CIMA aumenta
-      // o corte; `inferior` fica EXATAMENTE como estava.
+      // FONTE ÚNICA (mesma escrita do slider do painel): grava o override
+      // DESTE vídeo (nunca o corte global — os demais do lote ficam intactos),
+      // com a margem mínima visível imposta.
       aoAtualizarConfig((cfg) => atualizarCorteNoConfig(cfg, videoId, { superior: pct }));
     }
     function aoSoltar() {
+      if (pointerId !== undefined && typeof el.releasePointerCapture === 'function') {
+        try { el.releasePointerCapture(pointerId); } catch {}
+      }
       window.removeEventListener('pointermove', aoMover);
       window.removeEventListener('pointerup', aoSoltar);
+      window.removeEventListener('pointercancel', aoSoltar);
     }
     window.addEventListener('pointermove', aoMover);
     window.addEventListener('pointerup', aoSoltar);
+    window.addEventListener('pointercancel', aoSoltar);
   };
 }
 
@@ -818,9 +1044,13 @@ export function gerarArrastarCorteInferior(aoAtualizarConfig, videoId = null) {
     const canvasEl = e.currentTarget.parentElement;
     if (!canvasEl) return;
     const escala = parseFloat(canvasEl.dataset.escala || '1');
-    const cH = parseFloat(canvasEl.dataset.canvasAltura || '1920');
+    const cH = alturaBaseDoCorte(e.currentTarget, canvasEl);
 
     const el = e.currentTarget;
+    const pointerId = e.pointerId;
+    if (pointerId !== undefined && typeof el.setPointerCapture === 'function') {
+      try { el.setPointerCapture(pointerId); } catch {}
+    }
     const inicialPos = parseFloat(el.dataset.posy) || 100;
 
     const startY = e.clientY;
@@ -828,18 +1058,25 @@ export function gerarArrastarCorteInferior(aoAtualizarConfig, videoId = null) {
     function aoMover(ev) {
       const dy = (ev.clientY - startY) / Math.max(escala, 0.05);
       const pos = clampPct(inicialPos + percentFromDelta(cH, dy));
+      // A linha vive em `top: (100 − inferior)%`: arrastar para CIMA (dy < 0)
+      // sobe a linha e CORTE mais base. `superior` não é alterado.
       const inferior = clampPct(100 - pos);
-      // FONTE ÚNICA (mesma escrita do slider do painel): global + override do
-      // vídeo atual, margem mínima visível imposta. Arrastar para CIMA
-      // aumenta `inferior`; `superior` não é alterado.
+      // FONTE ÚNICA (mesma escrita do slider do painel): grava o override
+      // DESTE vídeo (nunca o corte global — os demais do lote ficam intactos),
+      // com a margem mínima visível imposta.
       aoAtualizarConfig((cfg) => atualizarCorteNoConfig(cfg, videoId, { inferior }));
     }
     function aoSoltar() {
+      if (pointerId !== undefined && typeof el.releasePointerCapture === 'function') {
+        try { el.releasePointerCapture(pointerId); } catch {}
+      }
       window.removeEventListener('pointermove', aoMover);
       window.removeEventListener('pointerup', aoSoltar);
+      window.removeEventListener('pointercancel', aoSoltar);
     }
     window.addEventListener('pointermove', aoMover);
     window.addEventListener('pointerup', aoSoltar);
+    window.addEventListener('pointercancel', aoSoltar);
   };
 }
 
@@ -850,6 +1087,76 @@ function percentFromDelta(alturaBase, deltaPx) {
 
 function clampPct(v) {
   return Math.min(100, Math.max(0, v));
+}
+
+/* ---------------------------------------------------------------------------
+ * ARRASTE DO VÍDEO SOBRE O TEMPLATE (offsetX/offsetY em px da base 1080×1920).
+ *
+ * O vídeo recortado é a CAPA do quadro e o template é o FUNDO; arrastar muda
+ * `offsetX`/`offsetY`, que é EXATAMENTE o `x`/`y` do `overlay` no FFmpeg. Por
+ * isso prévia e vídeo final ficam visualmente idênticos.
+ *
+ * Os valores de partida saem dos atributos `data-video-*` do próprio elemento
+ * (sempre atuais — nada de closure velha no meio do arraste). A escrita passa
+ * por `atualizarPosicaoVideoNoConfig`, que respeita o escopo "Editar todos":
+ * com o toggle ligado grava no global; desligado grava só neste vídeo.
+ *
+ * `limite` (opcional) trava o vídeo dentro de uma região — sem região, o
+ * arrasto é livre (comportamento padrão).
+ * ------------------------------------------------------------------------- */
+export function gerarArrastarPosicaoVideo(aoAtualizarConfig, videoId = null, editarTodos = true, limite = null) {
+  return function aoPointerDown(e) {
+    if (!aoAtualizarConfig) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    // A BARRA DE CONTROLES tem `pointer-events` próprio e nunca chega aqui:
+    // play/seek/volume seguem funcionando durante o arraste.
+    const escala = parseFloat(el.dataset.escala || '1') || 1;
+    const inicioX = parseFloat(el.dataset.videoX || '0') || 0;
+    const inicioY = parseFloat(el.dataset.videoY || '0') || 0;
+    const larguraVideo = parseFloat(el.dataset.videoLargura || '0') || 0;
+    const alturaVideo = parseFloat(el.dataset.videoAltura || '0') || 0;
+    // A trava é sobre o VÍDEO INTEIRO e não recebe o corte: é o que garante
+    // que a posição do vídeo não dependa da linha de corte (ver
+    // `limitarMovimentoVideo` no configEditorLote).
+    const inicioClientX = e.clientX;
+    const inicioClientY = e.clientY;
+    const pointerId = e.pointerId;
+    if (pointerId !== undefined && typeof el.setPointerCapture === 'function') {
+      try { el.setPointerCapture(pointerId); } catch { /* sem captura: segue no window */ }
+    }
+
+    function aoMover(ev) {
+      // Delta em px de TELA -> px da BASE 1080×1920 (divide pela escala da célula).
+      const dx = (ev.clientX - inicioClientX) / Math.max(escala, 0.0001);
+      const dy = (ev.clientY - inicioClientY) / Math.max(escala, 0.0001);
+      const reg = limite || null;
+      const movido = limitarMovimentoVideo({
+        x: inicioX + dx,
+        y: inicioY + dy,
+        largura: larguraVideo,
+        altura: alturaVideo,
+        limite: reg,
+      });
+      aoAtualizarConfig((cfg) => atualizarPosicaoVideoNoConfig(cfg, {
+        todos: editarTodos,
+        videoId,
+        mudancas: { offsetX: movido.x, offsetY: movido.y },
+      }));
+    }
+    function aoSoltar() {
+      if (pointerId !== undefined && typeof el.releasePointerCapture === 'function') {
+        try { el.releasePointerCapture(pointerId); } catch { /* já liberado */ }
+      }
+      window.removeEventListener('pointermove', aoMover);
+      window.removeEventListener('pointerup', aoSoltar);
+      window.removeEventListener('pointercancel', aoSoltar);
+    }
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+    window.addEventListener('pointercancel', aoSoltar);
+  };
 }
 
 /* ---------------------------------------------------------------------------
@@ -873,7 +1180,7 @@ function numeroOu(valor, padrao) {
  * closure velha no meio do arraste). Os controles do player
  * (`[data-edl-controles]`) não arrastam: play/seek/volume seguem funcionando.
  */
-export function gerarArrastarEnquadramentoVideo(aoAtualizarConfig, obterQuadro = null, aoInteragir = null, aoFinalizar = null) {
+export function gerarArrastarEnquadramentoVideo(aoAtualizarConfig, obterQuadro = null, aoInteragir = null, aoFinalizar = null, videoId = null) {
   return function aoPointerDown(e) {
     if (!aoAtualizarConfig) return;
     const alvo = e.target;
@@ -903,15 +1210,18 @@ export function gerarArrastarEnquadramentoVideo(aoAtualizarConfig, obterQuadro =
       const dx = (ev.clientX - startX) / escala;
       const dy = (ev.clientY - startY) / escala;
       aoAtualizarConfig((cfg) => {
-        const areaAtual = { ...(cfg.areaVideo || {}), ...inicial };
+        // ÁREA EFETIVA (global ⊕ override) como base: arrastar o vídeo nunca
+        // parte de um objeto stale. `gravarArea` reaplica a mesma base e decide
+        // ONDE grava conforme o ESCOPO (toggle) — nada é escrito duas vezes.
+        const base = areaVideoEfetivaDoVideo(cfg, videoId || null);
         const novo = deslocamentoPorArraste({
-          area: areaAtual,
+          area: { ...base, ...inicial },
           dimsVideo: quadro.dimsVideo,
           fit: inicial.fit,
           deltaX: dx,
           deltaY: dy,
         });
-        return { ...cfg, areaVideo: { ...(cfg.areaVideo || {}), ...novo } };
+        return gravarArea(cfg, videoId, novo);
       });
       if (typeof aoInteragir === 'function') aoInteragir({ ativo: true, zoom: inicial.zoom });
     }

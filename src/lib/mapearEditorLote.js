@@ -1,5 +1,5 @@
 import { BASE_URL } from './api.js';
-import { areaVideoNormalizada, limitarCorte } from './configEditorLote.js';
+import { areaVideoNormalizada, areaVideoEfetivaDoVideo, areaTemplateEfetiva, corteEfetivoDoVideo, temAjusteIndividualDeCorte, overrideTrazCorteManual, limitarCorte, posicaoEfetivaDoVideo, limiteDeMovimento, LARGURA_ALVO_VIDEO } from './configEditorLote.js';
 
 /**
  * EDITOR EM LOTE — conversão da config COMPARTILHADA (%) para o payload do
@@ -10,19 +10,68 @@ import { areaVideoNormalizada, limitarCorte } from './configEditorLote.js';
 
 export const NOME_TEMPLATE_LOTE = 'Editor em Lote · config compartilhada';
 
+/** Converte a config COMPARTILHADA no payload do template do servidor (px do
+ * canvas) — o MESMO formato que o pipeline (Oracle + worker local) consome.
+ *
+ * `overrideVideo` (OPCIONAL) é o ajuste INDIVIDUAL de UM vídeo: ele carrega o
+ * corte (`superior`/`inferior`) e/ou a área (via `videoId`). Tudo é resolvido
+ * pelas MESMAS funções puras que o preview usa (`corteEfetivoDoVideo`,
+ * `areaVideoEfetivaDoVideo`) — por isso a prévia da célula daquele vídeo e o MP4
+ * final têm a MESMA geometria, inclusive no modo "Apenas este vídeo".
+ *
+ * ATENÇÃO: a semântica do corte (superior/inferior em % da ALTURA DO CANVAS) é
+ * a já validada e NÃO muda aqui — o render (drawbox com `ih`) consome igual. */
 export function configParaTemplatePayload(config, overrideVideo = null) {
   const tf = (config && config.templateFundo) || {};
   // `visivel:false` (camada oculta na prévia) NÃO vai pro render — a prévia é
 // fiel ao vídeo final, então o fundo só viaja quando está visível.
 const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') === 0 && tf.visivel !== false);
   const fundoTemplate = temFundo ? { urlImagem: tf.url, nome: (typeof tf.nome === 'string' ? tf.nome.slice(0, 80) : ''), larguraNatural: (Number(tf.larguraNatural) || 0), alturaNatural: (Number(tf.alturaNatural) || 0) } : null;
-  const { canvas, areaVideo, logo } = config;
+  const { canvas, logo } = config;
+  // ÁREA EFETIVA DO VÍDEO DESTE (global ⊕ `areaPorVideo[id]`), resolvida pela
+  // MESMA função que o preview consome (`areaVideoEfetivaDoVideo`). É o elo
+  // que garante PREVISTA = PAYLOAD = RENDER quando o usuário está em "Apenas
+  // este vídeo": o vídeo com override individual recebe a SUA área/zoom/
+  // deslocamento no template, e o render materializa exatamente o que a célula
+  // daquele vídeo mostrou. Sem override, cai no global (comportamento atual).
+  const videoIdDoOverride = overrideVideo?.videoId || overrideVideo?.id || null;
+  const areaVideo = areaVideoEfetivaDoVideo(config, videoIdDoOverride);
   // Enquadramento do vídeo normalizado (zoom 1 = original; 50 = centro) — o
   // MESMO valor que a prévia usa, dentro da estrutura `areaVideo` existente.
   const enq = areaVideoNormalizada(areaVideo);
-  const corteBordas = overrideVideo
-    ? { ativo: true, superior: overrideVideo.superior ?? config.corteBordas?.superior ?? 0, inferior: overrideVideo.inferior ?? config.corteBordas?.inferior ?? 0 }
-    : config.corteBordas;
+  // CORTE — PREVIEW = PAYLOAD = RENDER.
+  // A origem da verdade continua sendo `corteEfetivoDoVideo(config, videoId)`,
+  // a MESMA função cujo resultado o preview recorta (clip-path). O que muda é o
+  // QUE decide usar o corte individual em vez do global: a existência de
+  // uma configuração de corte PRÓPRIA deste vídeo, e não a existência de um
+  // override qualquer. Um override SÓ DE ÁREA (o usuário mexeu no enquadramento
+  // deste vídeo e nada mais) NÃO pode virar corte: o vídeo continua com o corte
+  // GLOBAL, inclusive `ativo:false`. Antes, qualquer override forçava
+  // `ativo:true` e o vídeo saía cortado no render mesmo com o corte desligado
+  // na prévia (prévia ≠ payload).
+  const corteEfetivo = corteEfetivoDoVideo(config, videoIdDoOverride);
+  // RETÂNGULO VAZADO DO TEMPLATE (o buraco da arte) — resolvido pela MESMA
+  // função pura que o preview consome (`areaTemplateEfetiva`), então o
+  // `clip-path` da prévia e o `dest-out` do backend usam a MESMA geometria.
+  // `null` = sem buraco (a arte entra cheia por cima do vídeo).
+  const areaTemplate = areaTemplateEfetiva(config);
+  // `overrideVideo` tem TRÊS formatos possíveis e todos são respeitados:
+  //   · { videoId, superior, inferior } — corte individual já resolvido;
+  //   · { superior, inferior }          — corte cru (sem videoId): contrato
+  //     antigo, o corte viaja exatamente como foi informado;
+  //   · { videoId }                     — SÓ área: NÃO toca no corte.
+  // A EXISTÊNCIA de um override qualquer NÃO liga o corte: só a EDIÇÃO MANUAL
+  // do vídeo liga (a `deteccao` — diagnóstico da máquina — NUNCA é consumida
+  // aqui nem pelo render). É a MESMA função que `corteEfetivoDoVideo` usa.
+  // REGRA FUNDAMENTAL: um override cru marcado como detecção (`origem:'auto'`,
+  // `automatico` ou `deteccao` sem `manual`) NUNCA vira corte no payload.
+  const overrideTrazCorte = overrideVideo
+    && (overrideVideo.superior !== undefined || overrideVideo.inferior !== undefined)
+    && overrideTrazCorteManual(overrideVideo);
+  const videoTemCorteIndividual = overrideTrazCorte || (!!videoIdDoOverride && temAjusteIndividualDeCorte(config, videoIdDoOverride));
+  const corteBordas = (overrideTrazCorte || videoTemCorteIndividual)
+    ? { ativo: true, superior: overrideVideo?.superior ?? corteEfetivo.superior, inferior: overrideVideo?.inferior ?? corteEfetivo.inferior }
+    : (config.corteBordas || corteEfetivo);
   // Compatibilidade: `textos` (novo, dois blocos) com fallback a `texto`
   // (legado de configs salvas antes da división superior/inferior).
   const textos = config.textos && (config.textos.superior || config.textos.inferior)
@@ -30,15 +79,33 @@ const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') ==
     : { superior: config.texto || {}, inferior: {} };
 
   // Corte de bordas: superior e inferior são INDEPENDENTES (0..90 cada um).
-  // O render COBRE a área cortada com a cor de fundo (drawbox no FFmpeg) —
-  // igual à prévia. MESMOS limites do preview (limitarCorte): soma ≤ 90 →
-  // margem mínima de 10% do vídeo SEMPRE visível. PRÉVIA = RENDER, inclusive
-  // nos extremos (nunca área inválida, nunca o vídeo sumindo por completo).
+  // O render faz CROP REAL do vídeo (crop=iw:ih*(1-top-bottom):0:ih*top) —
+  // o que é cortado NÃO EXISTE no resultado, então nunca sobra faixa branca.
+  // MESMOS limites do preview (limitarCorte): soma ≤ 90 → margem mínima de 10%
+  // do vídeo SEMPRE visível. PRÉVIA = RENDER, inclusive nos extremos.
   const { superior: sup, inferior: inf } = limitarCorte(
     Number(corteBordas?.superior) || 0,
     Number(corteBordas?.inferior) || 0,
     'superior',
   );
+
+  // CORTE (TESOURA) — fração (0..1) da ALTURA DO VÍDEO INTEIRO. O backend
+  // converte essa fração em PIXELS INTEIROS sobre a altura JÁ ESCALADA com o
+  // MESMO `pixelsDeCorte()` do preview
+  // (`autopost-frontend/src/lib/configEditorLote.js`) e materializa
+  // `scale=W:H,crop=W:(H-topPx-basePx):0:topPx,overlay=x:(y+topPx)`.
+  // Nunca arredonda para baixo (subcortar deixaria resíduo visível) e NUNCA
+  // altera `posicaoVideo` — a tesoura só esconde, não move.
+  const corteCrop = {
+    ativo: !!corteBordas?.ativo && (sup > 0 || inf > 0),
+    superior: sup / 100,
+    inferior: inf / 100,
+  };
+
+  // POSIÇÃO DO VÍDEO (arrasto) — px da base 1080×1920, resolvida pelo mesmo
+  // `posicaoEfetivaDoVideo` que o preview usa (global ⊕ `posicaoPorVideo[id]`).
+  // `null` = centralizado; o backend centrá quando não vier número.
+  const posicao = posicaoEfetivaDoVideo(config, videoIdDoOverride);
 
   let logoPosicao = null;
   if (logo.visivel && logo.url) {
@@ -212,6 +279,16 @@ const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') ==
       // (toggle + sliders) preserva o comportamento anterior intacto.
       detectarContenido: false,
     },
+    // RETÂNGULO VAZADO DO TEMPLATE — conceito SEPARADO de `areaVideo`.
+    // É o retângulo que a arte do template deixa vazar para revelar o vídeo
+    // (o `dest-out` do `construirOverlay.js` no backend, o `path(evenodd)` do
+    // `clip-path` na prévia). `areaVideo` acima continua sendo APENAS a
+    // posição/enquadramento físico do vídeo (consumido pelo scale/crop/pad do
+    // FFmpeg) — o template NUNCA a reduz.
+    // `null` (ou ausente) = SEM buraco: o backend renderiza a arte 1080×1920
+    // cheia por cima do vídeo. Campo ADITIVO: templates/configs antigos sem
+    // ele continuam funcionando (o backend só abre buraco com este campo).
+    ...(areaTemplate ? { areaTemplate: areaTemplate } : {}),
     // Corte de bordas compartilhado (single-pass no FFmpeg). Padrão guardado
     // também quando inactivo pra que o template no servidor nunca fique
     // obsoleto. Nome unificado `corteBordas` (front + back).
@@ -220,6 +297,23 @@ const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') ==
       superior: sup,
       inferior: inf,
     },
+    // CROP REAL em fração da ALTURA ORIGINAL do vídeo — é isto que o FFmpeg
+    // materializa (`crop=iw:...`). Substitui o antigo `drawbox`, que só pintava
+    // por cima e deixava a faixa branca visível.
+    corteCrop,
+    // LARGURA ALVO do vídeo escalado (mantendo proporção). 1080 = largura cheia.
+    larguraAlvoVideo: LARGURA_ALVO_VIDEO,
+    // POSIÇÃO DO VÍDEO (arrasto do preview) em px da base 1080×1920.
+    // `null` = centralizado. É exatamente o valor que a prévia usou.
+    posicaoVideo: {
+      // `== null` ANTES de converter: `Number(null)` é 0 (finito!) e mandaria
+      // (0,0) — o vídeo anulado no canto em vez de centralizado.
+      offsetX: posicao.offsetX == null ? null : (Number.isFinite(Number(posicao.offsetX)) ? Math.round(Number(posicao.offsetX)) : null),
+      offsetY: posicao.offsetY == null ? null : (Number.isFinite(Number(posicao.offsetY)) ? Math.round(Number(posicao.offsetY)) : null),
+    },
+    // REGIÃO QUE TRAVA O ARRASTO (opcional). Só viaja se existir uma válida;
+    // ausente/null = arrasto livre, que é o padrão.
+    ...(limiteDeMovimento(config) ? { limiteMovimento: limiteDeMovimento(config) } : {}),
     // null → o campo NÃO é enviado e o servidor limpa a logo do template.
     logoPosicao: logoPosicao ? JSON.stringify(logoPosicao) : null,
     // Texto superior (`texto`) + texto inferior (`textoInferior`) — el
@@ -241,7 +335,14 @@ const temFundo = (typeof tf.url === 'string' && tf.url.indexOf('data:image/') ==
 
 /** Assinatura estável da config (evita re-salvar o template sem mudança). */
 export function assinarConfig(config, overrideVideo = null) {
-  return JSON.stringify(configParaTemplatePayload(config, overrideVideo)) + (config.logo.arquivo ? '|logo-arquivo' : '');
+  const payload = configParaTemplatePayload(config, overrideVideo);
+  // A posição e o crop real entram na ASSINATURA: dois vídeos com o mesmo corte
+  // mas arrastados para posições diferentes precisam de configs diferentes, senão
+  // o render entregaria a um deles a posição do outro.
+  return JSON.stringify(payload) + (config.logo.arquivo ? '|logo-arquivo' : '')
+    + '|pos:' + (payload.posicaoVideo?.offsetX ?? 'c') + ',' + (payload.posicaoVideo?.offsetY ?? 'c')
+    + '|crop:' + (payload.corteCrop?.ativo ? 1 : 0) + ',' + (payload.corteCrop?.superior || 0) + ',' + (payload.corteCrop?.inferior || 0)
+    + '|lw:' + (payload.larguraAlvoVideo || 0);
 }
 
 /**

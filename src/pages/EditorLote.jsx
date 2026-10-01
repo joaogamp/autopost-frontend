@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import HeaderEditor from '../components/editorlote/HeaderEditor';
 import AreaCentral from '../components/editorlote/AreaCentral';
 import PainelFluxo from '../components/editorlote/PainelFluxo';
@@ -11,10 +11,15 @@ import {
   loteTemEdicoesAtivas,
   normalizarConfigEditor,
   corteEfetivoDoVideo,
+  temAjusteIndividualDeCorte,
+  cortesIndividuaisAfetados,
+  areaIndividualDoVideo,
   limitarCorte,
+  definirCorteAutomaticoDoVideo,
 } from '../lib/configEditorLote';
 import { detectarBordasDoVideo } from '../lib/detectorBordas';
-import { processarLote, salvarTemplateDoEditor, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
+import * as cofre from '../lib/cofreMidias';
+import { processarLote, buscarFila, buscarBiblioteca, urlArquivo } from '../lib/api';
 import {
   configParaTemplatePayload,
   assinarConfig,
@@ -30,30 +35,30 @@ import {
  *
  *   2) IMPORTAR TEMPLATE     (direita / PainelFluxo) — seletor de imagem
  *      (PNG/JPG/WebP) → vira `config.templateFundo` (TEMPLATE BASE do lote).
- *      NÃO vai para o centro; NÃO substitui os vídeos; NÃO é convertido em vídeo.
+ *      O template passa a compor o CENTRO NA HORA, com um BURACO em
+ *      `areaVideo` (o mesmo `dest-out` do engine): o vídeo aparece dentro
+ *      do retângulo e a arte do template fica em volta. NÃO substitui os
+ *      vídeos; NÃO é convertido em vídeo.
  *
- *   3) MARCAR ÁREA DO VÍDEO  (direita / PainelFluxo) — abre o MODO DE MARCAÇÃO:
- *      o MESMO EditorCanvas mostra o TEMPLATE com o retângulo da área do vídeo,
- *      arrastável/redimensionável (arraste.js). A área é somente GEOMETRIA
- *      (x/y/largura/altura em `config.areaVideo`) — nunca redimensiona o
- *      template nem o vídeo original. O centro continua só com os vídeos.
- *
- *   4) MOSTRAR PREVIEW       (direita / PainelFluxo) — `previewAtivo` liga a
- *      composição: o CENTRO passa a mostrar TODOS os vídeos em grade de 6 por
- *      fileira, cada um com O MESMO template + A MESMA área marcada (vídeo
- *      cobrindo 100% da área, `cover`). Desligado, o centro volta a mostrar
- *      somente os vídeos importados.
+ *   3) VÍDEO = PRÉVIA SIMPLES. Não existe nenhum editor visual do objeto de
+ *      vídeo: sem "Marcar espaço do vídeo", sem gaveta "Área do vídeo", sem
+ *      guia tracejado, sem arraste, sem zoom, sem alças, sem caixa de seleção
+ *      e sem congelamento de geometria. A `areaVideo` CONTINUA existindo como
+ *      DADO interno (posiciona o vídeo no canvas e abre o buraco do template) e
+ *      é calculada pelo sistema — nunca ajustada pelo usuário. O que o usuário
+ *      edita no preview são os overlays (textos/identidade/imagens) e o CORTE
+ *      DE BORDAS, que é uma ferramenta independente.
  *
  *   CENTRO    AreaCentral — os MESMOS vídeos da lista (sem lista duplicada),
  *   em grade: 6X (padrão do lote: 6 por fileira, o resto nas linhas seguintes),
  *   além de 1X/2X/3X. Cada célula usa o MESMO EditorCanvas (config
  *   COMPARTILHADA); clicar seleciona o vídeo principal.
  *
- *   DIREITA   PainelFluxo — SOMENTE o fluxo do template: importar template ·
- *   marcar espaço do vídeo · mostrar preview. O
+ *   DIREITA   PainelFluxo — o painel do template: importar template · escopo da
+ *   edição (todos / apenas este vídeo) · corte de bordas. O
  *   template JÁ contém a arte final (fundo, textos, formas, logo): o AutoPost
- *   NÃO reconstrói elementos do template — apenas define a área do vídeo,
- *   coloca o vídeo nela e gera o preview.
+ *   NÃO reconstrói elementos do template — apenas compõe o template por cima
+ *   do vídeo, com o buraco em `areaVideo`.
  *
  * PRÉVIA x PROCESSAMENTO: a prévia e o render usam a MESMA geometria —
  * `config.areaVideo` (x/y/largura/altura) é a única fonte da posição do vídeo
@@ -65,14 +70,23 @@ import {
  * original da Biblioteca/Oracle, sem tocar na fila/worker e sem afetar os
  * demais vídeos nem a config compartilhada (texto/template).
  *
- * "IMPLEMENTAR VÍDEO" (REAL): salva a config compartilhada como TEMPLATE no
- * servidor (POST /api/templates) → enfileira os vídeos
- * (POST /api/lote → Supabase fila_processamento) → a Oracle e/ou o WORKER
- * LOCAL (node worker-local.js, reserva atômica) processam → a UI acompanha o
+ * "IMPLEMENTAR VÍDEO" (REAL): envia a config compartilhada JUNTO com a fila
+ * (POST /api/lote, campo `configTemplate`). A Oracle cria os jobs, obtém o
+ * filaId REAL de cada um e guarda a config daquele job em
+ * `output/jobs/<filaId>.json` (NÃO é template, NÃO vai para o Supabase) → o
+ * WORKER LOCAL (node worker-local.js, reserva atômica) busca a config em
+ * GET /api/fila/:filaId/config, renderiza e entrega o MP4 → a UI acompanha o
  * progresso REAL via GET /api/fila (percentual por card, thumbnail e MP4 do
- * final quando concluído). TODO o lote usa o MESMO template BASE — a mesma
- * areaVideo definida pelo usuário vale para todos os vídeos (sem posição por
- * vídeo).
+ * final quando concluído).
+ *
+ * A configuração é EFÊMERA: ela NÃO é salva como template no servidor (nada
+ * entra em templates-store.json, nada é criado em /api/templates) e fica
+ * associada só ao job que vai renderizá-la. Ela existe só enquanto for
+ * necessária para produzir o MP4.
+ *
+ * O lote continua agrupado por CORTE: cada grupo de corte (incluindo o corte
+ * automático salvo por vídeo) recebe a SUA configuração, exatamente como antes
+ * — só mudou o transporte (config na fila em vez de template salvo).
  *
  * "PROCESSAR VÍDEOS" foi REMOVIDO: sem encaminhamento — o Agendar lista
  * os finais por conta própria.
@@ -143,6 +157,12 @@ function itensParaSalvar(itens) {
         thumbnail: it.thumbnail ?? null,
         urlFonte: it.urlFonte ?? null,
         duracao: it.duracao ?? null,
+        // DIMENSÕES NATURAIS (ffprobe do upload): persistem para o preview
+        // recalcular a geometria certa logo no primeiro render após um F5, sem
+        // depender de o servidor já ter enriquecido o item. `null` = ainda não
+        // enrichecido (a re-hidratação preenche depois).
+        largura: it.largura ?? null,
+        altura: it.altura ?? null,
         filaId: it.filaId ?? null,
       };
       return pronto ? { ...dados, status: 'concluido', percentual: 100 } : dados;
@@ -155,6 +175,140 @@ export const CHAVE_LOTE_ATUAL = 'autopost:editorlote:lote_atual_v1';
 /** Gera o id de um NOVO lote (nova sessão de edição). */
 export function novoIdDeLote() {
   return `lote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ---------------------------------------------------------------------------
+// FASE 4 — SEPARAÇÃO ENTRE O QUE É LEVE E O QUE É PESADO.
+//
+// A config do lote carrega as mídias como dataURL (base64): o TEMPLATE
+// (`templateFundo.url`), as IMAGENS (`imagens[].url`) e o SELO
+// (`identidade.selo.urlImagem`). Só isso. O resto — itens, seleção, cortes,
+// área, escopo, textos, identidade, posição — é leve.
+//
+// O localStorage do Chrome/Edge tem limite PRÁTICO de ~5 MB por origem, e o
+// base64 infla o arquivo em ~33%: o template de 4 MB já vira ~5,4 MB e o de
+// 6 MB vira ~8 MB. Como `PainelFluxo.jsx` ACEITA template de até 6 MB, uma
+// configuração perfeitamente válida do produto estourava a cota — e o
+// `setItem` lançava dentro de um `catch` vazio. Resultado: o usuário perdia o
+// LOTE INTEIRO (vídeos, seleção e todos os cortes) sem nenhuma pista.
+//
+// REGRA DA FASE 4: o localStorage guarda SÓ o estado leve + um ÍNDICE das
+// mídias; os bytes das mídias vão para o cofre (IndexedDB), que não tem esse
+// teto. Se o cofre não existir, cai no caminho antigo (tudo no localStorage),
+// que é exatamente o comportamento de antes — nunca pior, só não melhorado.
+// ---------------------------------------------------------------------------
+
+/** Slots de mídia — um por posição na config. Estáveis (viram chave no cofre). */
+const SLOT_TEMPLATE = 'template';
+const slotDaImagem = (id) => `imagem:${id}`;
+const SLOT_SELO = 'selo';
+
+/** `blob:` (File/URL.createObjectURL) NUNCA sobrevive a reload — só dataURL. */
+function ehMidiaPersistivel(valor) {
+  return typeof valor === 'string' && valor.startsWith('data:image/') && valor.length > 0;
+}
+
+/** Tamanho aproximado da mídia em bytes (base64 → 3 bytes por 4 caracteres). */
+function bytesDaMidia(dataUrl) {
+  if (typeof dataUrl !== 'string') return 0;
+  const virgula = dataUrl.indexOf(',');
+  const corpo = virgula >= 0 ? dataUrl.slice(virgula + 1) : dataUrl;
+  const marca = corpo.indexOf(';base64,');
+  const base64 = marca >= 0 ? corpo.slice(marca + 1) : corpo;
+  return Math.round((base64.length * 3) / 4);
+}
+
+/** Id sintético para imagem sem id (config antiga/corrompida) — só o slot. */
+let contadorDeMidia = 0;
+function idTemporarioDeMidia() {
+  contadorDeMidia += 1;
+  return `sem_id_${contadorDeMidia}`;
+}
+
+/**
+ * SEPARA as mídias da config: devolve a config SEM nenhum byte de imagem
+ * (guardando a forma/metadados) e o mapa `{ slot: dataUrl }` das mídias.
+ *
+ * A config devolvida é uma CÓPIA — o objeto de estado do React nunca é tocado.
+ * A forma é preservada inteira (o template continua com `nome`/dimensões, a
+ * imagem continua com posição/proporção, o selo continua com visibilidade),
+ * então a config volta a ser exatamente a que o usuário montou.
+ */
+function separarMidias(config) {
+  const base = config && typeof config === 'object' ? config : {};
+  const midias = {};
+  const semMidias = { ...base };
+
+  // 1) TEMPLATE de fundo — a mídia pesada que estourava a cota.
+  if (base.templateFundo && typeof base.templateFundo === 'object') {
+    if (ehMidiaPersistivel(base.templateFundo.url)) midias[SLOT_TEMPLATE] = base.templateFundo.url;
+    semMidias.templateFundo = { ...base.templateFundo, url: null };
+  }
+
+  // 2) IMAGENS independentes do lote (chave estável pelo `id` do elemento).
+  if (Array.isArray(base.imagens)) {
+    semMidias.imagens = base.imagens.map((imagem) => {
+      if (!imagem || typeof imagem !== 'object') return imagem;
+      const chave = imagem.id ? imagem.id : idTemporarioDeMidia();
+      if (ehMidiaPersistivel(imagem.url)) midias[slotDaImagem(chave)] = imagem.url;
+      return { ...imagem, url: null };
+    });
+  }
+
+  // 3) SELO de verificado (PNG importado no painel de identidade).
+  if (base.identidade?.selo && typeof base.identidade.selo === 'object') {
+    if (ehMidiaPersistivel(base.identidade.selo.urlImagem)) {
+      midias[SLOT_SELO] = base.identidade.selo.urlImagem;
+    }
+    semMidias.identidade = {
+      ...base.identidade,
+      selo: { ...base.identidade.selo, urlImagem: null },
+    };
+  }
+
+  return { config: semMidias, midias };
+}
+
+/** Índice leve gravado no localStorage: `{ slot: bytes }` (nada de imagem). */
+function indiceDeMidias(midias) {
+  const indice = {};
+  for (const [slot, dataUrl] of Object.entries(midias || {})) indice[slot] = bytesDaMidia(dataUrl);
+  return indice;
+}
+
+/**
+ * REIDRATA: devolve a config com as mídias do cofre recolocadas nos mesmos
+ * lugares. Slot sem contraparte na config é ignorado (fail-open) e uma mídia
+ * que JÁ está na config nunca é sobrescrita.
+ */
+function aplicarMidias(config, midias) {
+  if (!config || typeof config !== 'object' || !midias || typeof midias !== 'object') return config;
+  let saida = config;
+  const trocar = (novo) => { saida = novo; };
+
+  if (ehMidiaPersistivel(midias[SLOT_TEMPLATE]) && !ehMidiaPersistivel(saida.templateFundo?.url)) {
+    trocar({ ...saida, templateFundo: { ...saida.templateFundo, url: midias[SLOT_TEMPLATE] } });
+  }
+  if (ehMidiaPersistivel(midias[SLOT_SELO]) && !ehMidiaPersistivel(saida.identidade?.selo?.urlImagem)) {
+    trocar({
+      ...saida,
+      identidade: {
+        ...saida.identidade,
+        selo: { ...saida.identidade?.selo, urlImagem: midias[SLOT_SELO] },
+      },
+    });
+  }
+  if (Array.isArray(saida.imagens)) {
+    trocar({
+      ...saida,
+      imagens: saida.imagens.map((imagem) => {
+        if (!imagem || typeof imagem !== 'object' || ehMidiaPersistivel(imagem.url)) return imagem;
+        const url = midias[slotDaImagem(imagem.id)];
+        return ehMidiaPersistivel(url) ? { ...imagem, url } : imagem;
+      }),
+    });
+  }
+  return saida;
 }
 
 /**
@@ -195,6 +349,10 @@ function configParaSalvar(config) {
       : base.identidade,
     corteBordas: base.corteBordas ? { ...base.corteBordas } : base.corteBordas,
     overridesPorVideo: { ...(base.overridesPorVideo || {}) },
+    // ESCOPO DE EDIÇÃO + overrides individuais de ÁREA: persistem juntos, senão
+    // um F5 perderia o modo "Apenas este vídeo" e os ajustes por vídeo.
+    editarTodos: base.editarTodos !== false,
+    areaPorVideo: { ...(base.areaPorVideo || {}) },
   };
 }
 
@@ -352,6 +510,11 @@ function carregarLoteSalvo() {
           thumbnail: v.thumbnail ?? null,
           urlFonte: v.urlFonte || v.url || null,
           duracao: v.duracao ?? null,
+          // Dimensões naturais salvas no lote (ffprobe do upload). Restaurá-las
+          // garante que o card já nasce com a geometria do render, antes de
+          // qualquer re-hidratação.
+          largura: v.largura ?? null,
+          altura: v.altura ?? null,
           filaId: pronto ? v.filaId : null,
           status: pronto ? 'concluido' : 'pronto',
           percentual: pronto ? 100 : 0,
@@ -372,29 +535,135 @@ function carregarLoteSalvo() {
       idSelecionado,
       templateId: mesmaSessao ? dados.templateId || null : null,
       assinatura: mesmaSessao ? dados.assinatura || null : null,
+      // FASE 4: as mídias (template/imagens/selo) NÃO moram no localStorage —
+      // só o índice `{ slot: bytes }`. O cofre é lido DEPOIS, pelo effect de
+      // reidratação, e nunca numa sessão nova (lote novo = config zerada).
+      indiceMidias: mesmaSessao ? dados.indiceMidias || null : null,
+      // A config CRUA do disco, com as mídias já removidas. A reidratação a
+      // reaplica os bytes do cofre e só ENTÃO normaliza — normalizar antes
+      // faria `normalizarConfigEditor` descartar template/imagens/selo (ele só
+      // aceita `data:image/`), e a arte do lote voltaria vazia.
+      configCrua: mesmaSessao ? dados.config : null,
+      // Marca da carga reduzida (persistência degradada por cota) para a
+      // interface poder explicar o que o usuário vai ver.
+      persistenciaReduzida: mesmaSessao ? dados.persistenciaReduzida === true : false,
     };
   } catch {
     return null;
   }
 }
 
-/** GRAVA o estado atual do editor no localStorage (autosave + botão Salvar). */
+/**
+ * GRAVA o estado atual do editor (autosave + botão Salvar) — FASE 4.
+ *
+ * O que é gravado e ONDE:
+ *   · localStorage (`CHAVE_LOTE`) → itens, seleção, config SEM as mídias e o
+ *     ÍNDICE `{ slot: bytes }` das mídias. É o estado LEVE: cabe sempre.
+ *   · cofre (IndexedDB)          → os bytes das mídias (template/imagens/selo).
+ *
+ * DEGRADAÇÃO (nunca perde o lote): se o `setItem` falhar — cota estourada,
+ * storage bloqueado, aba anônima — o estado leve é regravado SEM as mídias
+ * (o que já é o formato gravado) e, se MESMO ASSIM falhar, numa última
+ * tentativa só com o essencial do lote. O que é LEVE é sempre o último a ser
+ * sacrificado, porque é ele que o usuário não consegue refazer.
+ *
+ * Devolve `{ gravado, midiasNoCofre, midiasPerdidas }` para que a interface
+ * possa avisar o usuário quando algo realmente não coube — o `catch` vazio do
+ * código anterior era justamente o que escondia a perda de dados.
+ */
 function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura }) {
+  const resultado = { gravado: false, midiasNoCofre: false, midiasPerdidas: false };
   try {
-    const carga = JSON.stringify({
-      itens: itensParaSalvar(itens),
-      config: configParaSalvar(config),
+    const configCompleta = configParaSalvar(config);
+    const loteId = configCompleta?.loteId || null;
+    // COFRE (fail-safe e AUTOCONTIDO): o `?.` não protege um identificador não
+    // declarado (ainda lançaria ReferenceError), e esta função é exercitada
+    // isoladamente por testes que extraem do fonte só os blocos de
+    // persistência. Qualquer ausência/falha aqui devolve `false` e o Editor
+    // cai no caminho de ANTES da Fase 4: tudo no localStorage.
+    let temCofre = false;
+    try {
+      temCofre = typeof cofre !== 'undefined'
+        && typeof cofre.disponivel === 'function'
+        && cofre.disponivel()
+        && !!loteId;
+    } catch {
+      temCofre = false;
+    }
+    // A separação só entra quando o cofre existe E a função está no escopo (o
+    // mesmo `typeof` dos testes que extraem blocos isolados do fonte).
+    let configLeve = configCompleta;
+    let midias = {};
+    if (temCofre && typeof separarMidias === 'function') {
+      const separada = separarMidias(configCompleta);
+      configLeve = separada.config;
+      midias = separada.midias;
+    }
+    const temMidias = Object.keys(midias).length > 0;
+    const configGravar = temCofre ? configLeve : configCompleta;
+    const indice = temCofre && typeof indiceDeMidias === 'function' ? indiceDeMidias(midias) : null;
+    const itensSalvos = itensParaSalvar(itens);
+
+    const montarCarga = (cfg) => JSON.stringify({
+      itens: itensSalvos,
+      config: cfg,
       idSelecionado: idSelecionado || null,
       templateId: templateId || null,
       assinatura: assinatura || null,
+      // Índice das mídias que vivem no cofre (FASE 4). Ausente em cargas
+      // antigas e quando não há cofre — a leitura trata os dois casos.
+      indiceMidias: indice,
     });
+
     try {
-      localStorage.setItem(CHAVE_LOTE, carga);
+      localStorage.setItem(CHAVE_LOTE, montarCarga(configGravar));
+      resultado.gravado = true;
     } catch {
-      /* storage bloqueado — o editor segue funcionando sem persistir */
+      // COTA/BLOQUEIO: 1ª degradação — grava o estado leve (sem as imagens).
+      if (temCofre) {
+        try {
+          localStorage.setItem(CHAVE_LOTE, montarCarga(configLeve));
+          resultado.gravado = true;
+        } catch {
+          // 2ª degradação — só o essencial do lote (mesmo sem o resto da config).
+          try {
+            localStorage.setItem(CHAVE_LOTE, JSON.stringify({
+              itens: itensSalvos,
+              config: { loteId, loteCriadoEm: configCompleta.loteCriadoEm || null },
+              idSelecionado: idSelecionado || null,
+              templateId: null,
+              assinatura: null,
+              indiceMidias: null,
+              persistenciaReduzida: true,
+            }));
+            resultado.gravado = true;
+          } catch {
+            resultado.gravado = false; // nada coube — não há o que fazer
+          }
+        }
+      } else {
+        resultado.gravado = false;
+      }
     }
+
+    // Mídias no cofre (assíncrono, fora do caminho crítico da UI).
+    if (temCofre) {
+      resultado.midiasNoCofre = true;
+      if (temMidias) {
+        resultado.midiasPerdidas = true; // até o cofre confirmar
+        cofre.gravar(loteId, midias)
+          .then((ok) => { if (ok) resultado.midiasPerdidas = false; })
+          .catch(() => { resultado.midiasPerdidas = true; });
+      } else {
+        // Lote sem mídias: limpa o que sobrou (template removido/trocado).
+        cofre.gravar(loteId, {}).catch(() => {});
+      }
+    }
+
+    return resultado;
   } catch {
-    /* estado não-serializável — nunca quebra a UI */
+    // Estado não-serializável — nunca quebra a UI.
+    return resultado;
   }
 }
 
@@ -406,13 +675,20 @@ export default function EditorLote() {
   const [idSelecionado, setIdSelecionado] = useState(() => loteSalvo?.idSelecionado || null);
   const [salvando, setSalvando] = useState(false);
   const [enfileirando, setEnfileirando] = useState(false);
-  const [templateIdSalvo, setTemplateIdSalvo] = useState(() => loteSalvo?.templateId || null);
-  const [assinaturaSalva, setAssinaturaSalva] = useState(() => loteSalvo?.assinatura || null);
-  // MOSTRAR PREVIEW (fluxo simplificado): desligado, o CENTRO mostra SOMENTE
-  // os vídeos importados (grade de 6 por fileira); ligado, aplica o MESMO
-  // template + a MESMA área marcada em TODOS os vídeos. Estado transitório de
-  // apresentação — não é persistido no localStorage.
-  const [previewAtivo, setPreviewAtivo] = useState(false);
+  // CONFIG BASE já montada nesta sessão (string JSON) + a assinatura dela.
+  // ANTES estes dois campos guardavam o `templateId` de um template SALVO no
+  // servidor. Agora guardam a CONFIG em si: nada é criado no servidor, a config
+  // simplesmente viaja com a fila no POST /api/lote.
+  // As chaves no localStorage (`templateId`/`assinatura`) são mantidas para
+  // preservar o formato já gravado — `templateId` fica sempre null daqui em
+  // diante e é simplesmente ignorado.
+  const [configBaseAtual, setConfigBaseAtual] = useState(() => null);
+  const [assinaturaBaseSalva, setAssinaturaBaseSalva] = useState(() => loteSalvo?.assinatura || null);
+  // CORTE MANUAL POR LINHAS — mostra/oculta as duas linhas arrastáveis na
+  // célula do vídeo selecionado. É uma FERRAMENTA de interface: não altera
+  // nenhum valor, não dispara detecção e não afeta o render. Desligada, o
+  // vídeo continua mostrando o resultado do corte (automático ou manual).
+  const [linhasCorteAtivas, setLinhasCorteAtivas] = useState(false);
   const [toast, setToast] = useState(null);
   // ELEMENTO SELECIONADO no Preview (Camadas ⇄ Preview ⇄ configuração à
   // esquerda): 'logo' | 'textoSuperior' | 'textoInferior' | 'identidadeNome' |
@@ -431,13 +707,61 @@ export default function EditorLote() {
 
   const pool = usePoolDeVideos(itens, idSelecionado);
 
-  const mostrarToast = useCallback((mensagem, tipo = 'ok') => {
-    setToast({ mensagem, tipo });
+  const mostrarToast = useCallback((mensagem, tipo = 'ok', opcoes = null) => {
+    setToast({ mensagem, tipo, acao: opcoes?.acao || null });
     clearTimeout(timerToast.current);
-    timerToast.current = setTimeout(() => setToast(null), 4000);
+    timerToast.current = setTimeout(() => setToast(null), opcoes?.duracaoMs || 4000);
   }, []);
 
   useEffect(() => () => clearTimeout(timerToast.current), []);
+
+  /* ---------------------------------------------------------------------------
+   * FASE 2 — "TODOS OS VÍDEOS" É LITERAL (auditoria + desfazer).
+   *
+   * Com "Todos os vídeos" ligado, gravar o corte global SUBSTITUI os ajustes
+   * individuais de corte dos vídeos (sem eles o `manual.corte` continuaria
+   * vencendo o global e o escopo não seria literal). Como a operação remove
+   * edições que o usuário fez, ela precisa ser AUDITÁVEL e DESFAZÍVEL.
+   *
+   * A auditoria acontece AQUI — num efeito que compara a config anterior com
+   * a atual — e não dentro da escrita: assim ela é independente de ONDE veio
+   * a mudança (slider do painel, linha arrastada no preview, botão do painel) e
+   * o updater do React continua puro. Reaproveita a infraestrutura de toast que
+   * JÁ EXISTE (nada de biblioteca nova, nada de sistema de histórico): uma única
+   * posição de desfazer, o suficiente para reverter esta substituição.
+   * ------------------------------------------------------------------------ */
+  const configAnteriorRef = useRef(config);
+  const desfazerCorteRef = useRef(null);
+  useEffect(() => {
+    const antes = configAnteriorRef.current;
+    configAnteriorRef.current = config;
+    if (!antes || antes === config) return;
+    const tinhaIndividuais = cortesIndividuaisAfetados(antes);
+    if (!tinhaIndividuais.length) return;
+    const agoraTem = new Set(cortesIndividuaisAfetados(config));
+    const substituidos = tinhaIndividuais.filter((id) => !agoraTem.has(id));
+    if (substituidos.length === 0) return;
+    desfazerCorteRef.current = antes;
+    const n = substituidos.length;
+    mostrarToast(
+      `Ajuste${n > 1 ? 's' : ''} individual${n > 1 ? 'is' : ''} de corte substituído${n > 1 ? 's' : ''}`
+      + ` — o corte do lote vale para ${n > 1 ? 'todos os vídeos' : 'o vídeo inteiro'}.`,
+      'ok',
+      {
+        duracaoMs: 8000,
+        acao: {
+          rotulo: 'Desfazer',
+          aoClicar: () => {
+            const voltar = desfazerCorteRef.current;
+            desfazerCorteRef.current = null;
+            if (!voltar) return;
+            setConfig(voltar);
+            mostrarToast('Ajustes individuais de corte restaurados.');
+          },
+        },
+      },
+    );
+  }, [config, mostrarToast]);
 
   // Seleciona o primeiro vídeo automaticamente (o canvas nunca fica vazio) e
   // mantém a seleção consistente: o vídeo restaurado do localStorage tem
@@ -527,8 +851,9 @@ export default function EditorLote() {
     itens,
     config,
     idSelecionado,
-    templateId: templateIdSalvo,
-    assinatura: assinaturaSalva,
+    // Não existe mais template salvo: nada de id para persistir.
+    templateId: null,
+    assinatura: assinaturaBaseSalva,
   };
 
   // IDs presentes no lote, em espelho SÍNCRONO do estado. O `estadoAtualRef`
@@ -589,6 +914,56 @@ export default function EditorLote() {
     salvarEstadoNoDisco({ ...atual });
   }, []);
 
+  /* ---------------------------------------------------------------------------
+   * FASE 4 — REIDRATAÇÃO DAS MÍDIAS (o template volta do cofre).
+   *
+   * A config salva no localStorage chega SEM as imagens (só o índice). Este
+   * effect busca os bytes no cofre e devolve as mídias aos seus lugares, antes
+   * de qualquer gravação — é o que impede que o AUTOSAVE, disparado logo depois
+   * do mount, regrave a config ainda sem o template e apague o que estava no
+   * cofre.
+   *
+   * · Só roda quando a sessão É a mesma do lote salvo (sessão nova = lote novo =
+   *   config zerada, e nada de mídia pode ser herdado — a regra anti-herança
+   *   continua valendo sem exceção);
+   * · falha do cofre = fail-open (o editor abre sem as imagens, o restante do
+   *   lote — vídeos, cortes, área, escopo — está intacto e é o que importa);
+   * · o autosave abaixo espera este effect terminar (`midiasProntas`), então
+   *   nunca existe janela em que uma config sem mídias sobrescreva o cofre.
+   * ------------------------------------------------------------------------ */
+  const indiceRestaurado = useRef(loteSalvo?.indiceMidias || null);
+  const loteRestaurado = useRef(loteSalvo?.config?.loteId || null);
+  const configCruaRestaurada = useRef(loteSalvo?.configCrua || null);
+  // É STATE (não ref) de propósito: ao virar `true` o effect de autosave roda
+  // de novo e grava a config JÁ com as mídias. Com ref, a gravação ficaria
+  // pendurada até a próxima edição do usuário.
+  const [midiasProntas, setMidiasProntas] = useState(false);
+  useEffect(() => {
+    const indice = indiceRestaurado.current;
+    const loteId = loteRestaurado.current;
+    if (!indice || !loteId || !cofre.disponivel()) {
+      setMidiasProntas(true); // nada a reidratar — libera o autosave
+      return undefined;
+    }
+    let ativo = true;
+    cofre.lerDoIndice(loteId, indice)
+      .then((midias) => {
+        if (!ativo || !midias || Object.keys(midias).length === 0) return;
+        // A config CRUA (ainda sem normalizar) é a base: só nela as imagens
+        // ainda existem como elementos. Normalizar ANTES de reidratar faria o
+        // `normalizarConfigEditor` descartá-las por não terem `data:image/`, e
+        // o lote voltaria sem template/imagem/selo.
+        setConfig(mesclarConfig(aplicarMidias(configCruaRestaurada.current || {}, midias)));
+      })
+      .catch(() => {
+        // Fail-open: o lote abre sem as imagens, sem perder o resto.
+      })
+      .finally(() => {
+        if (ativo) setMidiasProntas(true);
+      });
+    return () => { ativo = false; };
+  }, []);
+
   // LOGO REMOVIDA do fluxo: sem conversão/persistência de dataURL.
   // AUTOSAVE — qualquer mudança (vídeos, seleção ou a config inteira:
   // identidade, textos, área do vídeo, fundo) é gravada no localStorage
@@ -596,19 +971,22 @@ export default function EditorLote() {
   // URLs do servidor (uploads/thumbnails) — os vídeos sobrevivem e o pool
   // (usePoolDeVideos) remonta o <video> a partir da urlFonte.
   useEffect(() => {
+    // FASE 4: espera a reidratação das mídias. Gravar antes dela sobrescreveria
+    // o cofre com uma config que ainda não tem as imagens.
+    if (!midiasProntas) return undefined;
     const timer = setTimeout(
       () =>
         salvarEstadoNoDisco({
           itens,
           config,
           idSelecionado,
-          templateId: templateIdSalvo,
-          assinatura: assinaturaSalva,
+          templateId: null,
+          assinatura: assinaturaBaseSalva,
         }),
       350
     );
     return () => clearTimeout(timer);
-  }, [itens, config, idSelecionado, templateIdSalvo, assinaturaSalva]);
+  }, [itens, config, idSelecionado, assinaturaBaseSalva, midiasProntas]);
 
   // Flush no unmount: garante que o ÚLTIMO estado vá pro localStorage mesmo
   // que o usuário saia da aba dentro da janela do debounce (trocar de página
@@ -621,28 +999,33 @@ export default function EditorLote() {
   }, [descarregar]);
 
   /**
-   * CORTE AUTOMÁTICO DE BORDAS NO IMPORT (fundo, por vídeo).
+   * DETECÇÃO AUTOMÁTICA DE BORDAS NO IMPORT (fundo, por vídeo) — DIAGNÓSTICO.
    *
    * Dispara `detectarBordasDoVideo` (a MESMA função de produção, sem
    * reimplementação: cria <video>, faz seek e desenha no <canvas>) assim que o
-   * vídeo entra na lista, e grava o resultado em `config.overridesPorVideo` com
-   * `origem: 'auto'`.
+   * vídeo entra na lista e guarda o resultado em `config.overridesPorVideo` como
+   * INFORMAÇÃO (`deteccao`).
+   *
+   * REGRA FUNDAMENTAL (FASE 0/FASE 1): um vídeo recém-importado NÃO pode nascer
+   * com uma edição efetiva. A detecção NUNCA cria corte manual nem corte
+   * efetivo: ela só informa. O corte efetivo do vídeo recién-importado é 0/0
+   * (inativo) e o payload de produção não leva corte ativo. A detecção só vira
+   * corte quando o usuário clica em "Usar detecção" (`usarCorteAutomaticoDoVideo`).
    *
    * REGRAS (todas deliberadas, nenhuma muda o que já foi validado):
    * · NUNCA bloqueia o import: roda fora do `setItens`, sem await no caminho
-   *   da UI — o vídeo aparece na lista na hora e o corte chega depois.
+   *   da UI — o vídeo aparece na lista na hora e a informação chega depois.
    * · Só grava quando `aplicavel.superior` OU `aplicavel.inferior` é true.
-   *   `confiavel` (AND dos dois lados) NÃO é exigido: o video1 é o caso real —
-   *   barra legítima no topo com a base ambígua.
    * · O lado com `aplicavel:false` entra com 0 (nunca com o número medido):
    *  _fail-open_ — dúvida em um lado não aplica corte nele.
    * · Percentuais passam por `limitarCorte` (MESMA função que o painel, o
    *   arraste e o render usam) → prévia e vídeo final nunca divergem.
-   * · Se o vídeo já tem override MANUAL (usuário mexeu), a detecção NÃO
-   *   sobrescreve: a mão do usuário vence a máquina.
+   * · NUNCA sobrescreve a edição manual do usuário: a mão do usuário vence.
    * · Se o vídeo foi removido da lista enquanto detectava, o resultado é
    *   descartado (não deixa override órfão na config).
    * · Falha/ilegível/sem confiança → nada é gravado (fail-open).
+   *
+   * O `detectorBordas.js` NÃO foi tocado: esta é a ÚNICA chamada dele.
    */
   const detectarCorteAutomatico = useCallback(async (videoId, urlFonte) => {
     if (!videoId || !urlFonte) return;
@@ -660,22 +1043,16 @@ export default function EditorLote() {
       setConfig((cfg) => {
         // Vídeo removido do lote durante a detecção: descarta (fail-open).
         if (!idsNoLoteRef.current.has(videoId)) return cfg;
-        const anterior = cfg?.overridesPorVideo?.[videoId];
-        // Ajuste MANUAL do usuário tem prioridade sobre a detecção automática.
-        if (anterior && anterior.origem === 'manual') return cfg;
-        return {
-          ...cfg,
-          overridesPorVideo: {
-            ...cfg?.overridesPorVideo,
-            [videoId]: {
-              ...anterior,
-              superior: limitado.superior,
-              inferior: limitado.inferior,
-              origem: 'auto',
-              em: Date.now(),
-            },
-          },
-        };
+        // Escrita DA FONTE AUTOMÁTICA: grava SÓ a INFORMAÇÃO `deteccao`.
+        // NÃO cria corte manual nem corte efetivo — o vídeo importado nasce
+        // sem edição, e a detecção só vira corte por "Usar detecção".
+        return definirCorteAutomaticoDoVideo(cfg, videoId, {
+          ...limitado,
+          aplicavel: { ...aplicavel },
+          confiavel: r?.confiavel ?? null,
+          em: Date.now(),
+          detalhes: r?.detalhes ?? null,
+        });
       });
     } catch {
       // FAIL-OPEN: qualquer falha na detecção não impede o import.
@@ -702,6 +1079,11 @@ export default function EditorLote() {
             thumbnail: novo.thumbnail || null,
             urlFonte: novo.urlFonte || novo.url || null,
             duracao: novo.duracao || null,
+            // Dimensões naturais do `ffprobe` do upload (podem vir `null` no
+            // 201 — o enriquecimento é assíncrono; a re-hidratação preenche).
+            // São elas que dão ao preview a mesma geometria do render.
+            largura: novo.largura ?? null,
+            altura: novo.altura ?? null,
             status: novo.status || 'pronto',
             percentual: 0,
             filaId: null,
@@ -709,8 +1091,16 @@ export default function EditorLote() {
           },
         ];
       });
-      // CORTE AUTOMÁTICO: dispara em FUNDO, logo após o vídeo entrar na lista.
-      // Não é aguardado — o import nunca trava por causa da detecção.
+      // REGRA FUNDAMENTAL (FASE 0/FASE 1): o item é criado com id, bibliotecaId,
+      // nome, thumbnail, urlFonte, duração e dimensões PRESERVADOS, e NADA mais:
+      // NÃO é criado corte manual, NÃO é criado override efetivo, e o
+      // `corteBordas` global, a área e a posição NÃO são tocados. A config
+      // compartilhada do lote é preservada intacta (como sempre foi).
+      //
+      // DETECÇÃO AUTOMÁTICA: dispara em FUNDO e grava SÓ INFORMAÇÃO (`deteccao`).
+      // Não é aguardada — o import nunca trava por causa da detecção — e ela
+      // NUNCA cria corte efetivo: só informa, e vira corte se o usuário clicar
+      // em "Usar detecção".
       if (novoId && urlFonte) {
         // Entra no espelho de ids ANTES de detectar: a detecção é assíncrona e
         // pode terminar antes do re-render que popula `itens`.
@@ -781,46 +1171,57 @@ export default function EditorLote() {
   // FLUXO REAL — template no servidor + fila (Supabase) + worker local
   // -----------------------------------------------------------------------
 
-  /** Salva/atualiza o TEMPLATE no servidor a partir da config compartilhada.
-   * CORREÇÃO (templates por corte): cada ASSINATURA de config tem SEU PRÓPRIO
-   * template. O template BASE (sem override) continua atualizado in-place
-   * (id estável entre sessões); qualquer override (corte automático salvo ou
-   * ajuste manual por vídeo) cria um template NOVO — nunca reutiliza nem
-   * sobrescreve o id de outra configuração. Cache por assinatura evita
-   * duplicar templates dentro do mesmo processamento. */
-  const templatesPorAssinaturaRef = useRef(new Map());
-  const garantirTemplate = useCallback(async (overrideVideo = null) => {
+  /** Monta a CONFIG do lote para cada grupo de corte — SEM chamar o servidor.
+   *
+   * NOVA ARQUITETURA: a configuração não é mais salva como TEMPLATE. Ela é
+   * apenas serializada e devolvida aqui, para viajar JUNTO com a fila no
+   * POST /api/lote (o worker lê direto da linha). Nenhum registro é criado em
+   * templates-store.json, nenhum id de template é guardado e nenhum
+   * GET /api/templates/:id acontece.
+   *
+   * O agrupamento por CORTE (templates por corte) continua EXATAMENTE como
+   * antes: cada ASSINATURA de config (inclusive o override de corte do vídeo)
+   * tem a SUA configuração, e vídeos com cortes diferentes continuam indo para
+   * grupos diferentes — cada vídeo recebe exatamente a config do seu corte.
+   *
+   * A logo segue inerte no fluxo (visivel:false), exatamente como antes: o
+   * Editor em Lote não usa logo no render, e por isso ela nem entra no payload.
+   */
+  const configsPorAssinaturaRef = useRef(new Map());
+  const garantirConfig = useCallback((overrideVideo = null) => {
     const configAtual = { ...config, logo: { ...config.logo, visivel: false, url: null, arquivo: null } };
 
     const assinatura = assinarConfig(configAtual, overrideVideo);
-    const emCache = templatesPorAssinaturaRef.current.get(assinatura);
-    if (emCache) return { templateId: emCache, assinatura };
-    // Template BASE já salvo (nesta sessão ou restaurado do disco): reuso
-    // direto — a config não mudou, nada a re-salvar.
-    if (!overrideVideo && templateIdSalvo && assinatura === assinaturaSalva) {
-      templatesPorAssinaturaRef.current.set(assinatura, templateIdSalvo);
-      return { templateId: templateIdSalvo, assinatura };
+    const emCache = configsPorAssinaturaRef.current.get(assinatura);
+    if (emCache) return { config: emCache, assinatura };
+
+    // Config BASE (sem override): reaproveita a última config da sessão, sem
+    // recalcular. Preserva o comportamento de "não reprocessa o que não mudou".
+    if (!overrideVideo && configBaseAtual && assinatura === assinaturaBaseSalva) {
+      configsPorAssinaturaRef.current.set(assinatura, configBaseAtual);
+      return { config: configBaseAtual, assinatura };
     }
 
-    // CORREÇÃO DO BUG: override NUNCA reutiliza `templateIdSalvo` (antes, o
-    // payload do override sobrescrevia o template base e os vídeos sem corte
-    // recebiam o corte do último override). Configs diferentes => templates
-    // diferentes; cada vídeo recebe exatamente o template do seu corte.
-    const template = await salvarTemplateDoEditor({
-      payload: configParaTemplatePayload(configAtual, overrideVideo),
-      arquivoLogo: null,
-      templateId: overrideVideo ? null : templateIdSalvo || null,
-    });
+    // CORREÇÃO DO BUG (preservada): o override NUNCA reaproveita a config base
+    // (antes, o payload do override sobrescrevia o template base e os vídeos sem
+    // corte recebiam o corte do último override). Configs diferentes => grupos
+    // diferentes; cada vídeo recebe exatamente a config do seu corte.
+    // O resultado do mapeamento usa nome próprio (`configPayload`) para NÃO
+    // sombrear o estado `config` do componente: um `const config` aqui colocaria
+    // todo o corpo da função em TDZ e o uso de `config` acima (configAtual)
+    // lançaria "Cannot access 'config' before initialization" no clique em
+    // "Implementar vídeos".
+    const configPayload = configParaTemplatePayload(configAtual, overrideVideo);
+    const configJson = JSON.stringify(configPayload);
 
-    const assinaturaFinal = assinarConfig(configAtual, overrideVideo);
-    templatesPorAssinaturaRef.current.set(assinaturaFinal, template.id);
-    // Apenas o template BASE atualiza o estado persistido de sessão.
+    configsPorAssinaturaRef.current.set(assinatura, configJson);
+    // Apenas a config BASE atualiza o estado de sessão.
     if (!overrideVideo) {
-      setTemplateIdSalvo(template.id);
-      setAssinaturaSalva(assinaturaFinal);
+      setConfigBaseAtual(configJson);
+      setAssinaturaBaseSalva(assinatura);
     }
-    return { templateId: template.id, assinatura: assinaturaFinal };
-  }, [config, templateIdSalvo, assinaturaSalva]);
+    return { config: configJson, assinatura };
+  }, [config, configBaseAtual, assinaturaBaseSalva]);
 
   /** Acompanha o progresso REAL dos itens na fila (GET /api/fila). */
   const iniciarPolling = useCallback(() => {
@@ -880,25 +1281,29 @@ export default function EditorLote() {
   // recomeça no próximo "Implementar vídeo" (a fila REAL continua na
   // Oracle/worker — só a UI tinha parado de olhar).
 
-  // THUMBNAILS DO POOL — RE-HIDRATAÇÃO (GET /api/biblioteca):
-  // o item importado nasce `thumbnail: null` (o upload responde sem thumbnail
-  // — geração em background no servidor). Enquanto existir item com
-  // `bibliotecaId` sem thumbnail, este efeito re-consulta a biblioteca
-  // periodicamente (MESMO padrão do polling da fila acima) e preenche a
-  // thumbnail — e a duração, quando o enriquecimento já a tiver trazido —
-  // assim que o servidor publicar o dado. Sem tocar em fila/worker/Supabase.
+  // METADADOS DO POOL — RE-HIDRATAÇÃO (GET /api/biblioteca):
+  // o item importado nasce `thumbnail: null` e `largura/altura: null` (o upload
+  // responde na hora e o ffprobe/thumbnail rodam em BACKGROUND no servidor).
+  // Enquanto existir item com `bibliotecaId` sem thumbnail OU sem as dimensões
+  // naturais, este efeito re-consulta a biblioteca periodicamente (MESMO padrão
+  // do polling da fila acima) e preenche o que o servidor já tiver publicado:
+  // thumbnail, duração e — o mais importante para a prévia — `largura`/`altura`.
+  //
+  // POR QUE AS DIMENSÕES SÃO OBRIGATÓRIAS AQUI: elas são a FONTE OFICIAL da
+  // geometria do preview (mesmo número que o `ffprobe` do render usa). Sem elas,
+  // um card NÃO SELECIONADO cai no fallback e mostra geometria diferente da do
+  // vídeo final. Por isso o gate considera `largura`/`altura`, e não só a
+  // thumbnail: chegar na thumbnail não encerra mais a consulta.
   //  · 1ª consulta IMEDIATA ao ligar + tick de 4s;
   //  · a chave do efeito é a LISTA de ids pendentes: importar outro vídeo
   //    remonta o efeito (teto de tentativas recomeça) e cada progresso
   //    parcial (um item preenchido) renova o teto;
   //  · todos preenchidos → chave vazia → intervalo encerrado (zero polling
   //    quando nada está pendente).
+  const itemSemMetadados = (it) =>
+    !!(it && it.bibliotecaId && (!it.thumbnail || !(Number(it.largura) > 0 && Number(it.altura) > 0)));
   const chaveThumbsPendentes = useMemo(
-    () =>
-      itens
-        .filter((it) => it && it.bibliotecaId && !it.thumbnail)
-        .map((it) => it.bibliotecaId)
-        .join(','),
+    () => itens.filter(itemSemMetadados).map((it) => it.bibliotecaId).join(','),
     [itens]
   );
   useEffect(() => {
@@ -915,25 +1320,38 @@ export default function EditorLote() {
         if (!ativo || !Array.isArray(bib)) return;
         const dadosPorId = new Map();
         for (const v of bib) {
-          if (v && v.id && v.thumbnailUrl) {
-            dadosPorId.set(v.id, {
-              thumbnail: urlArquivo(v.thumbnailUrl),
-              duracao: Number.isFinite(Number(v.duracaoSegundos)) ? `${v.duracaoSegundos}s` : null,
-            });
-          }
+          if (!v || !v.id) continue;
+          const temThumb = !!v.thumbnailUrl;
+          const temDim = Number(v.largura) > 0 && Number(v.altura) > 0;
+          if (!temThumb && !temDim) continue;
+          dadosPorId.set(v.id, {
+            thumbnail: temThumb ? urlArquivo(v.thumbnailUrl) : null,
+            duracao: Number.isFinite(Number(v.duracaoSegundos)) ? `${v.duracaoSegundos}s` : null,
+            largura: temDim ? Math.round(Number(v.largura)) : null,
+            altura: temDim ? Math.round(Number(v.altura)) : null,
+          });
         }
         if (dadosPorId.size === 0) return; // enriquecimento ainda não rodou
         setItens((atual) => {
           let mudou = false;
           const proximo = atual.map((it) => {
-            if (!it || it.thumbnail || !it.bibliotecaId) return it;
+            if (!it || !it.bibliotecaId) return it;
+            // Só toca no que ainda falta: thumbnail e dims são independentes e
+            // podem chegar em consultas diferentes.
+            const precisaThumb = !it.thumbnail;
+            const precisaDim = !(Number(it.largura) > 0 && Number(it.altura) > 0);
+            if (!precisaThumb && !precisaDim) return it;
             const dado = dadosPorId.get(it.bibliotecaId);
             if (!dado) return it;
+            if (!precisaThumb && !dado.thumbnail) return it;
+            if (!precisaDim && !dado.largura) return it;
             mudou = true;
             return {
               ...it,
-              thumbnail: dado.thumbnail,
+              thumbnail: it.thumbnail || dado.thumbnail || it.thumbnail,
               duracao: it.duracao || dado.duracao,
+              largura: it.largura || dado.largura || it.largura || null,
+              altura: it.altura || dado.altura || it.altura || null,
             };
           });
           return mudou ? proximo : atual;
@@ -1015,16 +1433,18 @@ export default function EditorLote() {
   const aoSalvar = useCallback(async () => {
     setSalvando(true);
     try {
-      const { templateId, assinatura } = await garantirTemplate();
-      // Grava o estado completo (itens + config + vídeo aberto) no localStorage.
-      salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinatura });
-      mostrarToast(`Salvo — ${itens.length} vídeo(s) importado(s) + template no servidor.`);
+      // A config é montada em memória (sem chamada ao servidor): ela viaja com
+      // a fila no POST /api/lote. O "Salvar" grava o estado do editor no
+      // localStorage — vídeos importados + config de composição.
+      const { assinatura } = garantirConfig();
+      salvarEstadoNoDisco({ itens, config, idSelecionado, templateId: null, assinatura });
+      mostrarToast(`Salvo — ${itens.length} vídeo(s) importado(s) + configuração do Editor.`);
     } catch (erro) {
       mostrarToast(erro.message || 'Não foi possível salvar.', 'erro');
     } finally {
       setSalvando(false);
     }
-  }, [config, itens, idSelecionado, garantirTemplate, mostrarToast]);
+  }, [config, itens, idSelecionado, garantirConfig, mostrarToast]);
 
   const aoProcessar = useCallback(async () => {
     if (enfileirando) return;
@@ -1087,39 +1507,77 @@ export default function EditorLote() {
       //    Cada ASSINATURA de corte tem o SEU template: o vídeo com corte
       //    próprio vai com o dele e os demais vão com o corte global —
       //    nunca mais o corte de um contaminando o outro.
-      //    `cortePorVideo` devolve null quando o vídeo NÃO tem override: ele
-      //    usa o corte global e NÃO gera assinatura/template novo. Passar o
-      //    objeto de `corteEfetivoDoVideo` direto (que NUNCA é null)
-      //    forçaria `corteBordas.ativo:true` no payload e criaria um
+      //    `cortePorVideo` devolve null quando o vídeo NÃO tem corte EDITADO
+      //    pelo usuário: ele usa o corte global e NÃO gera assinatura/template
+      //    novo. A `deteccao` (diagnóstico automático) NÃO conta como corte —
+      //    é o que garante que um vídeo recém-importado não entre no render
+      //    cortado. Passar o objeto de `corteEfetivoDoVideo` direto (que NUNCA
+      //    é null) forçaria `corteBordas.ativo:true` no payload e criaria um
       //    template à toa para todo vídeo sem corte.
       const cortePorVideo = (videoId) => {
-        if (!videoId || !config.overridesPorVideo?.[videoId]) return null;
+        if (!videoId || !temAjusteIndividualDeCorte(config, videoId)) return null;
         const { superior, inferior } = corteEfetivoDoVideo(config, videoId);
         return { superior, inferior };
       };
       // Chave estável do override (null = corte global), na ordem de 1ª
       // aparição da lista — só para não repetir o mesmo override N vezes.
+      // A chave inclui a ÁREA efetiva do vídeo: dois vídeos com o MESMO corte
+      // mas com enquadramento individual DIFERENTE (modo "Apenas este vídeo")
+      // precisam de configs diferentes, senão o render entregaria a um deles a
+      // área/zoom do outro. `assinarConfig` (payload inteiro) continua sendo a
+      // chave FINAL do grupo, então grupos idênticos ainda viram UM POST.
       const cortesPorIndice = enfileiraveis.map((it) => cortePorVideo(it.id));
       const indicesPorChave = new Map();
       const overridePorChave = new Map();
       cortesPorIndice.forEach((override, i) => {
-        const chave = override ? `corte:${override.superior}/${override.inferior}` : 'corte:global';
+        const areaIndividual = areaIndividualDoVideo(config, enfileiraveis[i].id);
+        const chaveCorte = override ? `corte:${override.superior}/${override.inferior}` : 'corte:global';
+        // Sem override de área o vídeo usa o global — a chave fica estável e o
+        // agrupamento por corte continua exatamente como era.
+        const chaveArea = areaIndividual
+          ? `area:${Math.round(areaIndividual.x)}:${Math.round(areaIndividual.y)}:${Math.round(areaIndividual.largura)}:${Math.round(areaIndividual.altura)}:${Math.round(Number(areaIndividual.zoom || 1) * 100)}:${Math.round(Number(areaIndividual.deslocamentoX ?? 50))}:${Math.round(Number(areaIndividual.deslocamentoY ?? 50))}`
+          : 'area:global';
+        // POSIÇÃO (px do quadro) — DIMENSÃO INDEPENDENTE DO CORTE na chave do
+        // grupo. Sem isto, dois vídeos com o MESMO corte/área mas arrastados
+        // para posições diferentes cairiam no MESMO grupo e receberiam a
+        // posição do primeiro da lista — o render entregaria a um deles a
+        // posição do outro. A chave lê o override INDIVIDUAL de posição
+        // (`posicaoPorVideo[id]`), o mesmo que `posicaoEfetivaDoVideo` usa no
+        // preview e no payload; `null`/`c` = centralizado (chave estável).
+        const posicaoIndividual = config.posicaoPorVideo?.[enfileiraveis[i].id] || null;
+        const chavePosicao = posicaoIndividual
+          ? `pos:${posicaoIndividual.offsetX ?? 'c'}:${posicaoIndividual.offsetY ?? 'c'}`
+          : 'pos:global';
+        const chave = `${chaveCorte}|${chaveArea}|${chavePosicao}`;
         if (!indicesPorChave.has(chave)) {
           indicesPorChave.set(chave, []);
-          overridePorChave.set(chave, override);
+          // O override transportado carrega o `videoId` para o payload resolver
+          // a ÁREA/POSIÇÃO EFETIVAS (global ⊕ override) daquele vídeo
+          // específico. Um override SÓ DE POSIÇÃO não altera corte nem área:
+          // `configParaTemplatePayload` só entra no caminho do corte quando o
+          // próprio override traz `superior`/`inferior`.
+          overridePorChave.set(chave, override || areaIndividual || posicaoIndividual
+            ? { ...(override || {}), videoId: enfileiraveis[i].id }
+            : null);
         }
         indicesPorChave.get(chave).push(i);
       });
-      // Chave do grupo = a ASSINATURA devolvida por `garantirTemplate` (a
-      // mesma que ele já usa como cache): overrides diferentes que rendem
-      // o mesmo payload caem no MESMO grupo e gastam UM POST /api/lote.
+      // Chave do grupo = a ASSINATURA devolvida por `garantirConfig` (a mesma
+      // que ele usa como cache): overrides diferentes que rendem o MESMO
+      // payload caem no MESMO grupo e gastam UM POST /api/lote.
+      //
+      // O AGRUPAMENTO POR CORTE É INTOCADO — só mudou o que o grupo carrega:
+      // antes um `templateId` de um template já salvo no servidor; agora a
+      // própria CONFIG (string JSON), que viaja junto da fila. A área efetiva
+      // de cada vídeo entra na CHAVE do grupo (acima), então um enquadramento
+      // individual nunca é entregue ao vídeo errado.
       const grupos = new Map();
       for (const [chave, indices] of indicesPorChave) {
-        const { templateId, assinatura } = await garantirTemplate(overridePorChave.get(chave));
+        const { config: configJson, assinatura } = garantirConfig(overridePorChave.get(chave));
         const itens = indices.map((i) => enfileiraveis[i]);
         const jaExistente = grupos.get(assinatura);
         if (jaExistente) jaExistente.itens.push(...itens);
-        else grupos.set(assinatura, { templateId, itens });
+        else grupos.set(assinatura, { configJson, itens });
       }
 
       // 2) Enfileira na fila REAL (Supabase) — um POST /api/lote por grupo.
@@ -1134,8 +1592,11 @@ export default function EditorLote() {
 
       let totalEnfileirado = 0;
       for (const grupo of grupos.values()) {
+        // A CONFIG DO GRUPO viaja no corpo do POST — é gravada na própria linha
+        // da fila (coluna config_template) e lida de lá pelo worker. Nenhum
+        // template é criado no servidor.
         const resposta = await processarLote(
-          grupo.templateId,
+          grupo.configJson,
           grupo.itens.map((it) => ({ bibliotecaId: it.bibliotecaId, tituloIA }))
         );
         const ids = resposta.ids || [];
@@ -1174,7 +1635,7 @@ export default function EditorLote() {
     } finally {
       setEnfileirando(false);
     }
-  }, [itens, config, enfileirando, garantirTemplate, iniciarPolling, mostrarToast]);
+  }, [itens, config, enfileirando, garantirConfig, iniciarPolling, mostrarToast]);
 
   // FLUXO: "Implementar vídeo" é a ÚNICA ação do header — o botão
   // "Processar vídeos" foi REMOVIDO (sem encaminhamento nesta interface).
@@ -1225,21 +1686,22 @@ export default function EditorLote() {
             aoRemoverItem={aoRemoverVideo}
             elementoSelecionado={elementoSelecionado}
             aoSelecionarElemento={setElementoSelecionado}
-            previewAtivo={previewAtivo}
+            linhasCorteAtivas={linhasCorteAtivas}
           />
         </section>
 
         {/* DIREITA — FLUXO DO TEMPLATE (painel único e simples): importar
-            template · marcar espaço do vídeo · mostrar preview */}
+            template · corte de bordas */}
         <aside className="edl-painel-direita min-w-0 flex flex-col border-l border-[color:var(--edl-borda)] h-full" aria-label="Template do lote">
           <PainelFluxo
             config={config}
             itens={itens}
             aoAtualizarConfig={setConfig}
-            previewAtivo={previewAtivo}
-            aoAlternarPreview={setPreviewAtivo}
-            elementoSelecionado={elementoSelecionado}
-            aoSelecionarElemento={setElementoSelecionado}
+            /* CORTE MANUAL POR LINHAS — o painel controla a ferramenta e
+               grava o ajuste INDIVIDUAL do vídeo selecionado. */
+            idSelecionado={idSelecionado}
+            linhasCorteAtivas={linhasCorteAtivas}
+            aoAlternarLinhasCorte={setLinhasCorteAtivas}
           />
         </aside>
       </div>
@@ -1258,6 +1720,16 @@ export default function EditorLote() {
             }}
           />
           <span className="text-[11px] font-bold text-white">{toast.mensagem}</span>
+          {toast.acao ? (
+            <button
+              type="button"
+              onClick={toast.acao.aoClicar}
+              className="edl-ring-foco shrink-0 text-[11px] font-extrabold px-2 py-1 rounded-lg"
+              style={{ background: 'rgba(236,72,153,0.22)', color: '#fff' }}
+            >
+              {toast.acao.rotulo}
+            </button>
+          ) : null}
         </div>
       )}
     </div>

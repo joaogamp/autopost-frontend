@@ -30,7 +30,8 @@ import { CANVAS_ALTURA, CANVAS_LARGURA, corteEfetivoDoVideo, atualizarCorteNoCon
  *
  *   2. ÁREA DO VÍDEO — fica SOBRE o template: o clique seleciona o retângulo
  *      (arraste/redimensione no Preview pra definir exatamente onde o vídeo
- *      entra) e o olho liga/desliga o guia na prévia.
+ *      entra). O guia tracejado foi REMOVIDO junto com a marcação da área —
+ *      não existe mais olho para ligar/desligar.
  *
  * `construirCamadas` continua exportada pra manter/documentar a ORDEM de
  * composição do render (testes): imagens → logo → textos → identidade →
@@ -131,17 +132,10 @@ export function construirCamadas(config, idSelecionado = null) {
     });
   }
 
-  camadas.push({
-    id: 'area',
-    rotulo: 'Área do vídeo',
-    Icone: Scan,
-    temOlho: true,
-    visivel: !!config.areaVideo?.mostrarMarcacao,
-    // O olho da área controla o GUIA (marcação tracejada) na prévia — a área
-    // em si é só a janela de composição do vídeo, nunca um elemento desenhado.
-    dicaOlho: 'Mostrar/ocultar o guia da área na prévia',
-    alternar: (v) => ({ areaVideo: { ...config.areaVideo, mostrarMarcacao: v } }),
-  });
+  // (Removido) a camada "Área do vídeo" da LISTA: ela existia só para o olho
+  // que ligava/desligava o GUIA tracejado. A marcação da área foi removida —
+  // não há mais nada para mostrar/ocultar. A área continua selecionável na
+  // seção própria abaixo (e o enquadramento é pelo ZOOM do PainelEditor).
 
   // FONTE ÚNICA do corte: o olho mostra o estado EFETIVO (override do vídeo
   // vence o global — o mesmo que o preview recorta) e o clique escreve pela
@@ -174,7 +168,6 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
   const templateFundo = (config && config.templateFundo) || {};
   const temTemplate = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/');
   const templateVisivel = templateFundo.visivel !== false;
-  const guiaAtiva = !!config.areaVideo?.mostrarMarcacao;
   const areaSelecionada = elementoSelecionado === 'area';
 
   /* ------------- TEMPLATE DE FUNDO (importação DIRETA do PC — sem popup) ------------- */
@@ -268,7 +261,6 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
             zoom: base.areaVideo.zoom,
             deslocamentoX: base.areaVideo.deslocamentoX,
             deslocamentoY: base.areaVideo.deslocamentoY,
-            mostrarMarcacao: true,
           },
         };
       });
@@ -283,10 +275,6 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
 
   function alternarTemplateVisivel(v) {
     aoAtualizarConfig((cfg) => ({ ...cfg, templateFundo: { ...cfg.templateFundo, visivel: v } }));
-  }
-
-  function alternarGuiaArea(v) {
-    aoAtualizarConfig((cfg) => ({ ...cfg, areaVideo: { ...cfg.areaVideo, mostrarMarcacao: v } }));
   }
 
   return (
@@ -410,16 +398,6 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
               <span className={`text-[11px] font-bold truncate ${areaSelecionada ? 'text-white' : ''}`} style={{ color: areaSelecionada ? undefined : 'var(--edl-texto-dim)' }}>
                 Área do vídeo
               </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => alternarGuiaArea(!guiaAtiva)}
-              title={guiaAtiva ? 'Ocultar o guia da área na prévia' : 'Mostrar o guia da área na prévia'}
-              aria-label={`${guiaAtiva ? 'Ocultar' : 'Mostrar'} o guia da área do vídeo`}
-              aria-pressed={guiaAtiva}
-              className={`edl-ring-foco shrink-0 w-6 h-6 rounded flex items-center justify-center transition-colors ${guiaAtiva ? 'text-white/80 hover:text-white' : 'text-white/30 hover:text-white/60'}`}
-            >
-              {guiaAtiva ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
             </button>
           </div>
           <p className="text-[9px] font-semibold leading-relaxed" style={{ color: 'var(--edl-texto-mut)' }}>

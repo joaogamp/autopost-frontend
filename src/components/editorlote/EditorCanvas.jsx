@@ -1,22 +1,35 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ImageOff, Trash2 } from 'lucide-react';
 import {
   CANVAS_LARGURA,
   CANVAS_ALTURA,
+  CORTE_MAXIMO,
+  corteEfetivoDoVideo,
   familiaDeFonte,
   pesoDeTexto,
   areaVideoNormalizada,
+  areaVideoEfetivaDoVideo,
+  areaJanelaDeComposicao,
   caixaEnquadramentoVideo,
-  enquadramentoVideoEditado,
-  enquadramentoVideoOriginal,
+  geometriaEnquadramentoVideo,
+  geometriaVideoFinal,
+  posicaoEfetivaDoVideo,
+  limiteDeMovimento,
+  editarTodosOsVideos,
+  dimensoesDoItem,
   deslocamentoSobZoom,
+  normalizarZoomVideo,
+  pixelsDeCorte,
+  atualizarAreaVideoNoConfig,
+  ZOOM_VIDEO_MIN,
+  ZOOM_VIDEO_MAX,
 } from '../../lib/configEditorLote';
 import {
   gerarArrasteDeRuta,
-  gerarArrastreArea,
-  gerarRedimensionarArea,
   gerarRedimensionarTextoLargura,
-  gerarArrastarEnquadramentoVideo,
+  gerarArrastarCorteSuperior,
+  gerarArrastarCorteInferior,
+  gerarArrastarPosicaoVideo,
 } from './arraste';
 import ControlesVideo from './ControlesVideo';
 import { ElementoIdentidadeTexto, ElementoIdentidadeSelo } from './ElementoIdentidade';
@@ -26,25 +39,54 @@ import ElementoImagem from './ElementoImagem';
  * EDITOR EM LOTE — canvas de edición (EditorCanvas).
  *
  * Canvas 9:16 reutilizado em DOIS lugares:
- * - CÉLULA SELECIONADA da área central (interativo=true): canvas completo,
- *   editável — vídeo REAL com ControlesVideo + textos + identidade +
- *   guia da área arrastável/redimensionável;
+ * - CÉLULA SELECIONADA da área central (interativo=true): canvas completo com
+ *   vídeo REAL + ControlesVideo + textos + identidade + corte de bordas;
  * - DEMAIS CÉLULAS (interativo=false): SOMENTE visualização do MESMO canvas
- *   com a MESMA config compartilhada (textos/identidade/área
- *   aparecem iguais), mas sem arrastes/manijas/áudio — SOLO thumbnail
- *   estática (parada), nunca un <video> con autoplay/loop en background.
+ *   com a MESMA config compartilhada (textos/identidade/área/corte aparecem
+ *   iguais), sem áudio — SOLO thumbnail estática (parada), nunca un <video>
+ *   con autoplay/loop en background.
  *
- * PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para a geometria do vídeo):
- * - A PRÉVIA desenha o vídeo na ÁREA de composição com a MESMA geometria do
+ * PREVIEW SIMPLES — O VÍDEO NÃO É EDITÁVEL NO CANVAS:
+ * - NÃO existe caixa de seleção, borda, alça/handle, outline de seleção,
+ *   arraste, cursor de arraste, zoom (roda do mouse ou toque), botão
+ *   "Redefinir" nem dica flutuante sobre o vídeo. O preview mostra o vídeo e
+ *   nada mais;
+ * - a `areaVideo` CONTINUA EXISTINDO como DADO interno (não é removida): é ela
+ *   que posiciona o vídeo dentro do canvas 1080×1920. `areaVideo` é gravada
+ *   pelo sistema (canvas inteiro por padrão) e viaja intacta no payload;
+ * - ARQUITETURA (template = FUNDO, vídeo = CAPA): o `template.png` 1080×1920 é
+ *   o fundo do quadro (z-index 1) e o vídeo recortado é a capa por cima
+ *   (z-index 2) — mesma ordem do engine (`[fundo][v_rec]overlay=x:y`). Onde o
+ *   vídeo não cobre, aparece a arte do template; nunca branco;
+ * - CORTE DE BORDAS = RECORTE REAL: o wrapper do vídeo tem o tamanho exato do
+ *   vídeo já cortado e o player é deslocado pelo topo cortado. É o MESMO crop
+ *   do FFmpeg (`crop=iw:ih*(1-top-bottom):0:ih*top` + `scale=W:-2`), feito no
+ *   elemento. O que foi cortado NÃO EXISTE na prévia — sem `clip-path: inset`,
+ *   sem faixas com `background: corFondo`, sem buraco `path(evenodd)`;
+ * - PRÉVIA = RENDER por construção: ambos consomem a MESMA função pura
+ *   `geometriaVideoFinal()` (crop → escala → posição), e é dela que sai o
+ *   payload `corteCrop`/`larguraAlvoVideo`/`posicaoVideo`;
+ * - ARRASTE do vídeo: grava `offsetX`/`offsetY` em px da base 1080×1920 —
+ *   exatamente o `x`/`y` do `overlay`. Respeita o escopo "Todos os vídeos" e a
+ *   região de trava opcional (`limiteMovimento`);
+ * - PRÉVIA x PROCESSAMENTO (uma ÚNICA fonte de verdade para a geometria): a
+ *   PRÉVIA desenha o vídeo na ÁREA de composição com a MESMA geometria do
  *   render (`caixaEnquadramentoVideo`): quadro = área × zoom, posicionado por
  *   deslocamentoX/Y e SEMPRE em cover (a ÁREA é exatamente o espaço do vídeo —
- *   ele preenche 100% da largura/altura dela, nunca fica pequeno/centralizado).
- *   O usuário amplia/reduz e move o vídeo com o MOUSE (arrastar + roda), e o
- *   vídeo final sai EXATAMENTE igual (compor.js materializa os mesmos valores);
- * - Sem corte de bordas: nenhuma linha/guia/clip-path de corte existe mais no
- *   Editor — a arte completa já vive no template importado;
- * - logo removida: o template é a fonte visual COMPLETA (fundo, textos,
- *   imagens, gráficos) — o Editor não adiciona nada por cima;
+ *   ele preenche 100% da largura/altura dela, nunca fica pequeno/centralizado);
+ * - Corte de bordas: DUAS ferramentas independentes na mesma tela.
+ *   (a) O VALOR EFETIVO é sempre o override DESTE vídeo
+ *   (`corteEfetivoDoVideo`) — venha ele do detector automático ou da linha
+ *   arrastada; a prévia o mostra com `clip-path` + as faixas de cor de fundo
+ *   (o mesmo `drawbox` do FFmpeg), em TODAS as células do lote, porque é o
+ *   resultado que o vídeo final terá;
+ *   (b) as LINHAS são a FERRAMENTA MANUAL: só na célula editável e só quando
+ *   o painel liga "Corte manual por linhas". Arrastar grava o override com
+ *   `origem:'manual'` e NUNCA toca no resultado bruto do detector. FORA desse
+ *   modo, NENHUMA linha/haste/caixa de edição aparece sobre o vídeo;
+ * - template removido da lista de edição: o template é a fonte visual
+ *   COMPLETA (fundo, textos, imagens, gráficos) — o Editor não adiciona nada
+ *   por cima;
  * - os CONTROLES DO PLAYER (play/pause · progresso · volume) vivem numa camada
  *   FIXA própria (`data-edl-destino-controles`) no fundo do canvas.
  */
@@ -54,17 +96,16 @@ import ElementoImagem from './ElementoImagem';
  * nos modos 2X/3X para caberem lado a lado). */
 const ALTURA_MAXIMA_PADRAO = 500;
 
+/** (Removido) O retângulo de vídeo PADRÃO usado como fallback do buraco do
+ * template não existe mais: o buraco vem do campo DEDICADO `areaTemplate`
+ * (`configEditorLote.areaTemplateEfetiva`). A área física do vídeo
+ * (`areaVideo`) nunca é mais reduzida para criar moldura — o vídeo ocupa
+ * 100% do canvas 1080×1920, com ou sem template. */
+
 /** (Removido) A prévia NÃO usa mais um encaixe fixo 'contain' do canvas
  * inteiro: ela desenha o vídeo DENTRO da área de composição, sempre em
- * cover (a área é exatamente o espaço do vídeo), com o MESMO zoom/deslocamento
+ * cover (a área é exatamente o espaço do vídeo), com o MESMO enquadramento
  * que o render final — prévia = render, por construção. */
-
-/** Leitura tolerante de número vindo de `dataset` (0 é válido — nunca `||`). */
-function numeroDoDataset(valor, padrao) {
-  const n = parseFloat(valor);
-  return Number.isFinite(n) ? n : padrao;
-}
-
 
 export default function EditorCanvas({
   config,
@@ -96,29 +137,25 @@ export default function EditorCanvas({
   // e callback pra selecionar/desselecionar. SÓ a célula editável seleciona.
   elementoSelecionado = null,
   aoSelecionarElemento,
-  // FLUXO SIMPLIFICADO — "Mostrar Preview" (REGRA 12): `previewAtivo=false`
-  // mostra SOMENTE o vídeo importado (sem template, sem composição na área,
-  // sem guias). `previewAtivo=true` desenha a composição
-  // final (template + vídeo dentro da área marcada + overlays), a MESMA
-  // geometria do render. `forcarTemplateVisivel=true` (modo de marcação no
-  // painel direito) mostra template + retângulo da área — SEM vídeo (Estado A:
-  // apenas geometria; o vídeo só existe no Preview — Estado B).
-  previewAtivo = true,
-  forcarTemplateVisivel = false,
+  // O TEMPLATE é SEMPRE VISÍVEL: assim que um template é importado ele passa a
+  // compor o canvas, sem depender de nenhum outro estado. A prévia é montada
+  // na MESMA ordem do engine (compor.js): vídeo → corte → template por cima →
+  // textos/imagens. O template traz o BURACO no retângulo VAZADO
+  // (`areaTemplate` — separado de `areaVideo`, que é só a posição do vídeo),
+  // o mesmo `dest-out` que o construirOverlay.js faz no PNG — sem buraco ele
+  // entra como arte cheia por cima.
+  //
+  // CORTE MANUAL POR LINHAS — liga a FERRAMENTA (as duas linhas arrastáveis)
+  // na célula editável. Desligado, o canvas mostra só o EFEITO do corte
+  // (clip-path do valor efetivo, vindo do detector ou da linha) e nada é
+  // arrastável. Vem do PainelFluxo ("Corte manual por linhas").
+  linhasCorteAtivas = false,
 }) {
-  // A composição (template/overlays/guias) só aparece com o Preview ativo ou
-  // dentro do modo de marcação — o centro mostra "somente vídeos" antes disso.
-  const composicaoAtiva = previewAtivo || forcarTemplateVisivel;
-  // ESTADO A — MARCAÇÃO: a gaveta do painel direito (forcarTemplateVisivel)
-  // mostra SOMENTE template + retângulo. O vídeo NÃO é renderizado aqui, não
-  // acompanha o arraste e não sofre nenhuma transformação (Regra 3/12).
-  const modoMarcacao = forcarTemplateVisivel && !previewAtivo;
-  // O GUIA tracejado da área do vídeo é FERRAMENTA DE MARCAÇÃO/edição: na
-  // prévia composta (Mostrar Preview) o centro mostra o resultado LIMPO,
-  // exatamente como o render final — a marcação nunca fica permanente sobre
-  // os vídeos. Durante a MARCAÇÃO o guia fica SEMPRE visível (é ele o
-  // retângulo geométrico que o usuário arrasta/redimensiona).
-  const mostraGuiaArea = modoMarcacao;
+  // A composição (vídeo na área + corte + template + textos) é SEMPRE ativa:
+  // não existe mais "Estado A" (template sem vídeo) nem um toggle de preview.
+  // A marcação da área do vídeo foi removida, então o vídeo acompanha a
+  // `areaVideo` em tempo real, sem congelamento de geometria.
+  const composicaoAtiva = true;
   const canvasRef = useRef(null);
   const contenedorRef = useRef(null);
   const [escala, setEscala] = useState(1);
@@ -145,12 +182,9 @@ export default function EditorCanvas({
   );
   // Em conferência a EDIÇÃO fica desligada (sem arraste/zoom/alças/overlays),
   // mas o player CONTINUA montado — é o que o usuário precisa assistir.
-  // FLUXO SIMPLIFICADO: sem "Mostrar Preview" o centro mostra SOMENTE os
-  // vídeos importados — nada de composição, guias ou arraste de enquadramento.
-  // MARCAÇÃO (`forcarTemplateVisivel` sem preview): o vídeo NÃO é renderizado
-  // nem arrastável — só o template + o retângulo da área (Estado A). O vídeo
-  // só volta a existir dentro da área marcada no PREVIEW (Estado B).
-  const podeEditarVideo = podeEditar && !conferencia && previewAtivo;
+  // A edição do VÍDEO é livre na célula editável: a marcação da área não existe
+  // mais, então o objeto de vídeo É o próprio retângulo da composição.
+  const podeEditarVideo = podeEditar && !conferencia;
 
   // Handlers — arrastre genérico por ruta: cada elemento es independente.
   // Nas células NÃO selecionadas (podeEditar=false) os handlers viram no-op.
@@ -158,19 +192,19 @@ export default function EditorCanvas({
   const arrastarTextoInferior = gerarArrasteDeRuta(['textos', 'inferior'], atualizador);
   const redimensionarTextoSup = gerarRedimensionarTextoLargura(['textos', 'superior'], atualizador);
   const redimensionarTextoInf = gerarRedimensionarTextoLargura(['textos', 'inferior'], atualizador);
-  const arrastarArea = gerarArrastreArea(atualizador);
-  // REDIMENSIONAR A ÁREA — 4 LADOS + 4 CANTOS (marcação precisa de controle
-  // total: puxar o topo pra baixo, a esquerda pra direita etc.). Todos usam o
-  // MESMO gerarRedimensionarArea (sem sistema paralelo); só muda o eixo.
-  const redimensionarAreaDireita = gerarRedimensionarArea('direita', atualizador);
-  const redimensionarAreaAbaixo = gerarRedimensionarArea('abaixo', atualizador);
-  const redimensionarAreaEsquerda = gerarRedimensionarArea('esquerda', atualizador);
-  const redimensionarAreaAcima = gerarRedimensionarArea('acima', atualizador);
-  const redimensionarAreaCantoSE = gerarRedimensionarArea('canto-sudeste', atualizador);
-  const redimensionarAreaCantoSO = gerarRedimensionarArea('canto-sudoeste', atualizador);
-  const redimensionarAreaCantoNE = gerarRedimensionarArea('canto-nordeste', atualizador);
-  const redimensionarAreaCantoNO = gerarRedimensionarArea('canto-noroeste', atualizador);
-
+  // ID DESTE VÍDEO NA CÉLULA (o mesmo `corte` usa) — a área vigente do preview
+  // é a EFETIVA (global ⊕ `areaPorVideo[id]`). Cada célula da grade lê o seu
+  // override, então "Apenas este vídeo" só move o vídeo selecionado e os outros
+  // continuam lendo o global. Mesma função que o payload consome: prévia = render.
+  // DECLARADO AQUI, ANTES do primeiro uso (handlers de área/corte): um `const`
+  // usado acima da sua linha cai na TDZ e derrubava a tela inteira com
+  // "Cannot access 'idVideoDaCelula' before initialization".
+  const idVideoDaCelula = itemSelecionado?.id || null;
+  // O ITEM DESTA CÉLULA — declarado AQUI, ANTES de qualquer uso. `videoSobreTemplate`
+  // (mais abaixo) lê `item.thumbnail`: com o `const` depois do uso, o lado direito
+  // do `||` caía na TDZ e derrubava a tela inteira em células sem player
+  // ("Cannot access 'item' before initialization").
+  const item = itemSelecionado;
   // SELEÇÃO — clicar num elemento do preview seleciona a camada dele (Painel
   // de Camadas + painel de configuração sincronizam). Clicar no FUNDO do
   // canvas (fora de qualquer [data-elemento]) deseleciona. Sem X/Y: seleção,
@@ -179,13 +213,119 @@ export default function EditorCanvas({
     if (podeEditar && typeof aoSelecionarElemento === 'function') aoSelecionarElemento(id);
   };
 
-  // ENQUADRAMENTO DO VÍDEO (zoom + mover — SOMENTE MOUSE, direto no preview).
-  // `dimsVideoRef`: dimensões REAIS do vídeo em exibição (reportadas pelo
-  // ControlesVideo no onLoadedMetadata) — usadas para o arraste 1:1 e o zoom
-  // sob o cursor. Ref (não estado): atualizar não re-renderiza.
+  /* ---------------------------------------------------------------------------
+   * CORTE DE BORDAS — DUAS FONTES, UMA SÓ REPRESENTAÇÃO (AUTOMÁTICO ≠ MANUAL).
+   *
+   * O VALOR EFETIVO (o que a prévia recorta e o render materializa) vem
+   * SEMPRE de `corteEfetivoDoVideo(config, videoIdDesteCelula)` — o MESMO
+   * cálculo do pipeline, sem segunda conta. Ele já resolve a precedência:
+   * override DESTE vídeo (seja vindo do detector ou da linha arrastada) >
+   * `corteBordas` global.
+   *
+   * · O clip-path abaixo é a REPRESENTAÇÃO do valor efetivo. Ele NÃO sabe (e
+   *   não precisa saber) se a origem foi o detector ou a mão do usuário — é
+   *   o resultado final, o que interessa na tela e no vídeo.
+   * · As LINHAS são a FERRAMENTA MANUAL: aparecem só na célula editável e
+   *   só quando o usuário liga o "Corte manual" no painel. Arrastar grava
+   *   `overridesPorVideo[videoId]` com `origem:'manual'` — o detector nunca é
+   *   chamado aqui e o `automatico` gravado por ele NÃO é sobrescrito.
+   *   A REPRESENTAÇÃO visual é o RECORTE REAL do wrapper do vídeo (abaixo),
+   *   calculado pela MESMA função pura `geometriaVideoFinal` que o render usa.
+   * ------------------------------------------------------------------------- */
+  // O VALOR EFETIVO do corte usa o MESMO `idVideoDaCelula` (declarado acima, no
+  // bloco dos handlers): o override DESTE vídeo vence o `corteBordas` global.
+  const corte = corteEfetivoDoVideo(config, idVideoDaCelula);
+  const corteAtivo = !!corte.ativo && (corte.superior > 0 || corte.inferior > 0);
+  const corteSup = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.superior) || 0));
+  const corteInf = Math.min(CORTE_MAXIMO, Math.max(0, Number(corte.inferior) || 0));
+  // O corte é materializado pelo RECORTE REAL do wrapper do vídeo (abaixo).
+  // Estas duas posições alimentavam o antigo `clip-path: inset(...)` e o
+  // `drawbox` do FFmpeg — que pintavam uma caixa de cor por cima do vídeo.
+  // `posLinhaInferior` segue em uso como `aria-valuenow` da linha inferior.
+  const posLinhaInferior = 100 - corteInf;
+  // As linhas SÓ existem na célula editável e fora de conferência (MP4 pronto)
+  // — e NÃO dependem de `previewAtivo`, do antigo modo de marcação nem da
+  // "Área do vídeo": elas são a FERRAMENTA manual, acima de todas as camadas.
+  const linhasCorteVisiveis = podeEditar && !conferencia && linhasCorteAtivas;
+  const corredorSuperior = gerarArrastarCorteSuperior(atualizador, idVideoDaCelula);
+  const corredorInferior = gerarArrastarCorteInferior(atualizador, idVideoDaCelula);
+
+  // `dimsVideoRef`/`dimsVideo`: dimensões REAIS do vídeo em exibição, reportadas
+  // pelo ControlesVideo no `onLoadedMetadata` do `<video>`.
+  //
+  // ELAS NÃO SÃO A FONTE DA GEOMETRIA (era o bug): o `<video>` só existe na célula
+  // SELECIONADA, então usar só isto fazia o card da grade calcular com dims
+  // ausentes. A ordem de precedência agora é:
+  //
+  //   1) `dimensoesDoItem(item)` — ffprobe do UPLOAD, gravado na Biblioteca. É a
+  //      MESMA fonte que o `compor.js` lê no render, e está disponível para
+  //      QUALQUER item, selecionado ou não. É a fonte PRIMÁRIA.
+  //   2) `dimsVideo` — o `<video>` em execução, quando existe. Serve de reforço
+  //      (ex.: MP4 final, que pode ter dims diferentes do original) e de
+  //      recuperação se o item ainda não foi enriquecido pelo servidor.
+  //
+  // Consequência: selecionar/desselecionar um vídeo NÃO muda mais a geometria —
+  // o card e a célula editável calculam a MESMA conta com as MESMAS dims.
   const dimsVideoRef = useRef(null);
+  const [dimsVideo, setDimsVideo] = useState(null);
+  // Dims oficiais do item (ffprobe do upload). `useMemo` para a referência não
+  // mudar a cada render e não invalidar o `useMemo` de `geomVideo` à toa.
+  const dimsDoItem = useMemo(() => dimensoesDoItem(item), [item]);
+  //
+  // CONFERÊNCIA (MP4 PRONTO): o player deixa de mostrar o ORIGINAL e passa a
+  // mostrar o FINAL (/arquivos/publicados/{filaId}.mp4), que JÁ é 1080×1920 pelo
+  // próprio enquadramento do canvas. Nesse modo as dims do item (originais) não
+  // servem — quem manda é o `<video>` realmente em exibição. Por isso a
+  // precedência é INVERTIDA aqui, e só aqui.
+  const dimsDaCelula = conferencia
+    ? (dimsVideo || dimsDoItem || null)
+    : (dimsDoItem || dimsVideo || null);
+  const dimsLargura = dimsDaCelula?.largura ?? 0;
+  const dimsAltura = dimsDaCelula?.altura ?? 0;
+
+  // ---------------------------------------------------------------------------
+  // GEOMETRIA DO VÍDEO SOBRE O TEMPLATE (fonte única: preview = render).
+  //
+  // `geometriaVideoFinal` reproduz exatamente o filtergraph do FFmpeg:
+  //   crop=iw:<alturaCropPx>:0:<cropTopPx>  (crop REAL em PIXELS INTEIROS)
+  //   scale=<larguraAlvo>:-2                (mantendo proporção, sem pad)
+  //   overlay=x:y                           (posição arrastada, base 1080×1920)
+  //
+  // Os valores de recorte abaixo são os MESMOS pixels inteiros que o `compor.js`
+  // manda para o FFmpeg (`pixelsDeCorte`) — nada é recalculado a partir de `%`.
+  //
+  // Não existe mais `clip-path: inset(...)` nem caixa de cor: o corte é um
+  // recorte de verdade da imagem, e o que sobra ao redor é o TEMPLATE.
+  // ---------------------------------------------------------------------------
+  const posicaoVideo = posicaoEfetivaDoVideo(config, idVideoDaCelula);
+  const limiteMov = limiteDeMovimento(config);
+  // `dimsLargura`/`dimsAltura` são PRIMITIVOS: a dependência do memo passa a ser
+  // o VALOR resolvido, não a referência do objeto — a geometria é recalculada
+  // exatamente quando as dimensões mudam de verdade.
+  const geomVideo = useMemo(
+    () => geometriaVideoFinal({
+      dimsVideo: dimsLargura > 0 && dimsAltura > 0 ? { largura: dimsLargura, altura: dimsAltura } : null,
+      corte: { ativo: corteAtivo, superior: corteSup, inferior: corteInf },
+      posicao: posicaoVideo,
+      limite: limiteMov,
+      canvasLargura: CANVAS_LARGURA,
+      canvasAltura: CANVAS_ALTURA,
+    }),
+    [dimsLargura, dimsAltura, corteAtivo, corteSup, corteInf, posicaoVideo.offsetX, posicaoVideo.offsetY, limiteMov],
+  );
+  // Só existe vídeo para mostrar quando há player ativo ou miniatura.
+  const videoSobreTemplate = !!urlVideoAtiva || !!(item && item.thumbnail);
+  const podeArrastarVideo = podeEditarVideo && !!urlVideoAtiva && !conferencia;
+  // ARRASTE do vídeo: grava `posicaoVideo.offsetX/offsetY` em px da base
+  // 1080×1920 pelo MESMO caminho do render (`atualizarPosicaoVideoNoConfig`),
+  // respeitando o escopo "Editar todos". Sem região de trava = livre.
+  const aoArrastarVideo = useMemo(
+    () => gerarArrastarPosicaoVideo(atualizador, idVideoDaCelula, editarTodosOsVideos(config), limiteMov),
+    [atualizador, idVideoDaCelula, config.editarTodos, limiteMov],
+  );
+
+  // ENQUADRAMENTO DO VÍDEO (zoom + mover — SOMENTE MOUSE, direto no preview).
   const camadaVideoRef = useRef(null);
-  const dicaTimerRef = useRef(null);
   // CONTROLES DO PLAYER — camada FIXA do preview. O nó vive no fundo do canvas,
   // FORA da camada do vídeo; o ControlesVideo PORTA a barra pra cá
   // (createPortal): play/pause, progresso e volume seguem fixos no fundo do
@@ -193,10 +333,6 @@ export default function EditorCanvas({
   // re-renderizar quando o nó fica disponível (pós-commit).
   const destinoControlesRef = useRef(null);
   const [destinoControles, setDestinoControles] = useState(null);
-  // Dica DISCRETA durante a interação (some sozinha — nada de controles X/Y,
-  // sliders ou caixa fixa: só o vídeo e, momentaneamente, um texto pequeno).
-  const [dicaEnquadramento, setDicaEnquadramento] = useState(null);
-  const [arrastandoVideo, setArrastandoVideo] = useState(false);
 
 
   // Compatibilidade com configs legadas (antes de `textos` superior/inferior).
@@ -211,218 +347,69 @@ export default function EditorCanvas({
   const temTemplateFundo =
     typeof templateFundo.url === 'string' &&
     templateFundo.url.startsWith('data:image/') &&
-    (forcarTemplateVisivel ? true : templateFundo.visivel !== false);
-  const area = config.areaVideo;
-  // CORREÇÃO — editar/marcar a ÁREA DO VÍDEO NÃO depende de ter vídeo
-  // selecionado: depende só de a célula ser interativa (`podeEditar`) e da
-  // marcação/template estarem ativos. A edição do VÍDEO (`podeEditarVideo`,
-  // acima) sim exige um vídeo ativo (`urlVideoAtiva` nos usos).
-  const podeEditarArea = podeEditar && (area.mostrarMarcacao || temTemplateFundo);
+    templateFundo.visivel !== false;
+  // URL/alt do template resolvidos AQUI (fora do JSX): o `src` é o que decide se
+  // existe buraco, e o `alt` é texto puro. Nada de lógica no markup.
+  const urlTemplate = templateFundo.url;
+  const altTemplate = templateFundo.nome || 'Template de fundo';
+  const area = areaVideoEfetivaDoVideo(config, idVideoDaCelula);
+  // ÁREA/VÍDEO são a MESMA coisa agora (a marcação da área foi removida): o
+  // objeto de vídeo é arrastado/redimensionado direto no preview e escreve
+  // `areaVideo` pelo MESMO caminho do render. Sem guia, sem congelamento e sem
+  // alças de área paralelas — o arraste.js grava a MESMA geometria que
+  // `areaPlayer`/`caixaPlayer` já desenham, então não existe salto.
   const areaN = areaVideoNormalizada(area);
+  // O ANTIGO "BURACO DO TEMPLATE" (`areaTemplate` + `path(evenodd)` +
+  // `dest-out`) foi REMOVIDO: com o template virando FUNDO do quadro não existe
+  // buraco a abrir. `areaTemplate` continua salvo na config/payload apenas por
+  // compatibilidade com designs antigos — nada o consome na renderização.
   // Geometria do enquadramento — MESMA matemática do render (compor.js):
   // quadro = área × zoom, posicionado pela folga com deslocamentoX/Y.
   const caixa = caixaEnquadramentoVideo(area);
-  const enquadramentoEditado = enquadramentoVideoEditado(area);
-  // OBJETO de vídeo fora do "canvas inteiro"? (redimensionado/movido pelas
-  // alças do Preview) — só para o botão discreto de redefinir aparecer.
-  const videoRedimensionado = Math.round(Number(area.largura) || 0) !== CANVAS_LARGURA
-    || Math.round(Number(area.altura) || 0) !== CANVAS_ALTURA
-    || Math.round(Number(area.x) || 0) !== 0
-    || Math.round(Number(area.y) || 0) !== 0;
-  const videoEditadoNoPreview = enquadramentoEditado || videoRedimensionado;
   // Dimensões reais do vídeo (reportadas pelo <video> no onLoadedMetadata).
   const aoDimensoesVideo = useCallback((d) => {
-    if (d && Number(d.largura) > 0 && Number(d.altura) > 0) dimsVideoRef.current = d;
-  }, []);
-
-  // ---------- ENQUADRAMENTO: handlers de MOUSE (arrastar + zoom na roda) ----
-  /** Dica discreta que desaparece sozinha (~900 ms) após a interação. */
-  const mostrarDicaEnquadramento = useCallback((texto) => {
-    setDicaEnquadramento(texto);
-    if (dicaTimerRef.current) clearTimeout(dicaTimerRef.current);
-    dicaTimerRef.current = setTimeout(() => setDicaEnquadramento(null), 900);
-  }, []);
-  useEffect(() => () => { if (dicaTimerRef.current) clearTimeout(dicaTimerRef.current); }, []);
-
-  /** Fase do vídeo em exibição (dims reais + fit NORMALIZADO da área — a área
-   * é sempre 'cobrir': o vídeo preenche 100% dela na prévia e no render). */
-  const fitNormalizado = areaN.fit;
-  const obterQuadro = useCallback(() => ({
-    dimsVideo: dimsVideoRef.current,
-    fit: fitNormalizado,
-  }), [fitNormalizado]);
-
-  /** Arrastar o VÍDEO: gerado com a MESMA config compartilhada do lote. */
-  const arrastarEnquadramento = gerarArrastarEnquadramentoVideo(
-    atualizador,
-    obterQuadro,
-    (i) => { setArrastandoVideo(!!i?.ativo); mostrarDicaEnquadramento('Movendo o vídeo…'); },
-    () => setArrastandoVideo(false),
-  );
-
-  /**
-   * ARRASTAR O VÍDEO DIRETO NO PREVIEW — UM único caminho, sem depender do
-   * guia da área (`mostrarMarcacao`) e sem X/Y:
-   *
-   *  · zoom > 1 → o quadro é MAIOR que a área e existe folga de enquadramento:
-   *    o arraste desloca o enquadramento (crop) — `arrastarEnquadramento`;
-   *  · zoom ≤ 1 → NÃO existe folga (`quadro == área`): o arraste move a
-   *    POSIÇÃO do vídeo no canvas (`areaVideo.x/y`) — o MESMO estado que a
-   *    prévia usa (a camada é posicionada por x/y) e que o render usa no pad
-   *    final do canvas. É este caminho que estava morto: o arraste das
-   *    bordas só existia no guia e, com `área == canvas`, o intervalo era
-   *    `[0, 0]` (nada se movia).
-   */
-  const arrastarVideoNoCanvas = gerarArrastreArea(atualizador, {
-    aoInteragir: () => { setArrastandoVideo(true); mostrarDicaEnquadramento('Movendo o vídeo…'); },
-    aoFinalizar: () => setArrastandoVideo(false),
-  });
-
-  /** O arraste no vídeo usa o enquadramento (folga) quando o quadro foi
-   * ampliado; abaixo disso move a posição do vídeo no canvas. */
-  const moverVideo = (e) => {
-    if (areaN.zoom > 1) arrastarEnquadramento(e);
-    else arrastarVideoNoCanvas(e);
-  };
-
-  /**
-   * REDIMENSIONAR O OBJETO DE VÍDEO (alças do Preview, estilo Canva) — MESMO
-   * mecanismo já existente da área (`gerarRedimensionarArea`), agora também
-   * usado pelo VÍDEO selecionado. Muda só a MOLDURA (`areaVideo.x/y/largura/
-   * altura`); o CONTEÚDO fica parado (opção A — caixa explícita
-   * conteudoX/Y/Largura/Altura em coords do canvas, congelada no pointerdown;
-   * a borda oposta fica fixa e a moldura nunca passa da caixa — cover sem vão).
-   * Commit único no pointerup, SEM reset de zoom/deslocamento. Cantos mantêm a
-   * PROPORÇÃO; as laterais ajustam uma dimensão. (Roda do mouse = enquadramento
-   * interno; arraste do corpo, marcação, corteBordas e Redefinir intactos.)
-   */
-  // NOTA: sem `aoInteragir` de propósito — ele chamava
-  // `mostrarDicaEnquadramento` (setState) no pointerdown e o re-render
-  // sobrescrevia o DOM direto do rAF no frame seguinte, anulando a
-  // compensação da caixa (o conteúdo voltava a acompanhar a borda).
-  const aoRedimensionarVideo = (eixo) => gerarRedimensionarArea(eixo, atualizador);
-  const redimVideoDireita = aoRedimensionarVideo('direita');
-  const redimVideoEsquerda = aoRedimensionarVideo('esquerda');
-  const redimVideoAbaixo = aoRedimensionarVideo('abaixo');
-  const redimVideoAcima = aoRedimensionarVideo('acima');
-  const redimVideoCantoSD = aoRedimensionarVideo('canto-sudeste');
-  const redimVideoCantoSE = aoRedimensionarVideo('canto-sudoeste');
-  const redimVideoCantoNE = aoRedimensionarVideo('canto-nordeste');
-  const redimVideoCantoNO = aoRedimensionarVideo('canto-noroeste');
-
-  /**
-   * ALÇAS do objeto de vídeo (Preview, estilo Canva): 4 CANTOS (mantêm a
-   * proporção) + 4 BORDAS (faixas de 8px top/bottom/left/right, com 16px de
-   * recuo dos cantos, cursor ns/ew-resize) + 4 LATERAIS legadas. Todas ligadas
-   * ao MESMO `gerarRedimensionarArea` (mesmos data-x/y/largura/altura das
-   * alças atuais). Ficam DENTRO do objeto (inset) porque o canvas tem
-   * `overflow-hidden`: alças centradas na borda seriam cortadas quando o vídeo
-   * encosta na borda do canvas (caso padrão = vídeo ocupando o canvas inteiro).
-   * Só existem com o vídeo SELECIONADO.
-   */
-  const bordasDoVideo = [
-    { rotulo: 'borda superior', estilo: { top: 0, left: 16, right: 16, height: 8 }, cursor: 'ns-resize', onPointerDown: redimVideoAcima },
-    { rotulo: 'borda inferior', estilo: { bottom: 0, left: 16, right: 16, height: 8 }, cursor: 'ns-resize', onPointerDown: redimVideoAbaixo },
-    { rotulo: 'borda esquerda', estilo: { left: 0, top: 16, bottom: 16, width: 8 }, cursor: 'ew-resize', onPointerDown: redimVideoEsquerda },
-    { rotulo: 'borda direita', estilo: { right: 0, top: 16, bottom: 16, width: 8 }, cursor: 'ew-resize', onPointerDown: redimVideoDireita },
-  ];
-  const alcasDoVideo = [
-    { rotulo: 'canto superior esquerdo', largura: 14, altura: 14, estilo: { left: 2, top: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoNO },
-    { rotulo: 'canto superior direito', largura: 14, altura: 14, estilo: { right: 2, top: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoNE },
-    { rotulo: 'canto inferior esquerdo', largura: 14, altura: 14, estilo: { left: 2, bottom: 2 }, cursor: 'nesw-resize', onPointerDown: redimVideoCantoSE },
-    { rotulo: 'canto inferior direito', largura: 14, altura: 14, estilo: { right: 2, bottom: 2 }, cursor: 'nwse-resize', onPointerDown: redimVideoCantoSD },
-    { rotulo: 'lateral esquerda', largura: 12, altura: 26, estilo: { left: 2, top: '50%', transform: 'translateY(-50%)' }, cursor: 'ew-resize', onPointerDown: redimVideoEsquerda },
-    { rotulo: 'lateral direita', largura: 12, altura: 26, estilo: { right: 2, top: '50%', transform: 'translateY(-50%)' }, cursor: 'ew-resize', onPointerDown: redimVideoDireita },
-    { rotulo: 'lateral superior', largura: 26, altura: 12, estilo: { top: 2, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize', onPointerDown: redimVideoAcima },
-    { rotulo: 'lateral inferior', largura: 26, altura: 12, estilo: { bottom: 2, left: '50%', transform: 'translateX(-50%)' }, cursor: 'ns-resize', onPointerDown: redimVideoAbaixo },
-  ];
-
-  // Alternativa touch à roda: mesma geometria, ancorada no centro do vídeo.
-  const zoomTouch = (sentido) => {
-    atualizador((cfg) => {
-      const a = areaVideoNormalizada(cfg.areaVideo);
-      const novo = deslocamentoSobZoom({
-        area: a, dimsVideo: dimsVideoRef.current, fit: a.fit,
-        novoZoom: a.zoom + sentido * Math.max(0.05, Math.min(0.25, 0.12 * a.zoom)),
-        mx: a.largura / 2, my: a.altura / 2,
-      });
-      return { ...cfg, areaVideo: { ...cfg.areaVideo, ...novo } };
-    });
-  };
-
-  /** RESET: volta tamanho e posição originais (sem controles X/Y). */
-  const redefinirEnquadramento = useCallback(() => {
-    atualizador((cfg) => ({
-      ...cfg,
-      areaVideo: {
-        ...(cfg.areaVideo || {}),
-        ...enquadramentoVideoOriginal(),
-        // TAMANHO do objetivo de vídeo volta a ser o canvas inteiro (a
-        // geometria passou a ser redimensionável pelas alças do Preview).
-        x: 0,
-        y: 0,
-        largura: CANVAS_LARGURA,
-        altura: CANVAS_ALTURA,
-      },
-    }));
-    mostrarDicaEnquadramento('Enquadramento redefinido');
-  }, [atualizador, mostrarDicaEnquadramento]);
-
-  // ZOOM NA RODA (sobre a camada do vídeo): mesma matemática do render —
-  // `deslocamentoSobZoom` mantém o ponto sob o cursor fixo (sem salto).
-  useEffect(() => {
-    if (!podeEditarVideo || !urlVideoAtiva) return;
-    const el = camadaVideoRef.current;
-    if (!el) return;
-    function aoRoda(e) {
-      e.preventDefault();
-      const canvasEl = el.closest('[data-escala]') || el.parentElement;
-      const escalaPx = numeroDoDataset(canvasEl?.dataset?.escala, 1) || 1;
-      const rect = el.getBoundingClientRect();
-      // Posição do cursor em px do CANVAS, relativa à área de composição —
-      // independe do tamanho da janela/zoom do navegador (responsividade).
-      const mx = (e.clientX - rect.left) / escalaPx;
-      const my = (e.clientY - rect.top) / escalaPx;
-      const sentido = e.deltaY > 0 ? -1 : 1;
-      const passo = Math.max(0.05, Math.min(0.25, 0.12 * (areaN?.zoom || 1)));
-      const novoZoom = (areaN?.zoom || 1) + sentido * passo;
-      atualizador((cfg) => {
-        const a = areaVideoNormalizada(cfg.areaVideo);
-        const novo = deslocamentoSobZoom({
-          area: a,
-          dimsVideo: dimsVideoRef.current,
-          fit: a.fit,
-          novoZoom,
-          mx,
-          my,
-        });
-        return { ...cfg, areaVideo: { ...(cfg.areaVideo || {}), ...novo } };
-      });
-      mostrarDicaEnquadramento(`Zoom: ${Math.round(novoZoom * 100)}%`);
+    if (d && Number(d.largura) > 0 && Number(d.altura) > 0) {
+      dimsVideoRef.current = d;
+      // Estado (além do ref): o crop do preview depende da ALTURA ORIGINAL do
+      // vídeo, então o wrapper recortado precisa re-renderizar quando ela chega.
+      setDimsVideo((atual) => (atual && atual.largura === d.largura && atual.altura === d.altura ? atual : { largura: d.largura, altura: d.altura }));
     }
-    el.addEventListener('wheel', aoRoda, { passive: false });
-    return () => el.removeEventListener('wheel', aoRoda);
-  }, [podeEditarVideo, urlVideoAtiva, atualizador, areaN?.zoom, areaN, mostrarDicaEnquadramento]);
+  }, []);
+  // ---------------------------------------------------------------------------
+  // PRÉVIA SIMPLES — SEM EDIÇÃO DO OBJETO DE VÍDEO: não existe arraste, zoom,
+  // alça, borda, caixa de seleção, outline, cursor de arraste, botão de
+  // redefinir nem dica sobre o vídeo. A `areaVideo` continua existindo como
+  // DADO: é ela que posiciona o vídeo no canvas e abre o buraco do template,
+  // e é exatamente a mesma que o render (compor.js) materializa.
+  // O que o usuário ainda EDITA no preview são os overlays independentes
+  // (textos, identidade, imagens) e o CORTE DE BORDAS (linhas arrastáveis),
+  // que só aparece com `linhasCorteAtivas` ligado.
+  // ---------------------------------------------------------------------------
+
+  // (sem arraste do objeto de vídeo: a `areaVideo` é dada pelo sistema)
+
+  // (sem redimensionamento do objeto de vídeo: nem alças, nem bordas)
+
+  // (sem bordas, sem alças, sem controles de zoom)
+
+  // (sem "Redefinir", sem zoom na roda do mouse)
   // --------------------------------------------------------------------------
 
   const identidade = config.identidade || null;
-  const item = itemSelecionado;
-  // Geometria do player: modo normal = ÁREA de composição (prévia = render);
-  // conferência = canvas inteiro (o MP4 final já é o quadro completo).
+  // Geometria do player = a ÁREA de composição (prévia = render). Em
+  // conferência o player ocupa o CANVAS INTEIRO (o MP4 final já é o quadro
+  // completo, com o template aplicado pelo engine).
   // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher — por
   // isso o player usa SEMPRE cover nesta camada (ocupa 100% da largura/altura
   // da área, com o enquadramento definido por caixaEnquadramentoVideo).
-  // SEM PREVIEW (`composicaoAtiva === false`): o vídeo aparece NORMAL, no
-  // quadro inteiro 9:16 — a área marcada NÃO reposiciona/redimensiona o vídeo
-  // fora do preview (o centro mostra só os vídeos importados, sem véu/fosco).
-  // COM PREVIEW: a camada do vídeo ocupa EXATAMENTE `areaVideo` — a
-  // MESMA geometria (x/y/largura/altura) que o render final usa. Na MARCAÇÃO
-  // (Estado A) a camada de vídeo nem é montada (ver `!modoMarcacao` abaixo).
+  // NÃO existe congelamento: a área da config é a única fonte, e o arraste.js
+  // grava exatamente a geometria que estas duas linhas já desenham.
   const areaSemComposicao = { x: 0, y: 0, largura: CANVAS_LARGURA, altura: CANVAS_ALTURA };
-  const areaPlayer = conferencia || !composicaoAtiva ? areaSemComposicao : area;
-  const caixaPlayer = conferencia || !composicaoAtiva
-    ? caixaEnquadramentoVideo(areaSemComposicao)
-    : caixa;
+  const composicaoVisivel = composicaoAtiva && !conferencia;
+  const areaPlayer = composicaoVisivel ? area : areaSemComposicao;
+  const caixaPlayer = composicaoVisivel
+    ? caixa
+    : caixaEnquadramentoVideo(areaSemComposicao);
   // A ÁREA DO VÍDEO é exatamente o espaço que o vídeo deve preencher: o vídeo
   // preenche 100% da área (cover) no Preview e no render — nunca pequeno /
   // centralizado dentro dela. O `fit` do template é normalizado para 'cobrir'
@@ -430,6 +417,135 @@ export default function EditorCanvas({
   // e FFmpeg usam a mesma geometria de preenchimento. `fitPlayer` é o valor
   // CSS (object-fit: cover) — o template usa 'cobrir' (mesmo significado).
   const fitPlayer = 'cover';
+
+  // ------------------------------------------------------------------ *
+  // ÁREA + ENQUADRAMENTO (zoom/deslocamento) — A MESMA MATEMÁTICA DO RENDER.
+  //
+  // `geometriaEnquadramentoVideo` é o espelho exato de
+  // `autopost-engine-completo/src/enquadramentoVideo.js` (mesma função, mesmo
+  // predicado, mesmos números). Ela devolve `null` na COMPATIBILIDADE: quando
+  // a área cobre o canvas e o enquadramento é o original (zoom 1, 50/50), o
+  // preview continua desenhando pelo caminho legado (`geomVideo`), e nenhum
+  // template/config existente muda de resultado.
+  //
+  // Quando devolve geometria, o preview passa a ter TRÊS camadas aninhadas,
+  // na MESMA ordem do filtergraph do FFmpeg:
+  //   1. MOLDURA  = `areaVideo` (x/y/largura/altura) — a janela do template;
+  //   2. QUADRO   = `caixa` (área × zoom) deslocado por `deslocamentoX/Y` —
+  //      o vídeo COBRE o quadro (`object-fit: cover`, igual ao
+  //      `force_original_aspect_ratio=increase` do render);
+  //   3. TESOURA  = o `corteBordas`, que só ESCONDE linhas (nunca move).
+  // ------------------------------------------------------------------ */
+  const janelaComposicao = useMemo(
+    () => geometriaEnquadramentoVideo({
+      area: areaPlayer,
+      dimsVideo: dimsLargura > 0 && dimsAltura > 0 ? { largura: dimsLargura, altura: dimsAltura } : null,
+      canvasLargura: CANVAS_LARGURA,
+      canvasAltura: CANVAS_ALTURA,
+    }),
+    [areaPlayer.x, areaPlayer.y, areaPlayer.largura, areaPlayer.altura,
+      areaPlayer.zoom, areaPlayer.deslocamentoX, areaPlayer.deslocamentoY,
+      areaPlayer.conteudoX, areaPlayer.conteudoY, areaPlayer.conteudoLargura, areaPlayer.conteudoAltura,
+      dimsLargura, dimsAltura],
+  );
+
+  /* CONTRATO DE DADOS DA CAMADA DE VÍDEO — o MESMO nos dois caminhos.
+     O caminho de JANELA (`janelaComposicao`) expõe `data-enq-zoom/x/y`; o
+     caminho LEGADO (área = canvas inteiro + enquadramento original) precisa
+     expor o MESMO contrato, porque:
+       · `arraste.js` localiza a camada por `[data-elemento="video"][data-enq-zoom]`
+         — é o atributo que DESAMBIGUA a camada de vídeo dos outros nós;
+       · os testes leem esses atributos para conferir o enquadramento real.
+     Derivado de `areaPlayer` normalizado (nunca fixo no JSX): o contrato
+     reflecte sempre a área que o preview está desenhando. */
+  const enqCamada = useMemo(() => {
+    const a = areaVideoNormalizada(areaPlayer);
+    return {
+      zoom: a.zoom,
+      deslocamentoX: a.deslocamentoX,
+      deslocamentoY: a.deslocamentoY,
+    };
+  }, [areaPlayer.x, areaPlayer.y, areaPlayer.largura, areaPlayer.altura,
+      areaPlayer.zoom, areaPlayer.deslocamentoX, areaPlayer.deslocamentoY,
+      areaPlayer.conteudoX, areaPlayer.conteudoY, areaPlayer.conteudoLargura, areaPlayer.conteudoAltura]);
+
+
+  /* TESOURA no modo JANELA — a MESMA conta do render (`pixelsDeCorte` do
+     `compor.js`), com a altura do vídeo JÁ ESCALADO em COVER
+     (`alturaEscalada`) como base. Sem dims do vídeo, cai na altura da área
+     (fail-open: nada some, o corte só fica proporcional ao que se sabe).
+     A tesoura NUNCA move nem escala: é uma máscara. */
+  const tesouraJanela = useMemo(() => {
+    if (!janelaComposicao) return { topPx: 0, basePx: 0, alturaVisivelPx: 0 };
+    // A MESMA base do `compor.js`: no modo janela, a tesoura é medida sobre o
+    // frame que SAI do recorte de volta para a área (a altura da ÁREA), nunca
+    // sobre a altura escalada do vídeo (que daria um corte maior que a janela).
+    const base = janelaComposicao.alturaArea || janelaComposicao.caixa.altura;
+    const px = pixelsDeCorte({ superior: corteSup / 100, inferior: corteInf / 100, alturaVideo: base });
+    return { topPx: px.topPx, basePx: px.bottomPx, alturaVisivelPx: px.alturaPx };
+  }, [janelaComposicao, corteSup, corteInf]);
+
+  /* ZOOM PELA RODA DO MOUSE SOBRE O VÍDEO — grava `areaVideo.zoom` +
+     `deslocamentoX/Y` (o valor viaja no payload e vira o `scale`/`crop` do
+     FFmpeg). `deslocamentoSobZoom` mantém o ponto sob o cursor, então o
+     conteúdo não "salta". Fora da célula editável é no-op. */
+  const aoGirarZoom = useCallback((e) => {
+    if (!podeEditarVideo || !janelaComposicao) return;
+    const sentido = e.deltaY < 0 ? 1 : -1;
+    const passo = sentido > 0 ? 0.1 : -0.1;
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const esc = escala > 0 ? escala : 1;
+    // Cursor em px do CANVAS, relativo à área (o mesmo referencial do helper).
+    const mx = (e.clientX - rect.left) / esc;
+    const my = (e.clientY - rect.top) / esc;
+    e.preventDefault();
+    atualizador((cfg) => {
+      const base = areaVideoEfetivaDoVideo(cfg, idVideoDaCelula);
+      const alvo = normalizarZoomVideo((Number(base.zoom) || 1) + passo);
+      const novo = deslocamentoSobZoom({
+        area: base,
+        dimsVideo: dimsLargura > 0 && dimsAltura > 0 ? { largura: dimsLargura, altura: dimsAltura } : null,
+        novoZoom: alvo,
+        mx,
+        my,
+      });
+      return atualizarAreaVideoNoConfig(cfg, {
+        todos: editarTodosOsVideos(cfg) || !idVideoDaCelula,
+        videoId: idVideoDaCelula,
+        mudancas: novo,
+      });
+    });
+  }, [podeEditarVideo, janelaComposicao, atualizador, idVideoDaCelula, escala, dimsLargura, dimsAltura]);
+
+  /* O CONTEÚDO do vídeo (player real OU miniatura OU placeholder) — o MESMO
+     elemento nos dois caminhos de composição (janela/legado): só a geometria
+     externa muda, nunca o que é desenhado. */
+  const renderizarConteudoDoVideo = useCallback(() => (podeEditar && urlVideoAtiva ? (
+    <ControlesVideo
+      key={`${urlVideoAtiva}|${claveReproductor}`}
+      src={urlVideoAtiva}
+      onDimensoes={aoDimensoesVideo}
+      destinoControles={destinoControles}
+    />
+  ) : item && item.thumbnail ? (
+    <img
+      src={item.thumbnail}
+      alt={item.nome || 'Video'}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      className="w-full h-full pointer-events-none"
+      style={{ objectFit: 'cover' }}
+    />
+  ) : (
+    <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
+      <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
+      <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
+        VÍDEO ORIGINAL
+      </span>
+    </div>
+  )), [podeEditar, urlVideoAtiva, claveReproductor, aoDimensoesVideo, destinoControles, item]);
 
   // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira
@@ -477,8 +593,17 @@ export default function EditorCanvas({
       {/* Canvas 9:16 (fundo = corFundo que vai pro template). Clicar fora de
           qualquer elemento ([data-elemento]) deseleciona — sem caixas de
           seleção permanentes poluindo a interface. */}
+      {/* `data-area-composicao` — marca ESTE canvas como "o vídeo é posicionado
+          por `areaVideo`" (composição ativa e fora da conferência). O arraste.js
+          lê essa marca para acompanhar o arraste da ÁREA em TEMPO REAL em TODAS
+          as instâncias do canvas (grade 1X/2X/3X/6X — cada uma com a sua
+          escala): sem isso o vídeo ficaria parado durante o arraste e PULARIA
+          no `pointerup`, quando a config é gravada (REGRA ANTI-SALTO). Sem o
+          atributo (preview desligado / conferência), a camada do vídeo NUNCA é
+          tocada pelo arraste — ela é o canvas inteiro. */}
       <div
         ref={canvasRef}
+        data-area-composicao={composicaoAtiva && !conferencia ? '1' : undefined}
         className="edl-canvas-branco relative overflow-hidden"
         onPointerDown={(e) => {
           if (podeEditar && typeof aoSelecionarElemento === 'function') {
@@ -495,203 +620,291 @@ export default function EditorCanvas({
           background: corFundo,
         }}
       >
-        {/* TEMPLATE DE FUNDO IMPORTADO - camada de FUNDO do canvas: PNG/imagem via
-            Importar Template PREENCHE o canvas 9:16 por completo (cover: 100%
-            largura/altura, centralizado, proporção preservada). O video ocupa
-            SOMENTE a areaVideo sobre ele. Somente leitura. */}
-        {composicaoAtiva && temTemplateFundo ? (
-          <div data-template-fundo="true" className="absolute inset-0 pointer-events-none" style={{ zIndex: 1 }} aria-hidden="true">
-            <img src={templateFundo.url} alt={templateFundo.nome || 'Template de fundo'} draggable={false} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
-          </div>
-        ) : null}
-        {/* VÍDEO (original + edições da prévia) — NUNCA no ESTADO A (marcação):
-            só o template + o retângulo da área existem nessa tela (a marcação é
-            apenas geometria — o retângulo NÃO é container visual do vídeo). Fora
-            da marcação o vídeo aparece: no canvas INTEIRO (sem preview — vídeos
-            normais no centro), dentro da ÁREA marcada (Preview — cover, MESMA
-            geometria do render) ou em conferência (MP4 pronto). Os CONTROLES do
-            player NÃO estão aqui — são portados pra camada fixa
-            `data-edl-destino-controles` (abaixo). */}
-        {!modoMarcacao && (
-        <div className="absolute inset-0">
-            {/* CAMADA DO VÍDEO — ocupa EXATAMENTE a ÁREA de composição: a área
-              definida no Preview é o espaço real do vídeo no template (o vídeo
-              preenche 100% da largura/altura da área, com o enquadramento/cover
-              definido por caixaEnquadramentoVideo). SEM caixa fixa, SEM moldura,
-              SEM controles X/Y: o usuário arrasta o próprio vídeo e usa a RODA
-              DO MOUSE para ampliar/reduzir (zoom sob o cursor). Nas células não
-              selecionadas: mesma geometria, mas pointer-events-none (só
-              visualização). */}
-          {/* CAIXA DE CONTEÚDO: data-conteudo-* (coords absolutas do canvas)
-              alimenta o freeze do gerarRedimensionarArea — em arrastes
-              consecutivos moldura×zoom ≠ caixa, então a caixa verdadeira tem
-              que vir explícita do render. */}
-          <div
-            ref={camadaVideoRef}
-            role={podeEditarVideo && urlVideoAtiva ? 'button' : undefined}
-            tabIndex={podeEditarVideo && urlVideoAtiva ? 0 : undefined}
-            aria-label="Mover o vídeo (arraste com o mouse) e ampliar/reduzir (roda do mouse)"
-            data-elemento="video"
-            data-x={String(area.x)}
-            data-y={String(area.y)}
-            data-largura={String(area.largura)}
-            data-altura={String(area.altura)}
-            data-enq-zoom={String(areaN.zoom)}
-            data-enq-x={String(areaN.deslocamentoX)}
-            data-enq-y={String(areaN.deslocamentoY)}
-            data-conteudo-x={String(area.x + caixa.x)}
-            data-conteudo-y={String(area.y + caixa.y)}
-            data-conteudo-largura={String(caixa.largura)}
-            data-conteudo-altura={String(caixa.altura)}
-            data-area-largura={String(areaN.largura)}
-            data-area-altura={String(areaN.altura)}
-            data-area-fit={areaN.fit}
-            onPointerDown={podeEditarVideo && urlVideoAtiva ? (e) => { selecionar('video'); moverVideo(e); } : undefined}
-            className={`absolute overflow-hidden ${podeEditarVideo && urlVideoAtiva ? (arrastandoVideo ? 'cursor-grabbing' : 'cursor-grab') : 'pointer-events-none'} ${elementoSelecionado === 'video' ? 'edl-elemento-selecionado' : ''}`}
-            style={{
-              left: areaPlayer.x * escala,
-              top: areaPlayer.y * escala,
-              width: Math.max(2, areaPlayer.largura) * escala,
-              height: Math.max(2, areaPlayer.altura) * escala,
-              touchAction: 'none',
-              zIndex: 5,
-              userSelect: 'none',
-            }}
-          >
-            {/* Conteúdo escalado (quadro) dentro da área: a área é exatamente o espaço
-                do vídeo — o <video>/<img> preenche 100% do quadro da área
-                (cover), com o enquadramento/cover definido por
-                caixaEnquadramentoVideo. O render materializa este exato quadro
-                (scale/crop/pad do FFmpeg). */}
+        {/* LINHAS DO CORTE MANUAL POR LINHAS — FERRAMENTA, não resultado.
+            Filhas DIRETAS do canvas. Agora o RESULTADO do corte é um recorte
+            REAL do vídeo (o wrapper `overflow:hidden` logo abaixo), então as
+            linhas são posicionadas sobre as BORDAS REAIS desse recorte — em
+            px de tela, derivados da mesma `geomVideo` que o render consome —
+            e não mais em % do canvas. Arrastar continua gravando o MESMO
+            `corteBordas.superior/inferior` (em % da altura ORIGINAL), que é o
+            que vira `crop=...` no FFmpeg: prévia e render idênticos.
+            O `gerarArrastarCorte*` continua lendo `data-escala`/`data-canvasAltura`
+            do canvas (PAI direto) para converter o delta de tela em %. */}
+        {linhasCorteVisiveis ? (
+          <>
+            {/* Linha SUPERIOR — borda de cima do vídeo recortado. */}
             <div
-              key={item && item.id ? `video-${item.id}` : 'video-vazio'}
-              data-elemento="video-caixa"
-              className="absolute"
+              role="slider"
+              aria-label="Corte manual — borda superior"
+              aria-valuemin={0}
+              aria-valuemax={CORTE_MAXIMO}
+              aria-valuenow={Math.round(corteSup)}
+              aria-valuetext={`${Math.round(corteSup)}% da altura`}
+              title="Arraste para baixo para aumentar o corte superior deste vídeo"
+              data-elemento="corte"
+              data-altura-video={String(geomVideo.altura)}
+              data-posy={String(corteSup)}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget && typeof e.currentTarget.setPointerCapture === 'function') {
+                  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                }
+                selecionar('corte');
+                corredorSuperior(e);
+              }}
+              className="edl-corredor-corte absolute touch-none cursor-row-resize flex items-center justify-center"
               style={{
-                left: caixaPlayer.x * escala,
-                top: caixaPlayer.y * escala,
-                width: caixaPlayer.largura * escala,
-                height: caixaPlayer.altura * escala,
+                left: geomVideo.x * escala,
+                // Borda SUPERIOR da faixa visível = `y + topPx` (não `y`).
+                top: (geomVideo.y + geomVideo.topPx) * escala,
+                width: Math.max(2, geomVideo.largura) * escala,
+                height: 24,
+                marginTop: -12,
+                // z-index da FERRAMENTA: a linha precisa continuar agarravel
+                // mesmo quando cai EM CIMA da barra de controles do player
+                // (colada no fundo do canvas, z-20/z-30). Como as linhas só
+                // existem enquanto o "Corte manual por linhas" está ligado,
+                // elas ganham a precedência somente nesse modo.
+                zIndex: 35,
               }}
             >
-              {podeEditar && urlVideoAtiva ? (
-                <ControlesVideo
-                  key={`${urlVideoAtiva}|${claveReproductor}`}
-                  src={urlVideoAtiva}
-                  onDimensoes={aoDimensoesVideo}
-                  destinoControles={destinoControles}
-                />
-              ) : item && item.thumbnail ? (
-                <img
-                  src={item.thumbnail}
-                  alt={item.nome || 'Video'}
-                  loading="lazy"
-                  decoding="async"
-                  draggable={false}
-                  className="w-full h-full pointer-events-none"
-                  style={{ objectFit: fitPlayer }}
-                />
-              ) : item && (
-                <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
-                  <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
-                  <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
-                    VÍDEO ORIGINAL
-                  </span>
-                </div>
-              )}
+              {/* Linha visual fina (2px dashed) centralizada na hit-box */}
+              <div
+                className="w-full pointer-events-none"
+                style={{
+                  borderTop: '2px dashed rgba(56,189,248,0.95)',
+                }}
+              />
+              {/* Alça visual central */}
+              <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm pointer-events-none" style={{ background: '#38bdf8', top: '50%' }} />
             </div>
 
-            {/* Dica DISCRETA durante a interação — desaparece sozinha. */}
-            {dicaEnquadramento && (
-              <span
-                className="edl-selo-base absolute z-30 text-[9px] font-black px-1.5 py-0.5 rounded pointer-events-none"
-                style={{ top: 6, left: '50%', transform: 'translateX(-50%)' }}
-              >
-                {dicaEnquadramento}
-              </span>
-            )}
-          </div>
-        </div>
-        )}
+            {/* Linha INFERIOR — borda de baixo do vídeo recortado. Arrastar para CIMA aumenta o corte inferior. */}
+            <div
+              role="slider"
+              aria-label="Corte manual — borda inferior"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(posLinhaInferior)}
+              aria-valuetext={`${Math.round(posLinhaInferior)}% da altura`}
+              title="Arraste para cima para aumentar o corte inferior deste vídeo"
+              data-elemento="corte"
+              data-altura-video={String(geomVideo.altura)}
+              data-posy={String(posLinhaInferior)}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.currentTarget && typeof e.currentTarget.setPointerCapture === 'function') {
+                  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                }
+                selecionar('corte');
+                corredorInferior(e);
+              }}
+              className="edl-corredor-corte absolute touch-none cursor-row-resize flex items-center justify-center"
+              style={{
+                left: geomVideo.x * escala,
+                // Borda INFERIOR da faixa visível = `y + altura - basePx`.
+                top: (geomVideo.y + geomVideo.altura - geomVideo.basePx) * escala,
+                width: Math.max(2, geomVideo.largura) * escala,
+                height: 24,
+                marginTop: -12,
+                // Mesmo z-index da FERRAMENTA da linha superior: a linha de
+                // baixo é justamente a que fica em cima da barra de controles
+                // do player (fundo do canvas) — sem esta precedência ela nunca
+                // recebia o pointerdown.
+                zIndex: 35,
+              }}
+            >
+              {/* Linha visual fina (2px dashed) centralizada na hit-box */}
+              <div
+                className="w-full pointer-events-none"
+                style={{
+                  borderBottom: '2px dashed rgba(56,189,248,0.95)',
+                }}
+              />
+              {/* Alça visual central */}
+              <span className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white shadow-sm pointer-events-none" style={{ background: '#38bdf8', top: '50%' }} />
+            </div>
+          </>
+        ) : null}
 
-        {/* CAIXA DE SELEÇÃO + ALÇAS DO OBJETO DE VÍDEO (vídeo selecionado).
-            Vive FORA da camada do vídeo (não bloqueia o arraste do corpo: o
-            contêiner é `pointer-events-none` e SÓ as alças capturam o ponteiro).
-            Arrastar o corpo move; roda do mouse = zoom interno; ALÇA =
-            redimensiona o OBJETO (mesma geometria do render). */}
-        {podeEditarVideo && urlVideoAtiva && elementoSelecionado === 'video' && (
+        {/* VÍDEO (CAPA) — A TESOURA. O <video> fica INTEIRO, com o tamanho e a
+            posição do vídeo já ESCALADO (`geomVideo.x/y/largura/altura`), e a
+            janela `overflow-hidden` abaixo é a única coisa que o corte move: ela
+            mostra só a faixa [y+topPx, y+altura-basePx]. Trocar o corte NUNCA
+            altera `left/top/width/height` do <video> — o conteúdo que continua
+            visível permanece EXATAMENTE no mesmo lugar da tela, e a parte
+            cortada deixa vazar o TEMPLATE (nada é pintado: sem branco, sem
+            preto, sem faixa). É o MESMO filtergraph do FFmpeg
+            (`scale=W:H` → `crop=W:(H-topPx-basePx):0:topPx` →
+            `overlay=x:(y+topPx)`), só que feito no elemento. */}
+        {videoSobreTemplate && janelaComposicao ? (
+          /* MOLDURA = `areaVideo` (a janela do template) → QUADRO = área × zoom,
+             deslocado por `deslocamentoX/Y`. É a MESMA ordem do filtergraph do
+             FFmpeg e a MESMA matemática (`geometriaEnquadramentoVideo`, espelho
+             de `enquadramentoVideo.js`). Quando `janelaComposicao` é `null` a
+             camada legada abaixo é usada — é a compatibilidade (área = canvas +
+             enquadramento original), com resultado idêntico ao de sempre. */
           <div
-            data-elemento="selecao-video"
-            className="edl-elemento-selecionado absolute z-30"
+            data-elemento="video-area"
+            data-area-largura={String(janelaComposicao.larguraArea)}
+            data-area-altura={String(janelaComposicao.alturaArea)}
+            data-enq-zoom={String(janelaComposicao.zoom)}
+            data-enq-x={String(janelaComposicao.deslocamentoX)}
+            data-enq-y={String(janelaComposicao.deslocamentoY)}
+            data-video-x={String(janelaComposicao.x)}
+            data-video-y={String(janelaComposicao.y)}
+            data-video-largura={String(janelaComposicao.larguraArea)}
+            data-video-altura={String(janelaComposicao.alturaEscalada || janelaComposicao.caixa.altura)}
+            data-video-crop-topo={String(tesouraJanela.topPx)}
+            data-video-crop-base={String(tesouraJanela.basePx)}
+            data-video-altura-visivel={String(tesouraJanela.alturaVisivelPx)}
+            data-escala={String(escala)}
+            className={`absolute overflow-hidden ${podeArrastarVideo ? '' : 'pointer-events-none'}`}
             style={{
-              left: area.x * escala,
-              top: area.y * escala,
-              width: Math.max(2, area.largura) * escala,
-              height: Math.max(2, area.altura) * escala,
-              pointerEvents: 'none',
+              left: janelaComposicao.x * escala,
+              top: janelaComposicao.y * escala,
+              width: Math.max(2, janelaComposicao.larguraArea) * escala,
+              height: Math.max(2, janelaComposicao.alturaArea) * escala,
+              zIndex: 2,
+              userSelect: 'none',
+              cursor: podeArrastarVideo ? 'grab' : undefined,
+              touchAction: 'none',
             }}
+            onPointerDown={podeArrastarVideo ? aoArrastarVideo : undefined}
+            onWheel={aoGirarZoom}
           >
-            {bordasDoVideo.map((borda) => (
-              <span
-                key={borda.rotulo}
-                role="slider"
-                aria-label={`Redimensionar vídeo (${borda.rotulo})`}
-                data-x={String(area.x)}
-                data-y={String(area.y)}
-                data-largura={String(area.largura)}
-                data-altura={String(area.altura)}
-                onPointerDown={borda.onPointerDown}
-                className="absolute z-30"
+            {/* QUADRO — área × zoom, deslocado. É ele que "aperta" a imagem e
+                escolhe a região visível; o `overflow-hidden` é o recorte de
+                volta para a área. */}
+            <div
+              data-elemento="video-caixa"
+              className="absolute overflow-hidden"
+              style={{
+                left: janelaComposicao.caixa.x * escala,
+                top: janelaComposicao.caixa.y * escala,
+                width: Math.max(2, janelaComposicao.caixa.largura) * escala,
+                height: Math.max(2, janelaComposicao.caixa.altura) * escala,
+              }}
+            >
+              {/* TESOURA — só ESCONDE linhas, nunca move/escala. É a MESMA ordem
+                  do FFmpeg (`scale` cover → `crop` de volta p/ a área → `crop`
+                  da tesoura): a janela é posicionada dentro do QUADRO e mede a
+                  altura da ÁREA, exatamente como `pixelsDeCorte` no render. */}
+              <div
+                data-elemento="video-janela"
+                className="absolute left-0 overflow-hidden"
                 style={{
-                  ...borda.estilo,
-                  background: 'transparent',
-                  cursor: borda.cursor,
-                  touchAction: 'none',
-                  pointerEvents: 'auto',
+                  top: tesouraJanela.topPx * escala,
+                  width: Math.max(2, janelaComposicao.larguraArea) * escala,
+                  height: Math.max(2, tesouraJanela.alturaVisivelPx) * escala,
                 }}
-              />
-            ))}
-            {alcasDoVideo.map((alca) => (
-              <span
-                key={alca.rotulo}
-                role="slider"
-                aria-label={`Redimensionar vídeo (${alca.rotulo})`}
-                data-x={String(area.x)}
-                data-y={String(area.y)}
-                data-largura={String(area.largura)}
-                data-altura={String(area.altura)}
-                onPointerDown={alca.onPointerDown}
-                className="absolute z-30 rounded-sm border-2 border-white shadow"
-                style={{
-                  ...alca.estilo,
-                  width: alca.largura,
-                  height: alca.altura,
-                  background: '#94a3b8',
-                  cursor: alca.cursor,
-                  touchAction: 'none',
-                  pointerEvents: 'auto',
-                }}
-              />
-            ))}
+              >
+                {/* CONTEÚDO: o vídeo JÁ ESCALADO em cover, posicionado pelo
+                    `object-position` da prévia (o excesso distribuído por
+                    `deslocamentoX/Y`) dentro do quadro, e deslocado por
+                    `topPx` para que a tesoura só esconda. */}
+                <div
+                  key={item && item.id ? `video-${item.id}` : 'video-vazio'}
+                  data-elemento="video-conteudo"
+                  className="absolute left-0"
+                  style={{
+                    top: (-tesouraJanela.topPx - janelaComposicao.conteudoY + janelaComposicao.caixa.y) * escala,
+                    left: (-janelaComposicao.conteudoX + janelaComposicao.caixa.x) * escala,
+                    width: Math.max(2, janelaComposicao.larguraEscalada || janelaComposicao.caixa.largura) * escala,
+                    height: Math.max(2, janelaComposicao.alturaEscalada || janelaComposicao.caixa.altura) * escala,
+                  }}
+                >
+                  {renderizarConteudoDoVideo()}
+                </div>
+              </div>
+            </div>
           </div>
-        )}
+        ) : null}
+        {videoSobreTemplate && !janelaComposicao ? (
+          <div
+            data-elemento="video"
+            data-video-x={String(geomVideo.x)}
+            data-video-y={String(geomVideo.y)}
+            data-video-largura={String(geomVideo.largura)}
+            data-video-altura={String(geomVideo.altura)}
+            data-video-crop-topo={String(geomVideo.topPx)}
+            data-video-crop-base={String(geomVideo.basePx)}
+            data-video-altura-visivel={String(geomVideo.alturaVisivelPx)}
+            data-enq-zoom={String(enqCamada.zoom)}
+            data-enq-x={String(enqCamada.deslocamentoX)}
+            data-enq-y={String(enqCamada.deslocamentoY)}
 
-        {/* REDEFINIR — discreto, aparece SÓ quando o usuário mexeu no
-            enquadramento ou no TAMANHO/POSIÇÃO do objeto de vídeo. Volta
-            tamanho e posição originais (zoom 1, centro, canvas inteiro). */}
-        {podeEditarVideo && urlVideoAtiva && videoEditadoNoPreview && (
-          <button
-            type="button"
-            onClick={redefinirEnquadramento}
-            onPointerDown={(e) => e.stopPropagation()}
-            title="Voltar o vídeo ao tamanho e posição originais"
-            aria-label="Redefinir enquadramento do vídeo"
-            className="edl-selo-base edl-ring-foco absolute z-40 h-6 px-2 rounded-md text-[9px] font-black flex items-center gap-1"
-            style={{ top: 6, right: base ? 40 : 6, cursor: 'pointer' }}
+            data-escala={String(escala)}
+                className={`absolute ${podeArrastarVideo ? '' : 'pointer-events-none'}`}
+                style={{
+                  left: geomVideo.x * escala,
+                  top: geomVideo.y * escala,
+                  width: Math.max(2, geomVideo.largura) * escala,
+                  height: Math.max(2, geomVideo.altura) * escala,
+                  zIndex: 2,
+                  userSelect: 'none',
+                  cursor: podeArrastarVideo ? 'grab' : undefined,
+                  touchAction: 'none',
+                }}
+                onPointerDown={podeArrastarVideo ? aoArrastarVideo : undefined}
+              >
+                {/* JANELA DA TESOURA — `overflow:hidden` que revela só a faixa
+                    visível. É ELA que se move quando o corte muda; o vídeo dentro
+                    nunca sai do lugar. */}
+                <div
+                  data-elemento="video-janela"
+                  className="absolute left-0 overflow-hidden"
+                  style={{
+                    top: geomVideo.topPx * escala,
+                    width: Math.max(2, geomVideo.largura) * escala,
+                    height: Math.max(2, geomVideo.alturaVisivelPx) * escala,
+                  }}
+                >
+                  {/* CONTEÚDO: o vídeo INTEIRO, na MESMA posição do passo 2 da
+                      geometria. Nunca deslocado pelo corte. */}
+                  <div
+                    key={item && item.id ? `video-${item.id}` : 'video-vazio'}
+                    data-elemento="video-conteudo"
+                    className="absolute left-0"
+                    style={{
+                      top: -geomVideo.topPx * escala,
+                      width: Math.max(2, geomVideo.largura) * escala,
+                      height: Math.max(2, geomVideo.altura) * escala,
+                    }}
+                  >
+                    {renderizarConteudoDoVideo()}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+        {/* TEMPLATE — O FUNDO DO QUADRO (z-index 1, ABAIXO do vídeo).
+            Arquitetura corrigida: o `template.png` 1080×1920 é a base e o vídeo
+            recortado é a CAPA por cima (mesma ordem do engine:
+            `[fundo][v_rec]overlay=x:y`). Não existe mais `clip-path path(evenodd)`
+            nem `dest-out`: o template é fundo, então não há buraco a abrir —
+            onde o vídeo não cobre, aparece a ARTE do template, nunca branco.
+            `pointer-events-none`: o template NUNCA captura o ponteiro. */}
+        {temTemplateFundo ? (
+          <div
+            data-template-fundo="true"
+            className="absolute inset-0 pointer-events-none"
+            style={{ zIndex: 1 }}
+            aria-hidden="true"
           >
-            ↺ Redefinir
-          </button>
-        )}
+            <img src={urlTemplate} alt={altTemplate} draggable={false} className="pointer-events-none select-none" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center', display: 'block' }} />
+          </div>
+        ) : null}
+
+        {/* SEM CAIXA DE SELEÇÃO, SEM BORDAS, SEM ALÇAS E SEM "REDEFINIR" SOBRE O
+            VÍDEO: a prévia mostra só o vídeo. A `areaVideo` continua sendo o
+            dado interno que posiciona o vídeo e abre o buraco do template —
+            nada aqui é representation visual dela. O que ainda aparece sobre o
+            vídeo: o CORTE DE BORDAS (clip-path + faixas, que é o resultado, e as
+            linhas arrastáveis apenas no modo de corte), o template, os overlays
+            e os controles reais do player. */}
 
         {/* VÍDEO BASE — selo discreto + LIXEIRA (só no card do vídeo base).
             A lixeira remove o vídeo base da lista do Editor (e do localStorage):
@@ -722,90 +935,11 @@ export default function EditorCanvas({
           </button>
         )}
 
-        {/* ÁREA DO VÍDEO — GUIA da COMPOSIÇÃO FINAL (nunca recorta a prévia).
-            O retângulo tracejado mostra ONDE o vídeo entra no vídeo FINAL
-            (`areaVideo` → scale/crop/pad do FFmpeg). É SOMENTE marcação
-            geométrica (x/y/largura/altura): NÃO é container do vídeo — o
-            vídeo só aparece dentro dela no Preview (Estado B). Com a
-            "Marcação da área" DESLIGADA fica invisível e `pointer-events-none`
-            (nunca atrapalha o player); no MODO DE MARCAÇÃO o guia fica
-            SEMPRE visível. Na célula selecionada pode ser arrastado/
-            redimensionado (as alças exigem a camada "Área do vídeo"
-            selecionada). MODO CONFERÊNCIA (vídeo PRONTO): a guia NÃO é
-            desenhada — o final já está composto e nada de edição sobrepõe o
-            MP4. */}
-        {composicaoAtiva && !conferencia && (
-        <div
-          role={podeEditarArea ? 'button' : undefined}
-          tabIndex={podeEditarArea ? 0 : undefined}
-          aria-label="Mover a área do vídeo (composiçom final)"
-          data-elemento="area"
-          data-x={String(area.x)}
-          data-y={String(area.y)}
-          data-largura={String(area.largura)}
-          data-altura={String(area.altura)}
-          onPointerDown={podeEditarArea ? (e) => { selecionar('area'); arrastarArea(e); } : undefined}
-          className={`edl-area-video absolute overflow-hidden flex items-center justify-center touch-none select-none ${(area.mostrarMarcacao || mostraGuiaArea) ? 'edl-guia-ativa' : ''} ${podeEditarArea ? '' : 'pointer-events-none'} ${elementoSelecionado === 'area' ? 'edl-elemento-selecionado' : ''}`}
-          style={{
-            left: area.x * escala,
-            top: area.y * escala,
-            width: area.largura * escala,
-            height: area.altura * escala,
-            borderRadius: 8 * escala,
-            cursor: podeEditarArea ? 'move' : 'default',
-            // Acima do template (z=1) e do vídeo (z=5): com o toggle ligado,
-            // o guia aparece SOBRE o template em TODAS as células — antes ele
-            // ficava por trás (z-auto) e o template o tapava. DESLIGADO, o
-            // guia é invisível E pointer-events-none: nunca atrapalha o player.
-            zIndex: 10,
-            border: (area.mostrarMarcacao || mostraGuiaArea) ? undefined : '2px dashed transparent',
-            backgroundColor: (area.mostrarMarcacao || mostraGuiaArea) ? undefined : 'transparent',
-          }}
-        >
-
-          {/* ALÇAS DA MARCAÇÃO — 4 LADOS + 4 CANTOS (mesmo padrão das alças do
-              vídeo: ficam DENTRO do retângulo, inset, porque o canvas tem
-              `overflow-hidden`). Cada alça redimensiona SÓ o retângulo
-              (areaVideo.x/y/largura/altura): topo/baixo mudam a altura, esquerda/
-              direita mudam a largura, cantos mudam as duas — e as bordas opostas
-              ficam FIXAS (gerarRedimensionarArea). A marcação NUNCA renderiza
-              vídeo: é só geometria (Estado A). */}
-          {podeEditarArea && elementoSelecionado === 'area' && (
-            <>
-              {[
-                { rotulo: 'canto superior esquerdo', estilo: { left: 2, top: 2 }, largura: 14, altura: 14, cursor: 'nwse-resize', aoBaixar: redimensionarAreaCantoNO },
-                { rotulo: 'canto superior direito', estilo: { right: 2, top: 2 }, largura: 14, altura: 14, cursor: 'nesw-resize', aoBaixar: redimensionarAreaCantoNE },
-                { rotulo: 'canto inferior esquerdo', estilo: { left: 2, bottom: 2 }, largura: 14, altura: 14, cursor: 'nesw-resize', aoBaixar: redimensionarAreaCantoSO },
-                { rotulo: 'canto inferior direito', estilo: { right: 2, bottom: 2 }, largura: 14, altura: 14, cursor: 'nwse-resize', aoBaixar: redimensionarAreaCantoSE },
-                { rotulo: 'lateral esquerda', estilo: { left: 2, top: '50%', transform: 'translateY(-50%)' }, largura: 12, altura: 26, cursor: 'ew-resize', aoBaixar: redimensionarAreaEsquerda },
-                { rotulo: 'lateral direita', estilo: { right: 2, top: '50%', transform: 'translateY(-50%)' }, largura: 12, altura: 26, cursor: 'ew-resize', aoBaixar: redimensionarAreaDireita },
-                { rotulo: 'lateral superior', estilo: { top: 2, left: '50%', transform: 'translateX(-50%)' }, largura: 26, altura: 12, cursor: 'ns-resize', aoBaixar: redimensionarAreaAcima },
-                { rotulo: 'lateral inferior', estilo: { bottom: 2, left: '50%', transform: 'translateX(-50%)' }, largura: 26, altura: 12, cursor: 'ns-resize', aoBaixar: redimensionarAreaAbaixo },
-              ].map((alca) => (
-                <span
-                  key={alca.rotulo}
-                  role="slider"
-                  aria-label={`Redimensionar área (${alca.rotulo})`}
-                  data-x={String(area.x)}
-                  data-y={String(area.y)}
-                  data-largura={String(area.largura)}
-                  data-altura={String(area.altura)}
-                  onPointerDown={alca.aoBaixar}
-                  className="absolute z-30 rounded-sm border-2 border-white shadow"
-                  style={{
-                    ...alca.estilo,
-                    width: alca.largura,
-                    height: alca.altura,
-                    background: '#94a3b8',
-                    cursor: alca.cursor,
-                    touchAction: 'none',
-                  }}
-                />
-              ))}
-            </>
-          )}
-        </div>
-        )}
+        {/* SEM GUIAS DE ÁREA: a ferramenta "Marcar espaço do vídeo" e o retângulo
+            tracejado foram removidos. A área do vídeo continua existindo como
+            DADO (`areaVideo`) e como BURACO do template — o retângulo visível
+            agora é o próprio objeto de vídeo, arrastado/redimensionado pelas
+            próprias alças (acima), que escrevem exatamente a mesma geometria. */}
 
         {/* DOIS TEXTOS INDEPENDENTES (superior e inferior) — cada um tem
             conteúdo, posição, tamanho, largura, fonte, peso, cor, alinhamento,
@@ -813,7 +947,7 @@ export default function EditorCanvas({
             selecionada; nas demais são SOMENTE visualização.
             Na marcação (Estado A) não aparecem: só o template + o retângulo da
             área existem nessa tela (o vídeo entra apenas no Preview). */}
-        {composicaoAtiva && !conferencia && !modoMarcacao && [
+        {composicaoAtiva && !conferencia && [
           { chave: 'superior', rotulo: 'Texto superior', t: textoSup },
           { chave: 'inferior', rotulo: 'Texto inferior', t: textoInf },
         ].map(({ chave, rotulo, t }) => {
@@ -870,7 +1004,7 @@ export default function EditorCanvas({
             Cada um seleciona sua camada no clique (Camadas ⇄ Preview).
             Na marcação (Estado A) não aparecem: só o template + o retângulo da
             área existem nessa tela. */}
-        {composicaoAtiva && !conferencia && !modoMarcacao && (
+        {composicaoAtiva && !conferencia && (
           <>
             <ElementoIdentidadeTexto chave="nome" t={identidade?.nome} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeNome'} aoSelecionar={selecionar} />
             <ElementoIdentidadeTexto chave="usuario" t={identidade?.usuario} escala={escala} aoAtualizarConfig={atualizador} somenteLeitura={!podeEditar} selecionado={elementoSelecionado === 'identidadeUsuario'} aoSelecionar={selecionar} />
@@ -883,7 +1017,7 @@ export default function EditorCanvas({
             preview. MESMA geometria que o render compõe (prévia = render).
             Na marcação (Estado A) não aparecem: só o template + o retângulo da
             área existem nessa tela. */}
-        {composicaoAtiva && !conferencia && !modoMarcacao && (config.imagens || []).map((im) => (
+        {composicaoAtiva && !conferencia && (config.imagens || []).map((im) => (
           <ElementoImagem
             key={im.id}
             imagem={im}
@@ -910,18 +1044,13 @@ export default function EditorCanvas({
         />
       </div>
 
-      {podeEditarVideo && urlVideoAtiva && (
-        <div className="edl-zoom-touch" role="group" aria-label="Zoom do vídeo">
-          <button type="button" className="edl-botao-fantasma edl-ring-foco rounded-lg" aria-label="Diminuir zoom" onClick={() => zoomTouch(-1)}>−</button>
-          <span className="self-center text-xs" style={{ color: 'var(--edl-texto-dim)' }}>{Math.round(areaN.zoom * 100)}%</span>
-          <button type="button" className="edl-botao-fantasma edl-ring-foco rounded-lg" aria-label="Aumentar zoom" onClick={() => zoomTouch(1)}>+</button>
-        </div>
-      )}
+      {/* SEM CONTROLES DE ZOOM POR TOQUE: o vídeo é mostrado como está, sem
+          qualquer ajuste de enquadramento oferecido pela interface. */}
 
       {/* Rodapé do canvas (só no modo editor único; células usam o próprio rodapé) */}
       {mostrarRodape && (
         <p className="text-[9px] font-semibold mt-3" style={{ color: 'var(--edl-texto-mut)' }}>
-          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • {composicaoAtiva ? 'prévia: template + vídeo na área marcada' : 'prévia: somente os vídeos importados'} • encaixe do final: {area.fit}
+          {item ? `Editando: ${item.nome}` : 'Selecione um vídeo na lista'} • {CANVAS_LARGURA}×{CANVAS_ALTURA} (9:16) • {composicaoAtiva ? 'prévia: vídeo + corte + template' : 'prévia: somente os vídeos importados'} • encaixe do final: {area.fit}
         </p>
       )}
     </div>

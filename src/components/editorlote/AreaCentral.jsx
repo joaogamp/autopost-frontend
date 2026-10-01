@@ -24,15 +24,14 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  *   seguintes: [V1][V2][V3] / [V4][V5][V6] / [V7][V8][V9] ....
  * NUNCA repite o mesmo vídeo; scroll VERTICAL mostra os demais.
  *
- * PRÉVIA x VÍDEOS (fluxo simplificado): com `previewAtivo = false` o centro
- * mostra SOMENTE os vídeos importados (sem template, sem composição, 6 por
- * fileira). O template/área só entram na tela quando o usuário clica em
- * "Mostrar Preview" (painel DIREITO — PainelFluxo): aí cada célula passa a
- * mostrar template + vídeo dentro da área marcada (MESMA geometria do render).
+ * PRÉVIA x VÍDEOS: a composição é SEMPRE ATIVA no centro — cada célula mostra
+ * vídeo + corte + template (com o buraco em `areaVideo`) + textos/imagens,
+ * na MESMA ordem do engine e com a MESMA geometria do render. Importou
+ * template, ele aparece; não importou, aparece só o vídeo com o corte.
  *
  * Edição COMPARTILHADA: clicar numa célula selecciona o vídeo principal
  * (idêntico a clicar na esquerda). SÓ a célula selecionada é interativa
- * (ControlesVideo PAUSADO com Play manual + arrastes/manijas); as demais
+ * (ControlesVideo PAUSADO com Play manual); as demais
  * mostran SOLO a thumbnail estática (parada, sem áudio, sem autoplay/loop).
  * Al mudar 1X/2X/3X a `claveReproductor` cambia e o player se remonta
  * pausado — nunca fica um vídeo antigo tocando em background.
@@ -44,8 +43,10 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
  * o usuário escolher outro.
  *
  * CÉLULAS SEM MOLDURA: a grade 2X/3X NÃO usa card/fundo/borde/glow — cada
- * vídeo é somente o canvas branco 9:16 (única excepción: as linhas
- * pontilhadas das ferramentas REAIS de edición, área do vídeo e cortes).
+ * vídeo é somente o canvas 9:16. SOBRE O VÍDEO só existe o que é resultado ou
+ * ferramenta REAL: o corte de bordas (clip-path + faixas; linhas arrastáveis
+ * apenas no modo de corte) e a barra de controles do player. Nenhuma caixa de
+ * seleção, alça, borda ou outline de edição é desenhada.
  *
  * NÃO cria segunda lista de vídeos: `itens` é a MESMA lista da esquerda
  * (mesmos ids/objetos). Percentual/status vêm da cola real (GET /api/fila).
@@ -152,14 +153,6 @@ function AreaCentral(p) {
           {itens.length}
         </span>
         <div className="flex-1" />
-        {/* O botão "Mostrar Preview" vive no PAINEL DIREITO (PainelFluxo) — sem
-            duplicar a ação aqui. O selo abaixo só indica que a composição
-            (template + área marcada) está aplicada nos vídeos do centro. */}
-        {p.previewAtivo ? (
-          <span className="shrink-0 text-[9px] font-black px-2 py-0.5 rounded-full" style={{ background: 'rgba(34,197,94,0.18)', color: '#4ade80' }}>
-            PREVIEW
-          </span>
-        ) : null}
         <div className="flex items-center gap-0.5 edl-superficie rounded-lg p-0.5 shrink-0" role="group" aria-label="Vídeos lado a lado">
           {MODOS_AREA.map((m) => (
             <button key={m.colunas} type="button" title={m.titulo} aria-pressed={colunas === m.colunas} onClick={() => setColunas(m.colunas)} className="edl-ring-foco w-8 h-6 rounded-md text-[10px] font-black transition-colors" style={colunas === m.colunas ? { background: 'var(--edl-grad)', color: '#fff' } : { color: 'var(--edl-texto-mut)' }}>
@@ -203,7 +196,10 @@ function AreaCentral(p) {
                 aoSelecionarElemento={p.aoSelecionarElemento}
                 base
                 aoRemoverBase={aoRemoverItem ? () => aoRemoverItem(seleccionadoItem) : undefined}
-                previewAtivo={!!p.previewAtivo}
+                /* CORTE MANUAL POR LINHAS: a ferramenta de arrastar as linhas
+                   (fonte MANUAL, separada da detecção automática) vive na
+                   célula editável. */
+                linhasCorteAtivas={!!p.linhasCorteAtivas}
               />
             </div>
           ) : (
@@ -237,9 +233,9 @@ function AreaCentral(p) {
                 referenciaSel={item.id === idSelecionado ? celulaSelRef : undefined}
                 elementoSelecionado={p.elementoSelecionado}
                 aoSelecionarElemento={p.aoSelecionarElemento}
-                /* Cada célula recebe a MESMA flag de preview da área central:
-                   antes do clique em "Mostrar Preview" nenhuma célula compõe. */
-                previewAtivo={!!p.previewAtivo}
+                /* CORTE MANUAL POR LINHAS: cada célula passa a flag; dentro da
+                   `CelulaVideo` só a SELECIONADA (a editável) recebe `true`. */
+                linhasCorteAtivas={!!p.linhasCorteAtivas}
               />
             ))}
           </div>
@@ -298,7 +294,11 @@ function CelulaVideo(props) {
              lixeira que remove o vídeo base do Editor (local, sem apagar o
              arquivo original). */
           base={selecionado}
-          previewAtivo={!!props.previewAtivo}
+          /* CORTE MANUAL POR LINHAS: a ferramenta de arrastar as linhas vive
+             só na célula SELECIONADA (a editável). As demais mostram apenas o
+             RESULTADO do corte (o clip-path do valor efetivo), que é o que o
+             vídeo final de cada uma vai ter. */
+          linhasCorteAtivas={selecionado ? !!props.linhasCorteAtivas : false}
           aoRemoverBase={
             selecionado && props.aoRemoverItem ? () => props.aoRemoverItem(item) : undefined
           }
