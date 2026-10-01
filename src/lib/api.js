@@ -63,13 +63,31 @@ export async function enviarVideos(arquivos) {
   return r.json();
 }
 
-export async function processarLote(templateId, videos) {
+/**
+ * Enfileira um lote na fila REAL (POST /api/lote).
+ *
+ * NOVA ARQUITETURA DO EDITOR EM LOTE: a configuração do Editor viaja JUNTO
+ * com a fila, em `configTemplate` (o MESMO objeto produzido por
+ * configParaTemplatePayload()). Ela NÃO é salva como template no servidor, não
+ * vira entidade permanente e não é buscada em /api/templates/:id — existe só
+ * enquanto for necessária para produzir o vídeo.
+ *
+ * Um POST por GRUPO de corte/assinatura: como o Editor agrupa vídeos que
+ * compartilham a mesma configuração, o corpo é enviado uma vez por grupo
+ * (e a mesma config é gravada nas linhas do grupo), em vez de repetir a config
+ * no body de cada vídeo.
+ *
+ * `templateId` NÃO é enviado por este fluxo: a configuração do job é o que o
+ * worker renderiza (o servidor ainda aceita `templateId` no corpo para o fluxo
+ * legado de templates, que continua intacto).
+ */
+export async function processarLote(configTemplate, videos) {
   // CONTRATO ATUAL (fluxo Editor em duas fases): videos = [{ bibliotecaId,
   // tituloIA }]. Bloqueia payload inválido ANTES do fetch — nenhuma fila pode
   // nascer com biblioteca_id NULL (o worker rejeitaria em
   // POST /api/finais/receber-processado e o MP4 seria descartado).
-  if (!templateId || typeof templateId !== 'string' || !templateId.trim()) {
-    throw new Error('templateId é obrigatório para processar o lote.');
+  if (!configTemplate || typeof configTemplate !== 'string' || !configTemplate.trim()) {
+    throw new Error('A configuração do Editor é obrigatória para processar o lote.');
   }
   if (!Array.isArray(videos) || videos.length === 0) {
     throw new Error('videos[] é obrigatório e não pode estar vazio.');
@@ -88,7 +106,10 @@ export async function processarLote(templateId, videos) {
   const r = await fetch(`${BASE_URL}/api/lote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ templateId, videos }),
+    // `configTemplate` já é uma STRING JSON (vinda de JSON.stringify do
+    // payload). Ela viaja como string, e não como objeto aninhado, para não
+    // pagar uma segunda camada de escape de aspas no corpo.
+    body: JSON.stringify({ configTemplate, videos }),
   });
   const corpo = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(corpo.erro || `Erro ao processar lote: ${r.status}`);
@@ -303,56 +324,20 @@ export async function desconectarConta(plataforma) {
 }
 
 // ---------------------------------------------------------------------------
-// EDITOR EM LOTE — template da config compartilhada (POST /api/templates,
-// multipart). A importação de vídeos usa SOMENTE arquivos locais via
-// POST /api/upload (enviarVideos).
+// EDITOR EM LOTE — a configuração NÃO é mais salva como template.
+//
+// TRANSPORTE ATUAL: a config do Editor viaja DENTRO do POST /api/lote (campo
+// `configTemplate`, ver `processarLote` acima). A Oracle grava essa config
+// associada ao JOB que vai renderizá-lo (output/jobs/<filaId>.json) e o worker
+// local a busca em GET /api/fila/:filaId/config — não existe registro
+// permanente, nem em templates-store.json, nem em /api/templates.
+//
+// A antiga `salvarTemplateDoEditor` (POST /api/templates multipart) foi
+// removida: era o transporte ANTERIOR do Editor em Lote e ficou sem nenhum
+// chamador depois da mudança. Os endpoints /api/templates e o fluxo da página
+// Templates continuam intactos no servidor (ver servidor.js) e seguem usados
+// por `listarTemplates`/`salvarTemplate`/`urlPreviewTemplate`/`excluirTemplate`.
+//
+// A importação de vídeos usa SOMENTE arquivos locais via POST /api/upload
+// (enviarVideos).
 // ---------------------------------------------------------------------------
-
-/**
- * Salva a config COMPARTILHADA do Editor em Lote como TEMPLATE no servidor
- * (POST /api/templates — multipart). Cria um template novo ou atualiza o
- * existente quando `templateId` é passado. A logo (arquivo) é opcional: sem
- * ela, o servidor mantém a logo já salva do template.
- */
-export async function salvarTemplateDoEditor({ payload, arquivoLogo = null, templateId = null }) {
-  const formData = new FormData();
-  if (templateId) formData.append('id', templateId);
-  // BLINDAGEM DE NOME: payload.nome nunca pode chegar como a string "undefined"
-  // (FormData converte undefined em "undefined" e o template era salvo assim).
-  // O fallback mantém o nome padrão do Editor em Lote (mesma constante usada
-  // pelo mapearEditorLote — replicada aqui para evitar import circular).
-  const NOME_PADRAO_LOTE = 'Editor em Lote · config compartilhada';
-  const nomeSeguro =
-    payload && typeof payload.nome === 'string' && payload.nome.trim() && payload.nome.trim().toLowerCase() !== 'undefined'
-      ? payload.nome.trim()
-      : NOME_PADRAO_LOTE;
-  formData.append('nome', nomeSeguro);
-  formData.append('corFundo', payload.corFundo);
-  formData.append('canvasLargura', String(payload.canvasLargura));
-  formData.append('canvasAltura', String(payload.canvasAltura));
-  formData.append('areaVideo', JSON.stringify(payload.areaVideo));
-  if (payload.logoPosicao) formData.append('logoPosicao', payload.logoPosicao);
-  // Sempre envia AMBOS textos (superior + inferior) — incluso null — para que
-  // o servidor limpie valores obsoletos quando o usuário esvazia um bloco.
-  formData.append('texto', JSON.stringify(payload.texto || null));
-  formData.append('textoInferior', JSON.stringify(payload.textoInferior || null));
-  // IDENTIDADE DO CANAL (nome, @ e selo azul) — sempre envia (mesmo null) pra
-  // que o servidor limpe valores obsoletos quando o usuário desliga um
-  // elemento. Templates antigos, sem esses campos, chegam null e o pipeline
-  // simplesmente pula (nada muda no fluxo antigo de Templates).
-  formData.append('identidadeNome', JSON.stringify(payload.identidadeNome || null));
-  formData.append('identidadeUsuario', JSON.stringify(payload.identidadeUsuario || null));
-  formData.append('identidadeSelo', JSON.stringify(payload.identidadeSelo || null));
-  // IMAGENS independentes (dataURL + geometria) — o servidor guarda o array no
-  // template e o pipeline (Oracle/worker) compõe na MESMA ordem da prévia.
-  // Sem imagens, envia null: o campo é limpo no template e nada muda.
-  formData.append('imagens', JSON.stringify(payload.imagens || null));
-  formData.append('fundoTemplate', JSON.stringify(payload.fundoTemplate || null));
-  if (payload.corteBordas) formData.append('corteBordas', JSON.stringify(payload.corteBordas));
-  if (arquivoLogo) formData.append('logo', arquivoLogo);
-
-  const r = await fetch(`${BASE_URL}/api/templates`, { method: 'POST', body: formData });
-  const corpo = await r.json().catch(() => ({}));
-  if (!r.ok || corpo.erro) throw new Error(corpo.erro || `Erro ao salvar o template do lote: ${r.status}`);
-  return corpo; // template criado/atualizado
-}
