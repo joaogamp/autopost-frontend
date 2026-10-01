@@ -602,6 +602,27 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
     const temMidias = Object.keys(midias).length > 0;
     const configGravar = temCofre ? configLeve : configCompleta;
     const indice = temCofre && typeof indiceDeMidias === 'function' ? indiceDeMidias(midias) : null;
+    // ÍNDICE JÁ GRAVADO no disco, se houver. Lê direto do localStorage (fonte
+    // do que a última gravação-promessa deixou): é ele que diz "o cofre ainda
+    // tem mídias que eu não consegui ver AGORA". Ver `indiceExistente` abaixo.
+    const indiceExistente = (() => {
+      if (!temCofre || !loteId) return null;
+      try {
+        const bruto = localStorage.getItem(CHAVE_LOTE);
+        if (!bruto) return null;
+        const dados = JSON.parse(bruto);
+        if (!dados || dados.config?.loteId !== loteId) return null; // outro lote
+        const gravado = dados.indiceMidias;
+        return gravado && typeof gravado === 'object' && Object.keys(gravado).length > 0 ? gravado : null;
+      } catch {
+        return null;
+      }
+    })();
+    // Se o disco declara mídias e esta gravação ainda não tem os bytes, o índice
+    // gravado ANTES é preservado: a config leve continua sendo gravada (o
+    // estado leve nunca é sacrificado), mas o índice não vira `{}` — senão a
+    // próxima abertura já não saberia buscar nada no cofre.
+    const indiceGravado = (temCofre && !temMidias && indiceExistente) ? indiceExistente : indice;
     const itensSalvos = itensParaSalvar(itens);
 
     const montarCarga = (cfg) => JSON.stringify({
@@ -612,7 +633,7 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
       assinatura: assinatura || null,
       // Índice das mídias que vivem no cofre (FASE 4). Ausente em cargas
       // antigas e quando não há cofre — a leitura trata os dois casos.
-      indiceMidias: indice,
+      indiceMidias: indiceGravado,
     });
 
     try {
@@ -654,8 +675,17 @@ function salvarEstadoNoDisco({ itens, config, idSelecionado, templateId, assinat
         cofre.gravar(loteId, midias)
           .then((ok) => { if (ok) resultado.midiasPerdidas = false; })
           .catch(() => { resultado.midiasPerdidas = true; });
-      } else {
-        // Lote sem mídias: limpa o que sobrou (template removido/trocado).
+      } else if (!indiceExistente) {
+        // Lote GENUINAMENTE sem mídias: limpa o que sobrou (template
+        // removido/trocado).
+        //
+        // A checagem do índice é o que impede a DESTRUIÇÃO do cofre na janela
+        // de restauração. Se o localStorage declara um índice (`{template:N}`)
+        // mas a config ainda NÃO tem os bytes — o que acontece logo depois de
+        // abrir o Editor, antes de a reidratação terminar — gravar `{}` aqui
+        // apagaria de vez o template que ainda estava no IndexedDB. O
+        // `descarregar` do StrictMode (monta/desmonta/remonta) torna essa
+        // janela real, não teórica.
         cofre.gravar(loteId, {}).catch(() => {});
       }
     }
@@ -907,7 +937,19 @@ export default function EditorLote() {
       });
   }, [mostrarToast]);
 
-  /** Descarrega o estado atual no localStorage (unmount + pagehide). */
+  // Flush no unmount: garante que o ÚLTIMO estado vá pro localStorage mesmo
+  // que o usuário saia da aba dentro da janela do debounce (trocar de página
+  // desmonta esta página). Reload/fechar a aba: o cleanup do React NÃO roda —
+  // `pagehide` garante o save nesses casos.
+  //
+  // REGRA DA JANELA DE REIDRATAÇÃO: enquanto as mídias do cofre não voltaram
+  // (`midiasProntas === false`), o `config` em memória AINDA NÃO tem o
+  // template. Gravar esse estado aqui sobrescreveria o índice com `{}` e
+  // apagaria o template do cofre — e o React em StrictMode monta/desmonta/
+  // remonta, o que torna essa janela REAL (era exatamente o que fazia o
+  // template sumir ao voltar para o Editor). Portanto, antes da reidratação o
+  // flush grava o estado LEVE mas preserva o índice já existente; o AUTOSAVE,
+  // que espera `midiasProntas`, é quem grava o estado completo em seguida.
   const descarregar = useCallback(() => {
     const atual = estadoAtualRef.current;
     if (!atual) return;
@@ -938,6 +980,17 @@ export default function EditorLote() {
   // de novo e grava a config JÁ com as mídias. Com ref, a gravação ficaria
   // pendurada até a próxima edição do usuário.
   const [midiasProntas, setMidiasProntas] = useState(false);
+  // Promessa da leitura do cofre, MANTIDA ENTRE MONTAGENS.
+  //
+  // RACE CONDITION CORRIGIDA (era a 3ª causa do reset): o React em StrictMode
+  // monta → desmonta → remonta. O cleanup antigo (`ativo = false`) cancelava a
+  // PRIMEIRA leitura do cofre, e a segunda passava a competir com um
+  // `setMidiasProntas(true)` que podia vencer — liberando o autosave com uma
+  // config que ainda não tinha o template. Resultado: o índice virava `{}` e o
+  // template sumia do cofre. Guardar a promessa faz a segunda montagem
+  // REUTILIZAR a mesma leitura (o cofre é idempotente) em vez de refazê-la, e
+  // a promessa nunca é rejeitada (o cofre é fail-open).
+  const leituraDoCofreRef = useRef(null);
   useEffect(() => {
     const indice = indiceRestaurado.current;
     const loteId = loteRestaurado.current;
@@ -945,23 +998,25 @@ export default function EditorLote() {
       setMidiasProntas(true); // nada a reidratar — libera o autosave
       return undefined;
     }
-    let ativo = true;
-    cofre.lerDoIndice(loteId, indice)
-      .then((midias) => {
-        if (!ativo || !midias || Object.keys(midias).length === 0) return;
-        // A config CRUA (ainda sem normalizar) é a base: só nela as imagens
-        // ainda existem como elementos. Normalizar ANTES de reidratar faria o
-        // `normalizarConfigEditor` descartá-las por não terem `data:image/`, e
-        // o lote voltaria sem template/imagem/selo.
-        setConfig(mesclarConfig(aplicarMidias(configCruaRestaurada.current || {}, midias)));
-      })
-      .catch(() => {
-        // Fail-open: o lote abre sem as imagens, sem perder o resto.
-      })
-      .finally(() => {
-        if (ativo) setMidiasProntas(true);
-      });
-    return () => { ativo = false; };
+    if (!leituraDoCofreRef.current) {
+      leituraDoCofreRef.current = cofre
+        .lerDoIndice(loteId, indice)
+        .catch(() => ({}))
+        .then((midias) => {
+          // A config CRUA (ainda sem normalizar) é a base: só nela as imagens
+          // ainda existem como elementos. Normalizar ANTES de reidratar faria o
+          // `normalizarConfigEditor` descartá-las por não terem `data:image/`, e
+          // o lote voltaria sem template/imagem/selo.
+          if (!midias || Object.keys(midias).length === 0) return;
+          setConfig(mesclarConfig(aplicarMidias(configCruaRestaurada.current || {}, midias)));
+        })
+        .finally(() => { setMidiasProntas(true); });
+    } else {
+      // Segunda montagem (StrictMode): a leitura JÁ está em curso — basta
+      // esperar a mesma promessa.
+      leituraDoCofreRef.current.finally(() => setMidiasProntas(true));
+    }
+    return undefined; // NADA é cancelado: a leitura precisa chegar ao fim
   }, []);
 
   // LOGO REMOVIDA do fluxo: sem conversão/persistência de dataURL.

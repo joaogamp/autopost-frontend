@@ -721,6 +721,35 @@ export function criarTemplateFundoPadrao() {
 export const AREA_TEMPLATE_LARGURA_PCT = 0.85;
 export const AREA_TEMPLATE_ALTURA_PCT = 0.7;
 
+/* ---------------------------------------------------------------------------
+ * QUANTIDADE DE VÍDEOS POR FILEIRA (1X / 2X / 3X / 6X) — parte do estado do
+ * Editor, guardada em `config.visualizacao.colunas`.
+ *
+ * Os valores são os MESMOS oferecidos pelos botões do `AreaCentral`; aqui ficam
+ * listados uma única vez para que o painel, a normalização da config e o
+ * teste não possam divergir. A quantidade é puro modo de VISUALIZAÇÃO do
+ * espaço central: não entra no payload do template nem no render.
+ * ------------------------------------------------------------------------ */
+
+/** Quantidades válidas, na ordem em que aparecem nos botões. */
+export const COLUNAS_AREA_VALIDAS = Object.freeze([1, 2, 3, 6]);
+/** Padrão do lote = grade de 6 por fileira. */
+export const COLUNAS_AREA_PADRAO = 6;
+
+/**
+ * Normaliza a quantidade salva para um valor REALMENTE oferecido pela UI.
+ *
+ * O PADRÃO só entra quando não existe valor salvo válido — um valor já
+ * persistido (1/2/3/6) nunca é substituído pelo padrão. Valores ausentes,
+ * corrompidos ou fora da lista caem no 6X (fail-open: a tela sempre abre).
+ */
+export function normalizarColunasArea(valor) {
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return COLUNAS_AREA_PADRAO;
+  const inteiro = Math.round(n);
+  return COLUNAS_AREA_VALIDAS.includes(inteiro) ? inteiro : COLUNAS_AREA_PADRAO;
+}
+
 /** Retângulo vazado padrão do template (85%×70% centralizado). */
 export function criarAreaTemplatePadrao() {
   const largura = Math.max(2, Math.round(CANVAS_LARGURA * AREA_TEMPLATE_LARGURA_PCT));
@@ -1202,6 +1231,12 @@ export function normalizarConfigEditor(salva) {
     // válidas: `null` aqui significa "sem buraco explícito", e o
     // `areaTemplateEfetiva` decide se há compatibilidade legada.
     areaTemplate: areaTemplateValida(salva?.areaTemplate),
+    // QUANTIDADE (1X/2X/3X/6X) — estado do Editor, normalizado para um valor
+    // que a UI realmente oferece. O PADRÃO só entra quando não há valor salvo
+    // válido: uma quantidade já escolhida NUNCA é sobrescrita pelo 6X.
+    visualizacao: {
+      colunas: normalizarColunasArea(salva?.visualizacao?.colunas),
+    },
     corteBordas: { ...base.corteBordas, ...(salva?.corteBordas || {}) },
     // MIGAÇÃO DOS OVERRIDES POR VÍDEO (FASE 0/FASE 1) — cada entrada antiga é
     // reescrita no formato de TRÊS CONCEITOS (`manual` / `deteccao` / `origem`):
@@ -2084,6 +2119,22 @@ export function criarConfigPadrao() {
     // NUNCA reduz o vídeo: `areaVideo` acima é a posição FÍSICA dele e
     // permanece o canvas inteiro (0,0,1080×1920) mesmo com template.
     areaTemplate: null,
+    // VISUALIZAÇÃO DO LOTE (1X / 2X / 3X / 6X) — quantos vídeos o espaço
+    // central mostra por fileira.
+    //
+    // POR QUE VIVE NA CONFIG (e não num `useState` do `AreaCentral`): a
+    // quantidade é ESCOLHA DO USUÁRIO sobre o seu lote, exatamente como o
+    // template, o enquadramento e o corte. Ela precisa sobreviver à navegação
+    // entre as abas e ao F5 — num estado local do componente ela era perdida
+    // na hora em que a página era desmontada, e o editor voltava sozinho para
+    // o 6X, sobrescrevendo o que o usuário tinha escolhido. A `config` é a
+    // FONTE CANÔNICA do estado do Editor (já persistida no localStorage com o
+    // lote), então a quantidade entra nela e nada mais precisa ser inventado.
+    //
+    // NÃO é edição do vídeo: fica de fora de `loteTemEdicoesAtivas` e do
+    // payload do template (`mapearEditorLote`), então trocar 1X↔6X não altera
+    // a prévia, o render nem a assinatura de configuração.
+    visualizacao: { colunas: COLUNAS_AREA_PADRAO },
     // CORTE DE BORDAS: corte ESPACIAL superior/inferior do vídeo ORIGINAL
     // (percentuais da altura). Compartilhado por todo o lote; entra no mesmo
     // filtergraph do FFmpeg (single-pass — nada de MP4 intermediário).

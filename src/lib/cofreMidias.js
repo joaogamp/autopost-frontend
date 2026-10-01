@@ -88,7 +88,31 @@ function abrirBanco() {
 }
 
 
-/** Roda `operacao` numa transação e resolve com o resultado (ou `null`). */
+/** Roda `operacao` numa transação e resolve com o resultado (ou `null`).
+ *
+ * BUG CORRIGIDO (FASE 4): `operacao` era tratada como SÍNCRONA e o IndexedDB
+ * lia `IDBRequest.result` dentro dela. Isso é IMPOSSÍVEL: `.result` só existe
+ * depois do `onsuccess`, e accessing-lo antes lança
+ * `InvalidStateError: The request has not finished`. O `try/catch` engolia a
+ * exceção e resolvia `null` — ou seja, `gravar()` devolvia `false` e o
+ * `objectStore.put()` NUNCA era alcançado: o cofre ficava permanentemente
+ * vazio. Como o `configParaSalvar` já zera a `url` do template para fora do
+ * localStorage, a arte era DESCARTADA antes de ser guardada — e o template
+ * voltava ao padrão a cada navegação.
+ *
+ * AGORA as operações encadeiam TUDO por `onsuccess` (o padrão oficial do
+ * IndexedDB) e chamam `concluir(valor)` quando terminam. `emTransacao` resolve
+ * com esse valor assim que a transação COMMITA.
+ *
+ * POR QUE CALLBACKS E NÃO `await`: uma transação do IndexedDB fica INATIVA
+ * assim que o controle volta para o event loop. Um `await` no meio da operação
+ * (entre um `get` e o próximo) deixa a transação inativa e o request seguinte
+ * lança `TransactionInactiveError` — a leitura voltaria vazia e a gravação
+ * perderia bytes. Encadear por `onsuccess` mantém cada request dentro do mesmo
+ * tick da transação, que é a única forma garantida pela especificação.
+ *
+ * Continua FAIL-OPEN e nunca rejeita: qualquer erro resolve `null`.
+ */
 function emTransacao(operacao, modo = 'readwrite') {
   return abrirBanco().then(
     (banco) =>
@@ -104,16 +128,29 @@ function emTransacao(operacao, modo = 'readwrite') {
           resolve(null);
           return;
         }
+        // Registrado UMA VEZ, nunca reatribuído: evita a corrida de o
+        // `oncomplete` já ter disparado antes de o valor ficar pronto.
+        let valor = null;
+        let pronto = false;
+        transacao.oncomplete = () => resolve(pronto ? valor : null);
+        transacao.onerror = () => resolve(null);
+        transacao.onabort = () => resolve(null);
+        // `concluir` é idempotente: só o primeiro registro vale, e ele só é
+        // considerado depois do commit.
+        const concluir = (v) => { valor = v; pronto = true; };
         let pedido;
         try {
-          pedido = operacao(() => transacao.objectStore(LOJA));
+          pedido = operacao(
+            () => transacao.objectStore(LOJA),
+            concluir
+          );
         } catch {
+          try { transacao.abort(); } catch { /* ja encerrada */ }
           resolve(null);
           return;
         }
-        transacao.oncomplete = () => resolve(pedido);
-        transacao.onerror = () => resolve(null);
-        transacao.onabort = () => resolve(null);
+        // Operação que devolveu valor imediatamente (não usa callbacks).
+        if (pedido !== undefined) concluir(pedido);
       })
   );
 }
@@ -137,16 +174,23 @@ export async function gravar(loteId, midias) {
   if (!disponivel() || !prefixoDoLote(loteId)) return false;
   const dados = midias && typeof midias === 'object' ? midias : {};
   const slots = Object.keys(dados).filter((slot) => typeof dados[slot] === 'string' && dados[slot]);
-  const escrito = await emTransacao((loja) => {
+  const escrito = await emTransacao((loja, concluir) => {
     const prefixo = prefixoDoLote(loteId);
-    const existentes = loja.getAllKeys();
-    for (const chave of existentes.result || []) {
-      if (typeof chave !== 'string' || !chave.startsWith(prefixo)) continue;
-      const slot = chave.slice(prefixo.length);
-      if (!Object.prototype.hasOwnProperty.call(dados, slot)) loja.delete(chave);
-    }
-    for (const slot of slots) loja.put(dados[slot], chaveDoSlot(loteId, slot));
-    return true;
+    // `getAllKeys` é ASSÍNCRONO: a lista de chaves existentes só chega no
+    // `onsuccess`. Ler `.result` antes disso lançava InvalidStateError e
+    // abortava toda a gravação (ver `emTransacao`). O passo seguinte roda
+    // DENTRO desse `onsuccess`, com a transação ainda ativa.
+    loja().getAllKeys().onsuccess = (evento) => {
+      const existentes = evento.target.result;
+      const lojaAtual = loja();
+      for (const chave of Array.isArray(existentes) ? existentes : []) {
+        if (typeof chave !== 'string' || !chave.startsWith(prefixo)) continue;
+        const slot = chave.slice(prefixo.length);
+        if (!Object.prototype.hasOwnProperty.call(dados, slot)) lojaAtual.delete(chave);
+      }
+      for (const slot of slots) loja().put(dados[slot], chaveDoSlot(loteId, slot));
+      concluir(true);
+    };
   });
   return escrito === true;
 }
@@ -161,15 +205,21 @@ export async function ler(loteId, slots) {
     (slot) => typeof slot === 'string' && !!chaveDoSlot(loteId, slot)
   );
   if (pedidos.length === 0) return {};
-  const achados = await emTransacao((loja) => {
+  // Cada `get` é ASSÍNCRONO: o valor só existe no `onsuccess`. Ler `.result`
+  // síncrono devolvia sempre `undefined` e a mídia nunca voltava. Os pedidos
+  // são encadeados por callback (nunca `await`) para não deixar a transação
+  // inativa entre um request e o seguinte.
+  const achados = await emTransacao((loja, concluir) => {
     const resultados = {};
+    let restantes = pedidos.length;
     for (const slot of pedidos) {
-      const pedido = loja.get(chaveDoSlot(loteId, slot));
-      pedido.onsuccess = () => {
-        if (typeof pedido.result === 'string' && pedido.result) resultados[slot] = pedido.result;
+      loja().get(chaveDoSlot(loteId, slot)).onsuccess = (evento) => {
+        const valor = evento.target.result;
+        if (typeof valor === 'string' && valor) resultados[slot] = valor;
+        restantes -= 1;
+        if (restantes === 0) concluir(resultados);
       };
     }
-    return resultados;
   }, 'readonly');
   return achados && typeof achados === 'object' ? achados : {};
 }
@@ -182,13 +232,16 @@ export async function lerDoIndice(loteId, indice) {
 /** Apaga TODAS as mídias de um lote (lote encerrado/limpo). */
 export async function apagarLote(loteId) {
   if (!disponivel() || !prefixoDoLote(loteId)) return false;
-  const apagado = await emTransacao((loja) => {
+  const apagado = await emTransacao((loja, concluir) => {
     const prefixo = prefixoDoLote(loteId);
-    const existentes = loja.getAllKeys();
-    for (const chave of existentes.result || []) {
-      if (typeof chave === 'string' && chave.startsWith(prefixo)) loja.delete(chave);
-    }
-    return true;
+    // Mesma correcao de `gravar`: a lista de chaves e assincrona.
+    loja().getAllKeys().onsuccess = (evento) => {
+      const existentes = evento.target.result;
+      for (const chave of Array.isArray(existentes) ? existentes : []) {
+        if (typeof chave === 'string' && chave.startsWith(prefixo)) loja().delete(chave);
+      }
+      concluir(true);
+    };
   });
   return apagado === true;
 }

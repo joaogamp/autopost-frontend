@@ -1,7 +1,7 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Film } from 'lucide-react';
 import EditorCanvas from './EditorCanvas';
-import { rotuloDeVideo } from '../../lib/configEditorLote';
+import { rotuloDeVideo, normalizarColunasArea } from '../../lib/configEditorLote';
 
 /**
  * EDITOR EM LOTE — ÁREA CENTRAL de visualização dos vídeos.
@@ -55,6 +55,22 @@ import { rotuloDeVideo } from '../../lib/configEditorLote';
 const JANELA = 60;
 const PASSO = 30;
 
+/**
+ * QUANTIDADE (1X/2X/3X/6X) — modo de visualização do espaço central.
+ *
+ * FONTE DA VERDADE = `config.visualizacao.colunas` (a MESMA config que guarda o
+ * template, o enquadramento e os cortes, e que é persistida com o lote).
+ *
+ * ANTES este valor era um `useState(6)` LOCAL deste componente: ele morria
+ * junto com a página, então sair para o Painel/Agendamento/Biblioteca e voltar
+ * devolvia o editor para 6X sozinho, apagando a escolha do usuário. Agora a
+ * escrita passa por `aoAtualizarConfig` (o mesmo caminho de toda edição) e o
+ * valor sobrevive à navegação e ao F5. `normalizarColunasArea` garante que
+ * só entram as quantidades que estes botões oferecem.
+ *
+ * Os valores vêm de `COLUNAS_AREA_VALIDAS`, para que o painel e a config não
+ * possam divergir sobre o que é 1X/2X/3X/6X.
+ */
 const MODOS_AREA = [
   { colunas: 1, rotulo: '1X', titulo: '1X — vídeo único (destaque)' },
   { colunas: 2, rotulo: '2X', titulo: '2X — 2 vídeos lado a lado' },
@@ -80,7 +96,16 @@ function AreaCentral(p) {
   const celulaSelRef = useRef(null);
   const [selFuera, setSelFuera] = useState(false);
   const [limite, setLimite] = useState(JANELA);
-  const [colunas, setColunas] = useState(6);
+  // QUANTIDADE — lida da config (fonte canônica, já persistida com o lote).
+  // O normalizador também protege a tela: config ausente/corrompida abre em 6X.
+  const colunas = normalizarColunasArea(config?.visualizacao?.colunas);
+  // Trocar a quantidade é uma edição COMUM da config — pelo mesmo
+  // `aoAtualizarConfig` do template, do enquadramento e dos cortes, então ela
+  // entra no mesmo autosave/localStorage e sobrevive à navegação.
+  const setColunas = useCallback(
+    (valor) => aoAtualizarConfig((cfg) => ({ ...cfg, visualizacao: { colunas: normalizarColunasArea(valor) } })),
+    [aoAtualizarConfig]
+  );
   // 1X = modo de VÍDEO ÚNICO/destaque: SOMENTE o vídeo selecionado no centro,
   // sem continuar a lista abaixo. 2X/3X = múltiplos vídeos lado a lado.
   const modoUnico = colunas === 1;
