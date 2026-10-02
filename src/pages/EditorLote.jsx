@@ -130,8 +130,10 @@ const CHAVE_LOTE = 'autopost:editorlote:v1';
  * (setInterval + fail-open); NÃO toca fila/worker/Supabase. */
 const INTERVALO_THUMB_PENDENTE_MS = 4000;
 /** Teto de tentativas sem sucesso (~2 min): evita polling eterno para um
- * vídeo cujo enriquecimento falhou de vez (melhor esforço no servidor). Um
- * novo vídeo importado remonta o efeito e o teto recomeça. */
+ * vídeo cujo enriquecimento falhou de vez (melhor esforço no servidor).
+ * O contador pertence ao CICLO de re-hidratação: ele só zera quando um ciclo
+ * novo começa (não havia pendência → passou a haver). Hidratar um vídeo, ou
+ * importar outro com o ciclo já ligado, NÃO zera o contador. */
 const TETO_TENTATIVAS_THUMB_PENDENTE = 30;
 
 
@@ -1576,19 +1578,25 @@ export default function EditorLote() {
   // vídeo final. Por isso o gate considera `largura`/`altura`, e não só a
   // thumbnail: chegar na thumbnail não encerra mais a consulta.
   //  · 1ª consulta IMEDIATA ao ligar + tick de 4s;
-  //  · a chave do efeito é a LISTA de ids pendentes: importar outro vídeo
-  //    remonta o efeito (teto de tentativas recomeça) e cada progresso
-  //    parcial (um item preenchido) renova o teto;
-  //  · todos preenchidos → chave vazia → intervalo encerrado (zero polling
-  //    quando nada está pendente).
+  //  · o CICLO é controlado por um BOOLEANO ("existe pendência?"), e não pela
+  //    lista de ids. Antes a chave do efeito era a lista inteira: importar OU
+  //    hidratar um vídeo mudava a chave, desmontava o efeito, zerava
+  //    `tentativas` e `emVoo` e disparava uma consulta IMEDIATA. Como o backend
+  //    enriquece UM vídeo por vez, cada GET hidratava ~1 item e realimentava o
+  //    GET seguinte — dezenas de GETs de /api/biblioteca (que devolve a
+  //    biblioteca INTEIRA) disputando banda com o upload em curso;
+  //  · hoje a lista mudar (importar ou hidratar) NÃO remonta o efeito: o mesmo
+  //    ciclo segue até o próximo tick de 4s, preservando `tentativas` e `emVoo`;
+  //  · todos preenchidos → o booleano vira false → intervalo encerrado (zero
+  //    polling quando nada está pendente);
+  //  · um vídeo novo com o ciclo JÁ ligado é coberto pelo ciclo em andamento
+  //    (hidrata no próximo tick): só a transição sem-pendência → com-pendência
+  //    abre um ciclo novo, e é ela que consulta na hora.
   const itemSemMetadados = (it) =>
     !!(it && it.bibliotecaId && (!it.thumbnail || !(Number(it.largura) > 0 && Number(it.altura) > 0)));
-  const chaveThumbsPendentes = useMemo(
-    () => itens.filter(itemSemMetadados).map((it) => it.bibliotecaId).join(','),
-    [itens]
-  );
+  const temMetadadosPendentes = useMemo(() => itens.some(itemSemMetadados), [itens]);
   useEffect(() => {
-    if (!chaveThumbsPendentes) return undefined;
+    if (!temMetadadosPendentes) return undefined;
     let ativo = true;
     let emVoo = false;
     let tentativas = 0;
@@ -1655,7 +1663,7 @@ export default function EditorLote() {
       ativo = false;
       clearInterval(id);
     };
-  }, [chaveThumbsPendentes]);
+  }, [temMetadadosPendentes]);
 
   const filaRetomadaRef = useRef(false);
   useEffect(() => {
