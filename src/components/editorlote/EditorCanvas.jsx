@@ -313,8 +313,18 @@ export default function EditorCanvas({
     }),
     [dimsLargura, dimsAltura, corteAtivo, corteSup, corteInf, posicaoVideo.offsetX, posicaoVideo.offsetY, limiteMov],
   );
-  // Só existe vídeo para mostrar quando há player ativo ou miniatura.
-  const videoSobreTemplate = !!urlVideoAtiva || !!(item && item.thumbnail);
+  const [thumbnailFalhou, setThumbnailFalhou] = useState(false);
+  const urlThumbnail = item && item.thumbnail ? item.thumbnail : null;
+  useEffect(() => {
+    // Trocar de vídeo (ou a thumbnail ser republicada) rearma UMA tentativa.
+    setThumbnailFalhou(false);
+  }, [urlThumbnail]);
+
+  // Só existe vídeo para mostrar quando há player ativo, miniatura OU a miniatura
+  // já falhou (fallback `onError`): neste último caso a camada CONTINUA
+  // existindo para exibir o placeholder "VÍDEO ORIGINAL" no lugar da imagem
+  // quebrada — sem ela, o card ficaria vazio.
+  const videoSobreTemplate = !!urlVideoAtiva || !!urlThumbnail || thumbnailFalhou;
   const podeArrastarVideo = podeEditarVideo && !!urlVideoAtiva && !conferencia;
   // ARRASTE do vídeo: grava `posicaoVideo.offsetX/offsetY` em px da base
   // 1080×1920 pelo MESMO caminho do render (`atualizarPosicaoVideoNoConfig`),
@@ -518,6 +528,25 @@ export default function EditorCanvas({
     });
   }, [podeEditarVideo, janelaComposicao, atualizador, idVideoDaCelula, escala, dimsLargura, dimsAltura]);
 
+  /* ---------------------------------------------------------------------
+   * THUMBNAIL QUEBRADA — FALLBACK LOCAL (correção 2026-10).
+   *
+   * O `<img>` da thumbnail não tinha `onError`. Quando o recurso não carregava
+   * (404, arquivo vazio, reset de conexão), o navegador desenhava o ÍCONE DE
+   * IMAGEM QUEBRADA e o texto `alt` — que aqui é o NOME DO ARQUIVO. Era
+   * exatamente o sintoma visto no Editor em Lote durante a importação.
+   *
+   * REGRA (sem inventar thumbnail, sem tocar URL/BASE_URL/backend):
+   * · carrega normalmente → comportamento visual IDENTICO ao anterior;
+   * · falha            → volta ao placeholder JÁ EXISTENTE ("VÍDEO ORIGINAL"),
+   *   o mesmo dos 3 ramos abaixo (item sem thumbnail ainda usa esse caminho).
+   *
+   * SEM LOOP — e esse é o ponto delicado: `onError` grava o item como falho e o
+   * `<img>` SAI DA ÁRVORE, então o navegador não pode disparar `error` de novo
+   * naquele elemento (o placeholder não carrega nada). O `useEffect` só rearma o
+   * sinalizador quando a URL MUDA (re-hidratação publica outra thumbnail) — no
+   * máximo UMA tentativa por URL, nunca um ciclo.
+   * ------------------------------------------------------------------ */
   /* O CONTEÚDO do vídeo (player real OU miniatura OU placeholder) — o MESMO
      elemento nos dois caminhos de composição (janela/legado): só a geometria
      externa muda, nunca o que é desenhado. */
@@ -528,15 +557,16 @@ export default function EditorCanvas({
       onDimensoes={aoDimensoesVideo}
       destinoControles={destinoControles}
     />
-  ) : item && item.thumbnail ? (
+  ) : urlThumbnail && !thumbnailFalhou ? (
     <img
-      src={item.thumbnail}
+      src={urlThumbnail}
       alt={item.nome || 'Video'}
       loading="lazy"
       decoding="async"
       draggable={false}
       className="w-full h-full pointer-events-none"
       style={{ objectFit: 'cover' }}
+      onError={() => setThumbnailFalhou(true)}
     />
   ) : (
     <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
@@ -545,7 +575,7 @@ export default function EditorCanvas({
         VÍDEO ORIGINAL
       </span>
     </div>
-  )), [podeEditar, urlVideoAtiva, claveReproductor, aoDimensoesVideo, destinoControles, item]);
+  )), [podeEditar, urlVideoAtiva, claveReproductor, aoDimensoesVideo, destinoControles, urlThumbnail, thumbnailFalhou, item]);
 
   // Escalada do canvas 9:16: observa o CONTENEDOR da célula (contenedorRef)
   // e calcula a maior escala que mantiene a proporção 1080×1920 cabendo inteira

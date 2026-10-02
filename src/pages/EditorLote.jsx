@@ -1252,12 +1252,28 @@ export default function EditorLote() {
   }, [descarregar]);
 
   /**
-   * DETECÇÃO AUTOMÁTICA DE BORDAS NO IMPORT (fundo, por vídeo) — DIAGNÓSTICO.
+   * DETECÇÃO AUTOMÁTICA DE BORDAS (por vídeo) — DIAGNÓSTICO.
+   *
+   * ⚠️ NÃO É MAIS CHAMADA AUTOMATICAMENTE NA IMPORTAÇÃO (correção 2026-10).
+   *
+   * MOTIVO (gargalo medido): esta função era disparada por `aoAdicionarVideo`
+   * para CADA vídeo importado, sem `await` e SEM qualquer limite de
+   * concorrência. Cada disparo abre um `<video preload="auto">` e executa 20
+   * seeks sequenciais (`detectorBordas.js`), ou seja, baixa o ARQUIVO INTEIRO.
+   * Importando 70 vídeos, isso abria ~70 `<video>` ao mesmo tempo — todos
+   * disputando banda e o pool de conexões do navegador (~6 por host) CONTRA os
+   * próprios uploads. Os `<video>` do detector ficam FORA do `usePoolDeVideos`
+   * (limite de 3), que só governa o preview. Resultado: o contador
+   * "Importando X/Y" travava (ex.: 20/70) sem que o `POST /api/upload` fosse o
+   * culpado — ele responde 201 antes de ffprobe/thumbnail.
+   *
+   * A FUNÇÃO FOI MANTIDA DE PROPÓSITO (e o `detectorBordas.js` NÃO foi tocado):
+   * ela continua sendo o caminho correto para gravar a INFORMAÇÃO `deteccao`,
+   * e pode ser religada por uma ação explícita do usuário sem reimplementação.
    *
    * Dispara `detectarBordasDoVideo` (a MESMA função de produção, sem
-   * reimplementação: cria <video>, faz seek e desenha no <canvas>) assim que o
-   * vídeo entra na lista e guarda o resultado em `config.overridesPorVideo` como
-   * INFORMAÇÃO (`deteccao`).
+   * reimplementação: cria <video>, faz seek e desenha no <canvas>) e guarda o
+   * resultado em `config.overridesPorVideo` como INFORMAÇÃO (`deteccao`).
    *
    * REGRA FUNDAMENTAL (FASE 0/FASE 1): um vídeo recém-importado NÃO pode nascer
    * com uma edição efetiva. A detecção NUNCA cria corte manual nem corte
@@ -1280,6 +1296,10 @@ export default function EditorLote() {
    *
    * O `detectorBordas.js` NÃO foi tocado: esta é a ÚNICA chamada dele.
    */
+  // MANTIDA DE PROPÓSITO: sem chamada automática no import (ver o motivo acima).
+  // Segue disponível para ser religada por uma ação explícita do usuário, sem
+  // reimplementar nada.
+  // oxlint-disable-next-line no-unused-vars
   const detectarCorteAutomatico = useCallback(async (videoId, urlFonte) => {
     if (!videoId || !urlFonte) return;
     try {
@@ -1317,8 +1337,6 @@ export default function EditorLote() {
       // Importou vídeo novo: o fluxo normal de auto-select volta a valer (não faz
       // sentido manter o editor "sem vídeo base" depois de uma importação).
       preservarSemBaseRef.current = false;
-      const urlFonte = novo.urlFonte || novo.url || null;
-      const novoId = novo.id || novo.bibliotecaId || null;
       setItens((atual) => {
         // Sem limite de quantidade — só evita duplicado (mesmo vídeo da
         // biblioteca importado duas vezes).
@@ -1350,18 +1368,24 @@ export default function EditorLote() {
       // `corteBordas` global, a área e a posição NÃO são tocados. A config
       // compartilhada do lote é preservada intacta (como sempre foi).
       //
-      // DETECÇÃO AUTOMÁTICA: dispara em FUNDO e grava SÓ INFORMAÇÃO (`deteccao`).
-      // Não é aguardada — o import nunca trava por causa da detecção — e ela
-      // NUNCA cria corte efetivo: só informa, e vira corte se o usuário clicar
-      // em "Usar detecção".
-      if (novoId && urlFonte) {
-        // Entra no espelho de ids ANTES de detectar: a detecção é assíncrona e
-        // pode terminar antes do re-render que popula `itens`.
-        idsNoLoteRef.current.add(novoId);
-        detectarCorteAutomatico(novoId, urlFonte);
-      }
+      // DETECÇÃO DE BORDAS — NÃO É DISPARADA AQUI (correção 2026-10).
+      //
+      // Antes este bloco chamava `detectarCorteAutomatico(novoId, urlFonte)` para
+      // CADA vídeo importado, sem `await` e sem limite de concorrência. Como
+      // cada disparo baixa o vídeo INTEIRO (20 seeks em `<video preload=auto>`),
+      // importar 70 vídeos abria ~70 `<video>` simultâneos — eles ficam FORA do
+      // `usePoolDeVideos` (limite 3) e disputavam banda e o pool de conexões
+      // (~6 por host) CONTRA os próprios uploads, travando "Importando X/Y".
+      // O `POST /api/upload` NÃO era o culpado: ele responde 201 antes de
+      // ffprobe/thumbnail.
+      //
+      // A detecção NUNCA foi necessária para importar, exibir, editar ou
+      // processar um vídeo: ela só grava a INFORMAÇÃO `deteccao` e nunca cria
+      // corte efetivo. Passou a ser responsabilidade EXCLUSIVA de uma ação
+      // explícita do usuário. `detectarCorteAutomatico` foi mantida (acima),
+      // pronta para ser religada por essa ação.
     },
-    [detectarCorteAutomatico]
+    []
   );
 
   const aoSelecionar = useCallback((item) => setIdSelecionado(item.id), []);
