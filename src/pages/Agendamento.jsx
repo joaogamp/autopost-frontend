@@ -36,7 +36,7 @@ import {
   Zap,
 } from 'lucide-react';
 
-const MAX_LEGENDA = 2200; // limite de caracteres da legenda do Instagram
+const MAX_DESCRICAO = 2200; // limite real do `caption` na API do Instagram (ver backend src/descricao.js)
 
 // Configuração inicial do agendamento em lote (reaproveitada da regra salva
 // quando existir — ver useEffect de carregar a regra).
@@ -76,7 +76,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
   const [finalId, setFinalId] = useState('');
   const [data, setData] = useState('');
   const [horario, setHorario] = useState('');
-  const [legenda, setLegenda] = useState('');
+  const [descricao, setDescricao] = useState('');
 
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState('');
@@ -96,6 +96,11 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
   const [salvandoEd, setSalvandoEd] = useState(false);
 
   const [regraAberta, setRegraAberta] = useState(false);
+
+  // Descrição do LOTE: UMA descrição para os N vídeos do lote. Pertence ao
+  // lote/agendamento (nunca a cada vídeo) — o backend replica a MESMA string em
+  // todos os registros, então todos saem com o texto idêntico.
+  const [descricaoLote, setDescricaoLote] = useState('');
 
   // ---- AGENDAMENTO EM LOTE ("Agendar todos os vídeos") ---------------------
   const [lote, setLote] = useState(LOTE_PADRAO);
@@ -305,6 +310,8 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
         itens,
         redes: previa.resumo?.redes || lote.redes,
         idempotencyKey: chaveIdemRef.current,
+        // UMA descrição para o lote inteiro: o servidor replica em todos os itens.
+        descricao: descricaoLote.trim() || undefined,
         contexto: {
           horarios: lote.horarios,
           videosPorDia: lote.videosPorDia,
@@ -355,7 +362,8 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
         redes: ['instagram'], // destino único na Fase 1 (YouTube não existe no backend)
         data,
         horario,
-        legenda: legenda.trim() || undefined, // persistência real chega na Fase 2
+        // A descrição é gravada no agendamento e usada na publicação.
+        descricao: descricao.trim() || undefined,
       });
       if (resultado?.erro) {
         setErro(resultado.erro);
@@ -364,7 +372,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
       setFinalId('');
       setData('');
       setHorario('');
-      setLegenda('');
+      setDescricao('');
       setSucesso('Publicação programada! Acompanhe o status em "Próximas publicações".');
       await carregar();
     } catch (e) {
@@ -535,6 +543,30 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
           </div>
         </div>
 
+        {/* Descrição do lote — UMA descrição para TODOS os vídeos */}
+        <div className="mt-5">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-bold text-text-dim">
+              Descrição (vale para todos os vídeos do lote)
+            </label>
+            <span className="text-[10px] font-mono text-text-muted">
+              {descricaoLote.length}/{MAX_DESCRICAO}
+            </span>
+          </div>
+          <textarea
+            rows={3}
+            maxLength={MAX_DESCRICAO}
+            value={descricaoLote}
+            onChange={(e) => setDescricaoLote(e.target.value)}
+            placeholder={'Confira essa dica incrível!\n\n#dicas #viral #instagram #reels'}
+            className="w-full resize-none bg-surface border border-line rounded-xl px-3 py-2 text-xs text-text outline-none focus:border-verde transition-colors"
+          />
+          <p className="text-[10px] text-text-muted mt-1">
+            A mesma descrição acompanha cada vídeo publicado neste lote, com as hashtags
+            exatamente como você digitou.
+          </p>
+        </div>
+
         {/* Feedback do lote */}
         {erroLote && (
           <p className="mt-4 flex items-start gap-1.5 text-xs font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 p-3 rounded-xl">
@@ -689,24 +721,24 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
             </div>
           </div>
 
-          {/* Legenda */}
+          {/* Descrição — texto que acompanha o vídeo publicado (com hashtags) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-text-dim">Legenda</label>
+              <label className="text-xs font-bold text-text-dim">Descrição</label>
               <span className="text-[10px] font-mono text-text-muted">
-                {legenda.length}/{MAX_LEGENDA}
+                {descricao.length}/{MAX_DESCRICAO}
               </span>
             </div>
             <textarea
               rows={3}
-              maxLength={MAX_LEGENDA}
-              value={legenda}
-              onChange={(e) => setLegenda(e.target.value)}
+              maxLength={MAX_DESCRICAO}
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
               placeholder="Texto que acompanha o post no Instagram…"
               className="w-full resize-none bg-surface border border-line rounded-xl px-3 py-2 text-xs text-text outline-none focus:border-verde transition-colors"
             />
             <p className="text-[10px] text-text-muted mt-1">
-              A legenda passará a ser salva e enviada com a publicação na Fase 2 (backend).
+              A descrição é enviada com o vídeo na publicação. Aceita várias linhas e hashtags.
             </p>
           </div>
 

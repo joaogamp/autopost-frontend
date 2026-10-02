@@ -164,9 +164,10 @@ export async function listarAgendamentos() {
 
 /**
  * Cria um agendamento (POST /api/agendamentos).
- * Body: { finalId?, bibliotecaId?, redes, data, horario, legenda? }
- * NOTA Fase 1: `legenda` é coletada na UI e enviada no body, mas o backend
- * ainda NÃO persiste nem usa esse campo — só na Fase 2.
+ * Body: { finalId?, bibliotecaId?, redes, data, horario, descricao? }
+ *
+ * `descricao` é o texto que acompanha o vídeo na publicação (com hashtags).
+ * O backend grava a string como enviada e a usa como `caption` na publicação.
  */
 export async function criarAgendamento(dados) {
   const r = await fetch(`${BASE_URL}/api/agendamentos`, {
@@ -234,12 +235,15 @@ export async function previaAgendamentoLote(config) {
  * `contexto` (horarios/videosPorDia/dataInicio da prévia) é reenviado para
  * que o `resumo` da resposta do save use o MESMO contexto da prévia; a
  * gravação em si usa só `itens` (nunca recalcula datas/horários).
+ *
+ * `descricao` é a ÚNICA descrição do lote: o servidor replica essa mesma
+ * string em TODOS os itens, então os N vídeos saem com o texto idêntico.
  */
-export async function salvarAgendamentoLote({ itens, redes, idempotencyKey, contexto }) {
+export async function salvarAgendamentoLote({ itens, redes, idempotencyKey, contexto, descricao }) {
   const r = await fetch(`${BASE_URL}/api/agendamentos/lote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ itens, redes, idempotencyKey, ...(contexto || {}) }),
+    body: JSON.stringify({ itens, redes, idempotencyKey, descricao, ...(contexto || {}) }),
   });
   const corpo = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -257,6 +261,10 @@ export async function salvarAgendamentoLote({ itens, redes, idempotencyKey, cont
  * existir, trocar SOMENTE esta implementação (as telas não mudam).
  * Falha explícita se o antigo não puder ser removido, para evitar publicação
  * duplicada silenciosa.
+ *
+ * A DESCRIÇÃO é carregada para o agendamento novo: remarcar muda apenas a
+ * data/horário, nunca o texto que acompanha a publicação (sem ela, o vídeo
+ * sairia sem legenda depois de um simples remanejamento de horário).
  */
 export async function remarcarAgendamento(agendamentoAntigo, { data, horario }) {
   const criado = await criarAgendamento({
@@ -265,6 +273,7 @@ export async function remarcarAgendamento(agendamentoAntigo, { data, horario }) 
     redes: agendamentoAntigo.redes && agendamentoAntigo.redes.length > 0 ? agendamentoAntigo.redes : ['instagram'],
     data,
     horario,
+    descricao: agendamentoAntigo.descricao || agendamentoAntigo.legenda || undefined,
   });
   try {
     await cancelarAgendamento(agendamentoAntigo.id);
