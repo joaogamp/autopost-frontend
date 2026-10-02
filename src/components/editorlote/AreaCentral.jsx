@@ -186,7 +186,10 @@ function AreaCentral(p) {
           ))}
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-2">
+      {/* ÚNICO container com rolagem da ÁREA CENTRAL: recebe a altura
+          disponível da coluna (via flex + min-h-0 do pai) e rola sozinho
+          com a scrollbar verde fina (regra `.edl-scroll-central`). */}
+      <div ref={containerRef} className="edl-scroll-central flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-2">
         {itens.length === 0 ? (
           <div className="h-full flex items-center justify-center">
             <div className="edl-superficie rounded-lg px-4 py-3 text-center max-w-[240px]">

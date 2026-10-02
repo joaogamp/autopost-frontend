@@ -399,6 +399,70 @@ select option {
   .edl-painel-camadas, .edl-painel-ferramentas { height: auto; }
 }
 
+/* ============================================================
+   ROLAGEM INDEPENDENTE DA ÁREA CENTRAL — desktop (≥ 769px).
+   SOMENTE estrutura: nenhuma lógica, texto, ícone, cor ou tamanho
+   de componente muda aqui.
+
+   ANTES: o `.edl-root` tinha `min-h-screen`, então a altura da
+   shell crescia junto com a quantidade de vídeos e quem rolava era
+   o DOCUMENTO inteiro — o painel direito subia junto e o
+   `position: sticky` do preview era apenas um remendo.
+
+   AGORA: a shell passa a ter a ALTURA DISPONÍVEL (aqui menos a
+   navbar fixa de 48px / `h-12`), a LINHA do grid ocupa `1fr`
+   dessa altura (nunca a soma do conteúdo das colunas) e cada
+   coluna vira um contêiner de altura fechada:
+     · CENTRO  — o `overflow-y: auto` que já existia em AreaCentral
+                  passa a rolar de verdade (é a rolagem pedida);
+     · DIREITA — continua no layout normal, visível, e rola POR
+                  DENTRO só se o painel for maior que a altura
+                  disponível (comportamento que o PainelFluxo já
+                  tinha);
+     · ESQUERDA — idem, a lista de vídeos já rola por dentro.
+   ============================================================ */
+@media (min-width: 769px) {
+  .edl-root {
+    /* 48px = altura fixa da BarraNavegacao (h-12) acima do editor. */
+    height: calc(100vh - 48px);
+    height: calc(100dvh - 48px);
+    min-height: 0; /* cancela o `min-h-screen` da marcação */
+    overflow: hidden; /* ninguém rola o documento dentro do editor */
+  }
+  /* A LINHA do grid tem exatamente a altura disponível: é o que
+     permite que os CONTEÚDENS maiores rolem por dentro das colunas. */
+  .edl-layout {
+    grid-template-rows: minmax(0, 1fr);
+    min-height: 0;
+  }
+  /* O preview não precisa mais de `sticky`: não existe rolagem de
+     página para "grudar" — ele simplesmente ocupa a coluna. */
+  .edl-preview-central {
+    position: static;
+    height: 100%;
+    min-height: 0;
+  }
+  .edl-painel-esquerdo, .edl-painel-direita {
+    height: 100%;
+    min-height: 0;
+  }
+}
+
+/* SCROLLBAR DA ÁREA CENTRAL — vertical, ~4px, verde #4dff88.
+   Trilho invisível (o fundo preto da interface é preservado) e
+   thumb verde discreto; no hover só um tom mais claro. Escopada a
+   UMA div (a de rolagem da área central): nenhuma outra rolagem da
+   aplicação é afetada. */
+.edl-scroll-central {
+  scrollbar-width: thin;
+  scrollbar-color: var(--edl-verde) transparent;
+}
+.edl-root .edl-scroll-central::-webkit-scrollbar { width: 4px; height: 4px; }
+.edl-root .edl-scroll-central::-webkit-scrollbar-track { background: transparent; }
+.edl-root .edl-scroll-central::-webkit-scrollbar-thumb { background: var(--edl-verde); border-radius: 9999px; }
+.edl-root .edl-scroll-central::-webkit-scrollbar-thumb:hover { background: var(--edl-verde-claro); }
+.edl-root .edl-scroll-central::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
 /* Adaptação web mobile; nenhuma regra abaixo muda o desktop. */
 @media (max-width: 768px) {
   .autopost-nav > div { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding-inline: 8px; }
