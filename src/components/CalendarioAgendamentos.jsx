@@ -44,7 +44,7 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
         </button>
 
         <p className="font-display text-base font-bold text-text tracking-wide">
-          {NOMES_MES[mes]} <span className="text-rosa font-mono text-sm ml-1 font-extrabold">{ano}</span>
+          {NOMES_MES[mes]} <span className="text-verde font-mono text-sm ml-1 font-extrabold">{ano}</span>
         </p>
 
         <button
@@ -84,18 +84,18 @@ export default function CalendarioAgendamentos({ mesAtual, agendamentos, diaSele
               onClick={() => onSelecionarDia(ehSelecionado ? null : chave)}
               className={`aspect-square rounded-xl p-1 flex flex-col items-center justify-between border transition-all duration-200 relative group ${
                 ehSelecionado
-                  ? 'border-rosa bg-rosa-dim/60 shadow-xs ring-1 ring-rosa/30'
+                  ? 'border-verde bg-verde-dim/60 shadow-xs ring-1 ring-verde/30'
                   : ehHoje
-                  ? 'border-rosa-borda bg-surface-hover'
+                  ? 'border-verde-borda bg-surface-hover'
                   : 'border-line hover:border-line-light hover:bg-surface-hover'
               }`}
             >
               <span
                 className={`text-xs font-bold ${
                   ehSelecionado
-                    ? 'text-rosa-hover'
+                    ? 'text-verde-hover'
                     : ehHoje
-                    ? 'text-rosa font-extrabold'
+                    ? 'text-verde font-extrabold'
                     : 'text-text-dim group-hover:text-text'
                 }`}
               >

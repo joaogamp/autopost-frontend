@@ -16,8 +16,8 @@ const CONFIG = {
     spin: true,
   },
   renderizando: {
-    bgDot: 'bg-purple-500 animate-pulse',
-    badge: 'bg-purple-500/10 text-purple-300 border-purple-500/30',
+    bgDot: 'bg-verde animate-pulse',
+    badge: 'bg-verde-dim text-verde-hover border-verde-borda/70',
     label: 'Renderizando',
     icon: Video,
     spin: true,
@@ -36,14 +36,14 @@ const CONFIG = {
   },
   // ---- Estados de AGENDAMENTO (rótulos da UI; valores internos não mudam) ----
   pronto: {
-    bgDot: 'bg-slate-300',
-    badge: 'bg-surface-hover text-text-dim border-line',
+    bgDot: 'bg-verde',
+    badge: 'bg-verde-dim text-verde-claro border-verde-borda/60',
     label: 'Pronto',
     icon: Film,
   },
   programado: {
-    bgDot: 'bg-rosa',
-    badge: 'bg-rosa-dim text-rosa-hover border-rosa-borda/80',
+    bgDot: 'bg-verde',
+    badge: 'bg-verde-dim text-verde-hover border-verde-borda/80',
     label: 'Programado',
     icon: Calendar,
   },
@@ -74,8 +74,8 @@ const CONFIG = {
   },
   // Compatibilidade: agendamentos vindos do backend com status interno 'agendado'.
   agendado: {
-    bgDot: 'bg-rosa',
-    badge: 'bg-rosa-dim text-rosa-hover border-rosa-borda/80',
+    bgDot: 'bg-verde',
+    badge: 'bg-verde-dim text-verde-hover border-verde-borda/80',
     label: 'Programado',
     icon: Calendar,
   },

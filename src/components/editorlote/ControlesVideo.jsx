@@ -164,7 +164,7 @@ export default function ControlesVideo({ src, estiloVideo = null, posicaoObjeto 
         step="0.05"
         value={Math.min(progreso, duracion > 0 ? duracion : 0)}
         onChange={(e) => buscar(e.target.value)}
-        className="flex-1 min-w-0 h-1.5 accent-pink-500 cursor-pointer"
+        className="flex-1 min-w-0 h-1.5 accent-verde cursor-pointer"
       />
 
       <button
@@ -184,7 +184,7 @@ export default function ControlesVideo({ src, estiloVideo = null, posicaoObjeto 
         step={1}
         value={silenciado ? 0 : volumen}
         onChange={(e) => aoCambiarVolumen(Number(e.target.value))}
-        className="w-14 h-1.5 accent-pink-500 cursor-pointer"
+        className="w-14 h-1.5 accent-verde cursor-pointer"
         title="Volume"
       />
     </div>

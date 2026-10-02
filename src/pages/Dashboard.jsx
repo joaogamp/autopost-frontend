@@ -136,7 +136,7 @@ export default function Dashboard() {
     return (
       <div className="flex items-center justify-center min-h-[300px]">
         <div className="flex items-center gap-3 text-text-muted text-sm font-medium">
-          <Loader2 className="w-5 h-5 text-rosa animate-spin" />
+          <Loader2 className="w-5 h-5 text-verde animate-spin" />
           <span>Carregando painel...</span>
         </div>
       </div>
@@ -178,7 +178,7 @@ export default function Dashboard() {
             title="Buscar dados agora"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface border border-line text-xs font-bold text-text-dim shadow-sm hover:text-text hover:border-line-light transition-colors disabled:opacity-60"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${atualizando ? 'animate-spin text-rosa' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${atualizando ? 'animate-spin text-verde' : ''}`} />
             <span>{atualizando ? 'Atualizando…' : 'Atualizar'}</span>
           </button>
         </div>
@@ -186,9 +186,9 @@ export default function Dashboard() {
 
       {/* Metrics Grid — todos os valores vêm do backend real */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <CartaoEstatistica rotulo="Vídeos" valor={contarVideosProgramados(agendamentos)} corDestaque="#8b5cf6" icon={Film} />
-        <CartaoEstatistica rotulo="Aguardando" valor={contarFila('aguardando')} corDestaque="#a1a1b0" icon={Clock} />
-        <CartaoEstatistica rotulo="Processando" valor={contarFila('processando')} corDestaque="#ec4899" icon={Loader2} />
+        <CartaoEstatistica rotulo="Vídeos" valor={contarVideosProgramados(agendamentos)} corDestaque="#7cff9b" icon={Film} />
+        <CartaoEstatistica rotulo="Aguardando" valor={contarFila('aguardando')} corDestaque="#aeb8b2" icon={Clock} />
+        <CartaoEstatistica rotulo="Processando" valor={contarFila('processando')} corDestaque="#4dff88" icon={Loader2} />
         <CartaoEstatistica rotulo="Concluídos" valor={contarFila('concluido')} corDestaque="#059669" icon={CheckCircle2} />
         <CartaoEstatistica rotulo="Erros" valor={contarFila('erro')} corDestaque="#e11d48" icon={AlertCircle} />
       </div>
@@ -197,7 +197,7 @@ export default function Dashboard() {
       <div className="glass-panel rounded-2xl border border-line overflow-hidden shadow-sm bg-surface">
         <div className="px-6 py-4.5 border-b border-line flex items-center justify-between bg-surface-hover/50">
           <div className="flex items-center gap-2.5">
-            <Activity className="w-4 h-4 text-rosa" />
+            <Activity className="w-4 h-4 text-verde" />
             <h3 className="font-display text-base font-bold text-text">Atividade recente</h3>
           </div>
           <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-lg bg-surface border border-line text-text-dim shadow-xs">
@@ -223,7 +223,7 @@ export default function Dashboard() {
                   className="flex items-center justify-between px-6 py-4 hover:bg-surface-hover/80 transition-colors duration-150 group"
                 >
                   <div className="min-w-0 pr-4">
-                    <p className="text-sm font-semibold text-text truncate max-w-lg group-hover:text-rosa transition-colors">
+                    <p className="text-sm font-semibold text-text truncate max-w-lg group-hover:text-verde transition-colors">
                       {item.tituloIA || '(sem título)'}
                     </p>
                     <p className="text-xs text-text-muted font-mono mt-0.5 flex items-center gap-1.5">

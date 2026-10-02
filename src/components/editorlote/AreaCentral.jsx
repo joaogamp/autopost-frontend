@@ -174,13 +174,13 @@ function AreaCentral(p) {
       <div className="shrink-0 px-3 py-1.5 border-b border-[color:var(--edl-borda)] flex items-center gap-2">
         <Film className="w-3.5 h-3.5 edl-icone-b shrink-0" />
         <h2 className="font-display text-xs font-extrabold text-white">Visualização</h2>
-        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--edl-roxo)' }}>
+        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: 'rgba(124, 255, 155,0.15)', color: 'var(--edl-verde-claro)' }}>
           {itens.length}
         </span>
         <div className="flex-1" />
         <div className="flex items-center gap-0.5 edl-superficie rounded-lg p-0.5 shrink-0" role="group" aria-label="Vídeos lado a lado">
           {MODOS_AREA.map((m) => (
-            <button key={m.colunas} type="button" title={m.titulo} aria-pressed={colunas === m.colunas} onClick={() => setColunas(m.colunas)} className="edl-ring-foco w-8 h-6 rounded-md text-[10px] font-black transition-colors" style={colunas === m.colunas ? { background: 'var(--edl-grad)', color: '#fff' } : { color: 'var(--edl-texto-mut)' }}>
+            <button key={m.colunas} type="button" title={m.titulo} aria-pressed={colunas === m.colunas} onClick={() => setColunas(m.colunas)} className="edl-ring-foco w-8 h-6 rounded-md text-[10px] font-black transition-colors" style={colunas === m.colunas ? { background: 'var(--edl-verde-fundo)', color: '#06120a' } : { color: 'var(--edl-texto-mut)' }}>
               {m.rotulo}
             </button>
           ))}

@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ImageOff, Trash2 } from 'lucide-react';
 import {
   CANVAS_LARGURA,
@@ -540,8 +540,8 @@ export default function EditorCanvas({
     />
   ) : (
     <div className="flex flex-col items-center justify-center w-full h-full pointer-events-none">
-      <ImageOff className="w-5 h-5" style={{ color: 'rgba(236,72,153,0.6)' }} />
-      <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(139,92,246,0.75)' }}>
+      <ImageOff className="w-5 h-5" style={{ color: 'rgba(77, 255, 136,0.6)' }} />
+      <span className="text-[8px] font-black tracking-widest" style={{ color: 'rgba(124, 255, 155,0.75)' }}>
         VÍDEO ORIGINAL
       </span>
     </div>

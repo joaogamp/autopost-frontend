@@ -1,5 +1,5 @@
 export default function CartaoEstatistica({ rotulo, valor, corDestaque, icon: Icon }) {
-  const accentColor = corDestaque || '#ec4899';
+  const accentColor = corDestaque || '#4dff88';
 
   return (
     <div className="glass-card rounded-2xl px-6 py-5 border border-line hover:border-line-light transition-all duration-200 relative overflow-hidden group shadow-sm bg-surface">

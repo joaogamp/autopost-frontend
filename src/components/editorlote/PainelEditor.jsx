@@ -72,7 +72,7 @@ function Deslizador({ rotulo, valor, min, max, passo = 1, sufixo = '', aoMudar }
         step={passo}
         value={valor}
         onChange={(e) => aoMudar(Number(e.target.value))}
-        className="w-full accent-pink-500 cursor-pointer"
+        className="w-full accent-verde cursor-pointer"
       />
     </div>
   );
@@ -92,7 +92,7 @@ function Alternar({ rotulo, ativo, aoMudar }) {
       </span>
       <span
         className="relative w-8 h-[18px] rounded-full transition-colors shrink-0"
-        style={{ background: ativo ? 'var(--edl-grad)' : 'rgba(255,255,255,0.15)' }}
+        style={{ background: ativo ? 'var(--edl-verde-fundo)' : 'rgba(255,255,255,0.15)' }}
       >
         <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all shadow" style={{ left: ativo ? 16 : 2 }} />
       </span>
@@ -109,7 +109,7 @@ function BotaoPequeno({ children, onClick, icone: Icone, tom = 'neutro', title }
     tom === 'perigo'
       ? 'border-rose-500/40 text-rose-300 hover:text-rose-200 hover:border-rose-400/70'
       : tom === 'destaque'
-        ? 'border-transparent text-white'
+        ? 'border-transparent text-[#06120a]'
         : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white';
   return (
     <button
@@ -117,7 +117,7 @@ function BotaoPequeno({ children, onClick, icone: Icone, tom = 'neutro', title }
       onClick={onClick}
       title={title}
       className={`edl-ring-foco flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-colors ${classe}`}
-      style={tom === 'destaque' ? { background: 'var(--edl-grad)' } : undefined}
+      style={tom === 'destaque' ? { background: 'var(--edl-verde-fundo)' } : undefined}
     >
       {Icone ? <Icone className="w-3 h-3" /> : null}
       {children}
@@ -335,10 +335,10 @@ function SelecaoTipografia({ t, aoMudar }) {
               onClick={() => aoMudar('alinhamento', a.id)}
               className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
                 t.alinhamento === a.id
-                  ? 'border-[color:var(--edl-rosa)] text-white'
+                  ? 'border-[color:var(--edl-verde)] text-white'
                   : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
               }`}
-              style={t.alinhamento === a.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+              style={t.alinhamento === a.id ? { background: 'rgba(77, 255, 136,0.14)' } : undefined}
             >
               {a.rotulo}
             </button>
@@ -432,10 +432,10 @@ function BlocoTexto({ chave, rotulo, t, aoAtualizarConfig }) {
               onClick={() => aoMudar('alinhamento', a.id)}
               className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-colors ${
                 t.alinhamento === a.id
-                  ? 'border-[color:var(--edl-rosa)] text-white'
+                  ? 'border-[color:var(--edl-verde)] text-white'
                   : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
               }`}
-              style={t.alinhamento === a.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+              style={t.alinhamento === a.id ? { background: 'rgba(77, 255, 136,0.14)' } : undefined}
             >
               {a.rotulo}
             </button>
@@ -532,7 +532,7 @@ function BlocoLogo({ config, aoAtualizarConfig, aoEscolherLogo, aoRemoverLogo })
         onChange={aoEscolherLogo}
       />
       <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+        <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0a0a0a' }}>
           {temLogo ? (
             <img src={config.logo.url} alt="Logo" className="max-w-full max-h-full object-contain" />
           ) : (
@@ -589,7 +589,7 @@ function BlocoSelo({ selo, aoAtualizarConfig, aoEscolherSelo, aoRemoverSelo }) {
       <span className="text-[11px] font-extrabold text-white">Selo de verificado</span>
       <input ref={inputRef} type="file" accept="image/png,image/webp" className="hidden" onChange={aoEscolherSelo} />
       <div className="flex items-center gap-3">
-        <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+        <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0a0a0a' }}>
           {temPng ? (
             <img src={s.urlImagem} alt="Selo" className="max-w-full max-h-full object-contain" />
           ) : (
@@ -642,7 +642,7 @@ function BlocoImagem({ imagem, aoAtualizarConfig, aoTrocarImagem, aoRemoverImage
         onChange={(e) => aoTrocarImagem(e, imagem.id)}
       />
       <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+        <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0a0a0a' }}>
           <img src={imagem.url} alt={imagem.nome || 'Imagem'} className="max-w-full max-h-full object-contain" />
         </div>
         <LinhaAcoes>
@@ -1108,8 +1108,8 @@ export default function PainelEditor({
                 type="button"
                 disabled
                 aria-disabled="true"
-                className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-[color:var(--edl-rosa)] text-white cursor-default"
-                style={{ background: 'rgba(236,72,153,0.14)' }}
+                className="flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border border-[color:var(--edl-verde)] text-white cursor-default"
+                style={{ background: 'rgba(77, 255, 136,0.14)' }}
               >
                 Cobrir (sempre preenche 100%)
               </button>
@@ -1146,7 +1146,7 @@ export default function PainelEditor({
                 step={10}
                 value={pctZoom}
                 onChange={(e) => aoMudarZoom(normalizarZoomVideo(Number(e.target.value) / 100))}
-                className="flex-1 h-1.5 accent-pink-500 cursor-pointer"
+                className="flex-1 h-1.5 accent-verde cursor-pointer"
               />
               <button
                 type="button"
@@ -1250,7 +1250,7 @@ export default function PainelEditor({
                   title={c}
                   onClick={() => aoAtualizarConfig((cfg) => ({ ...cfg, canvas: { ...cfg.canvas, corFundo: c } }))}
                   className={`w-7 h-7 rounded-lg border-2 transition-colors ${
-                    config.canvas?.corFundo === c ? 'border-[color:var(--edl-rosa)]' : 'border-[color:var(--edl-borda)]'
+                    config.canvas?.corFundo === c ? 'border-[color:var(--edl-verde)]' : 'border-[color:var(--edl-borda)]'
                   }`}
                   style={{ background: c }}
                 />
@@ -1345,10 +1345,10 @@ export default function PainelEditor({
                 aria-pressed={ativo}
                 className={`edl-ring-foco flex items-center justify-center gap-1.5 text-[10px] font-bold px-2 py-2.5 rounded-lg border transition-colors ${
                   ativo
-                    ? 'border-[color:var(--edl-rosa)] text-white'
+                    ? 'border-[color:var(--edl-verde)] text-white'
                     : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
                 }`}
-                style={ativo ? { background: 'rgba(236,72,153,0.14)' } : { background: 'rgba(255,255,255,0.02)' }}
+                style={ativo ? { background: 'rgba(77, 255, 136,0.14)' } : { background: 'rgba(255,255,255,0.02)' }}
               >
                 <Icone className={`w-3.5 h-3.5 ${ativo ? 'edl-icone-a' : 'edl-icone-b opacity-80'}`} />
                 {item.rotulo}
@@ -1405,10 +1405,10 @@ export default function PainelEditor({
                   onClick={() => aoSelecionarElemento(o.id)}
                   className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
                     elementoSelecionado === o.id
-                      ? 'border-[color:var(--edl-rosa)] text-white'
+                      ? 'border-[color:var(--edl-verde)] text-white'
                       : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
                   }`}
-                  style={elementoSelecionado === o.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+                  style={elementoSelecionado === o.id ? { background: 'rgba(77, 255, 136,0.14)' } : undefined}
                 >
                   {o.rotulo}
                 </button>
@@ -1452,10 +1452,10 @@ export default function PainelEditor({
                 onClick={() => trocarAlvoTexto(o.id)}
                 className={`edl-ring-foco flex-1 text-[10px] font-bold px-2 py-1.5 rounded-lg border transition-colors ${
                   alvoTexto === o.id
-                    ? 'border-[color:var(--edl-rosa)] text-white'
+                    ? 'border-[color:var(--edl-verde)] text-white'
                     : 'border-[color:var(--edl-borda)] text-[color:var(--edl-texto-dim)] hover:text-white'
                 }`}
-                style={alvoTexto === o.id ? { background: 'rgba(236,72,153,0.14)' } : undefined}
+                style={alvoTexto === o.id ? { background: 'rgba(77, 255, 136,0.14)' } : undefined}
               >
                 {o.rotulo}
               </button>

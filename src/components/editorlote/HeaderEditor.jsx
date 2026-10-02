@@ -2,7 +2,7 @@ import { Layers, Save, Zap, Loader2 } from 'lucide-react';
 
 /**
  * EDITOR EM LOTE — header superior.
- * Título + quantidade do lote + status + ações gerais com o gradiente rosa→roxo.
+ * Título + quantidade do lote + status + ações gerais com destaque verde.
  *
  * FLUXO (marcação → preview → composição):
  *  • "Implementar vídeo" — ÚNICA ação que renderiza: salva o template e
@@ -23,8 +23,8 @@ export default function HeaderEditor({
   return (
     <header className="shrink-0 px-5 py-3.5 border-b border-[color:var(--edl-borda)] bg-[color:var(--edl-painel)] flex items-center gap-4">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--edl-grad)' }}>
-          <Layers className="w-4 h-4 text-white" />
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--edl-verde-fundo)' }}>
+          <Layers className="w-4 h-4" style={{ color: '#06120a' }} />
         </div>
         <div className="min-w-0">
           <h1 className="font-display text-base font-extrabold tracking-tight text-white leading-none">
@@ -41,8 +41,8 @@ export default function HeaderEditor({
           className="edl-dot"
           style={{
             background:
-              status === 'Pronto' ? '#22c55e' : status === 'Processando' ? 'var(--edl-rosa)' : 'var(--edl-roxo)',
-            boxShadow: '0 0 8px rgba(236,72,153,0.5)',
+              status === 'Pronto' ? '#22c55e' : status === 'Processando' ? 'var(--edl-verde)' : 'var(--edl-verde-claro)',
+            boxShadow: '0 0 8px rgba(77, 255, 136,0.5)',
           }}
         />
         <span className="text-[11px] font-bold" style={{ color: 'var(--edl-texto-dim)' }}>
@@ -56,7 +56,7 @@ export default function HeaderEditor({
         <button
           onClick={aoSalvar}
           disabled={salvando}
-          className="edl-botao-fantasma edl-ring-foco flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+          className="edl-botao-fantasma edl-botao-verde edl-ring-foco flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg disabled:opacity-50"
         >
           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin edl-icone-a" /> : <Save className="w-3.5 h-3.5 edl-icone-a" />}
           Salvar
@@ -66,7 +66,7 @@ export default function HeaderEditor({
           disabled={processando}
           className="edl-botao-grad edl-ring-foco flex items-center gap-2 text-xs font-extrabold px-4 py-2 rounded-lg disabled:opacity-60"
         >
-          {processando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-white" />}
+          {processando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 fill-[#06120a]" />}
           {processando ? 'Enviando...' : 'Implementar vídeo'}
         </button>
       </div>

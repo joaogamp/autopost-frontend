@@ -440,7 +440,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
       <section className="glass-panel rounded-2xl border border-line bg-surface p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-rosa-dim border border-rosa-borda text-rosa flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-verde-dim border border-verde-borda text-verde flex items-center justify-center">
               <ListChecks className="w-4 h-4" />
             </div>
             <div>
@@ -471,7 +471,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
               max={12}
               value={lote.videosPorDia}
               onChange={(e) => definirVideosPorDia(e.target.value)}
-              className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+              className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
             />
             <p className="text-[10px] text-text-muted mt-1 font-medium">
               Um vídeo por horário configurado.
@@ -491,7 +491,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                     type="time"
                     value={horario}
                     onChange={(e) => mudarHorarioLote(i, e.target.value)}
-                    className="bg-surface border border-line rounded-xl px-2.5 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+                    className="bg-surface border border-line rounded-xl px-2.5 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
                   />
                   {lote.horarios.length > 1 && (
                     <button
@@ -509,7 +509,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                 type="button"
                 onClick={adicionarHorarioLote}
                 disabled={lote.horarios.length >= 12}
-                className="text-xs font-bold text-rosa hover:text-rosa-hover hover:underline disabled:opacity-40"
+                className="text-xs font-bold text-verde hover:text-verde-hover hover:underline disabled:opacity-40"
               >
                 + horário
               </button>
@@ -527,7 +527,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                 setPrevia(null);
                 setLote((atual) => ({ ...atual, dataInicio: e.target.value }));
               }}
-              className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+              className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
             />
             <p className="text-[10px] text-text-muted mt-1 font-medium">
               Dias consecutivos a partir desta data.
@@ -551,7 +551,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
 
         <div className="mt-5 flex items-center justify-between gap-4 flex-wrap">
           <p className="text-[11px] text-text-muted font-medium flex items-start gap-1.5 max-w-2xl">
-            <Info className="w-3.5 h-3.5 text-rosa shrink-0 mt-0.5" />
+            <Info className="w-3.5 h-3.5 text-verde shrink-0 mt-0.5" />
             <span>
               Nada é agendado sem conferência: primeiro montamos a <b>prévia</b> completa
               (data, horário e vídeo) e você confirma com <b>Salvar agendamento</b>.
@@ -561,7 +561,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
             type="button"
             onClick={abrirPrevia}
             disabled={carregandoPrevia || salvandoLote || finaisProntos.length === 0}
-            className="inline-flex items-center justify-center gap-2 bg-rosa hover:bg-rosa-hover text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-rosa/20 transition-all disabled:opacity-50"
+            className="inline-flex items-center justify-center gap-2 bg-verde hover:bg-verde-hover text-[#06120a] px-5 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-verde/20 transition-all disabled:opacity-50"
           >
             {carregandoPrevia ? <Loader2 className="w-4 h-4 animate-spin" /> : <ListChecks className="w-4 h-4" />}
             {carregandoPrevia ? 'Montando prévia…' : 'AGENDAR TODOS OS VÍDEOS'}
@@ -572,7 +572,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
         {/* Formulário — foco único: agendar */}
         <div className="glass-panel rounded-2xl p-6 border border-line shadow-sm space-y-5 bg-surface">
           <div className="flex items-center gap-2 border-b border-line pb-4">
-            <PlusCircle className="w-4 h-4 text-rosa" />
+            <PlusCircle className="w-4 h-4 text-verde" />
             <h3 className="font-display text-base font-bold text-text">Novo agendamento</h3>
           </div>
 
@@ -585,7 +585,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
               type="button"
               onClick={() => finaisDisponiveis.length > 0 && setSeletorAberto((v) => !v)}
               disabled={finaisDisponiveis.length === 0}
-              className="w-full flex items-center gap-3 bg-surface border border-line rounded-xl px-3 py-2.5 text-left outline-none focus:border-rosa transition-colors hover:border-line-light disabled:opacity-60"
+              className="w-full flex items-center gap-3 bg-surface border border-line rounded-xl px-3 py-2.5 text-left outline-none focus:border-verde transition-colors hover:border-line-light disabled:opacity-60"
             >
               {videoSelecionado ? (
                 <>
@@ -656,7 +656,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
             )}
             {finaisProntos.length > 0 && finaisDisponiveis.length === 0 && (
               <p className="text-[11px] text-text-muted bg-surface-hover border border-line p-2.5 rounded-xl mt-2 font-medium flex items-start gap-1.5">
-                <Info className="w-3.5 h-3.5 shrink-0 text-rosa mt-0.5" />
+                <Info className="w-3.5 h-3.5 shrink-0 text-verde mt-0.5" />
                 <span>
                   Todos os vídeos prontos já estão programados ou publicados. Novos vídeos
                   aparecem aqui ao terminar o processamento no Editor.
@@ -672,7 +672,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                 type="date"
                 value={data}
                 onChange={(e) => setData(e.target.value)}
-                className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+                className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
               />
             </div>
             <div>
@@ -684,7 +684,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                 type="time"
                 value={horario}
                 onChange={(e) => setHorario(e.target.value)}
-                className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+                className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
               />
             </div>
           </div>
@@ -703,7 +703,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
               value={legenda}
               onChange={(e) => setLegenda(e.target.value)}
               placeholder="Texto que acompanha o post no Instagram…"
-              className="w-full resize-none bg-surface border border-line rounded-xl px-3 py-2 text-xs text-text outline-none focus:border-rosa transition-colors"
+              className="w-full resize-none bg-surface border border-line rounded-xl px-3 py-2 text-xs text-text outline-none focus:border-verde transition-colors"
             />
             <p className="text-[10px] text-text-muted mt-1">
               A legenda passará a ser salva e enviada com a publicação na Fase 2 (backend).
@@ -715,7 +715,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
             <label className="text-xs font-bold text-text-dim block mb-1.5">Destino</label>
             <div
               className={`rounded-xl border px-3.5 py-2.5 flex items-center gap-2.5 ${
-                igConectado ? 'border-rosa-borda bg-rosa-dim/50' : 'border-amber-500/30 bg-amber-500/10'
+                igConectado ? 'border-verde-borda bg-verde-dim/50' : 'border-amber-500/30 bg-amber-500/10'
               }`}
             >
               <InstagramIcon className="w-4 h-4" />
@@ -763,14 +763,14 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
           <button
             onClick={agendar}
             disabled={enviando || finaisDisponiveis.length === 0}
-            className="w-full inline-flex items-center justify-center gap-2 bg-rosa hover:bg-rosa-hover text-white py-2.5 rounded-xl text-xs font-bold shadow-md shadow-rosa/20 transition-all disabled:opacity-50"
+            className="w-full inline-flex items-center justify-center gap-2 bg-verde hover:bg-verde-hover text-[#06120a] py-2.5 rounded-xl text-xs font-bold shadow-md shadow-verde/20 transition-all disabled:opacity-50"
           >
             {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarClock className="w-4 h-4" />}
             {enviando ? 'Agendando...' : 'Agendar publicação'}
           </button>
 
           <div className="text-[11px] text-text-muted pt-3 border-t border-line leading-relaxed font-medium flex items-start gap-1.5">
-            <Info className="w-3.5 h-3.5 text-rosa shrink-0 mt-0.5" />
+            <Info className="w-3.5 h-3.5 text-verde shrink-0 mt-0.5" />
             <span>
               A publicação é feita automaticamente pelo servidor no horário marcado
               {' '}({ROTULO_FUSO}) — o navegador não precisa estar aberto.
@@ -841,7 +841,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                           <td className="px-3 py-2.5 font-mono text-text-dim whitespace-nowrap">
                             {formatarData(ag.data)}
                           </td>
-                          <td className="px-3 py-2.5 font-mono font-bold text-rosa whitespace-nowrap">
+                          <td className="px-3 py-2.5 font-mono font-bold text-verde whitespace-nowrap">
                             {ag.horario}
                           </td>
                           <td className="px-3 py-2.5">
@@ -863,7 +863,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                                 <button
                                   onClick={() => abrirEdicao(ag)}
                                   title="Remarcar data/horário"
-                                  className="p-1.5 rounded-lg text-text-muted hover:text-rosa hover:bg-rosa-dim transition-colors"
+                                  className="p-1.5 rounded-lg text-text-muted hover:text-verde hover:bg-verde-dim transition-colors"
                                 >
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
@@ -946,7 +946,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
           className="w-full flex items-center justify-between glass-panel rounded-2xl border border-line px-5 py-3 bg-surface hover:border-line-light transition-colors"
         >
           <span className="flex items-center gap-2 text-xs font-bold text-text-dim">
-            <Zap className="w-3.5 h-3.5 text-rosa" />
+            <Zap className="w-3.5 h-3.5 text-verde" />
             Publicação automática
             <span className="hidden sm:inline text-[10px] font-medium text-text-muted">
               — avançado: todo vídeo pronto entra sozinho no próximo horário livre
@@ -973,7 +973,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
           >
             <div className="flex items-start justify-between gap-3 p-5 border-b border-line">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-rosa-dim border border-rosa-borda text-rosa flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-verde-dim border border-verde-borda text-verde flex items-center justify-center">
                   <ListChecks className="w-4 h-4" />
                 </div>
                 <div>
@@ -1012,7 +1012,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                 <p className="text-sm font-bold text-text">{previa.resumo?.prontos ?? 0}</p>
               </div>
               <div className="col-span-2 sm:col-span-4 flex items-center gap-1.5 flex-wrap">
-                <Clock className="w-3 h-3 text-rosa" />
+                <Clock className="w-3 h-3 text-verde" />
                 <span className="text-[11px] font-mono font-bold text-text-dim">
                   {(previa.resumo?.horarios || []).join(', ')}
                 </span>
@@ -1036,7 +1036,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                   <div className="rounded-xl border border-line divide-y divide-line overflow-hidden">
                     {dia.linhas.map(({ horario, item }) => (
                       <div key={`${dia.data}-${horario}`} className="flex items-center gap-3 px-3 py-2">
-                        <span className="text-[11px] font-mono font-bold text-rosa w-12 shrink-0">{horario}</span>
+                        <span className="text-[11px] font-mono font-bold text-verde w-12 shrink-0">{horario}</span>
                         {item ? (
                           <>
                             <span className="w-8 h-10 rounded-lg overflow-hidden shrink-0 border border-line bg-slate-900 flex items-center justify-center">
@@ -1097,7 +1097,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                     type="button"
                     onClick={salvarLote}
                     disabled={salvandoLote || (previa.plano || []).length === 0}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-rosa hover:bg-rosa-hover px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#06120a] bg-verde hover:bg-verde-hover px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
                   >
                     {salvandoLote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                     {salvandoLote ? 'Salvando…' : 'SALVAR AGENDAMENTO'}
@@ -1166,7 +1166,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                   type="date"
                   value={nd}
                   onChange={(e) => setNd(e.target.value)}
-                  className="mt-1 w-full text-xs font-semibold text-text bg-surface-hover border border-line rounded-xl px-2.5 py-2 outline-none focus:border-rosa"
+                  className="mt-1 w-full text-xs font-semibold text-text bg-surface-hover border border-line rounded-xl px-2.5 py-2 outline-none focus:border-verde"
                 />
               </label>
               <label className="block">
@@ -1175,7 +1175,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                   type="time"
                   value={nh}
                   onChange={(e) => setNh(e.target.value)}
-                  className="mt-1 w-full text-xs font-semibold text-text bg-surface-hover border border-line rounded-xl px-2.5 py-2 outline-none focus:border-rosa"
+                  className="mt-1 w-full text-xs font-semibold text-text bg-surface-hover border border-line rounded-xl px-2.5 py-2 outline-none focus:border-verde"
                 />
               </label>
             </div>
@@ -1196,7 +1196,7 @@ export default function Agendamento({ finalIdInicial = '', aoAbrirContas }) {
                 type="button"
                 onClick={confirmarEdicao}
                 disabled={salvandoEd}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-rosa hover:bg-rosa-hover px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#06120a] bg-verde hover:bg-verde-hover px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
               >
                 {salvandoEd && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Salvar
@@ -1240,7 +1240,7 @@ function ItensDoDia({ itens, onEditar, onCancelar, podeEditar, podeCancelar }) {
               <button
                 onClick={() => onEditar(ag)}
                 title="Remarcar"
-                className="p-1.5 rounded-lg text-text-muted hover:text-rosa hover:bg-rosa-dim transition-colors"
+                className="p-1.5 rounded-lg text-text-muted hover:text-verde hover:bg-verde-dim transition-colors"
               >
                 <Pencil className="w-3.5 h-3.5" />
               </button>

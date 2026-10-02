@@ -4,11 +4,11 @@ import { ArrowRight, CalendarClock, Clapperboard, Film, Layers, Music2, Play, Sc
 const ITENS = [
   { id: 'v1', tipo: 'video' }, { id: 'p1', tipo: 'dot' }, { id: 't1', tipo: 'timeline' },
   { id: 'b1', tipo: 'bloco' }, { id: 'c1', tipo: 'icone', Icone: Scissors, rotulo: 'CORTE' },
-  { id: 'p2', tipo: 'dotroxo' }, { id: 'l1', tipo: 'legenda' },
-  { id: 'c2', tipo: 'icone', Icone: Clapperboard, rotulo: 'CENA 04' }, { id: 'b2', tipo: 'blocoroxo' },
+  { id: 'p2', tipo: 'dot-claro' }, { id: 'l1', tipo: 'legenda' },
+  { id: 'c2', tipo: 'icone', Icone: Clapperboard, rotulo: 'CENA 04' }, { id: 'b2', tipo: 'bloco-claro' },
   { id: 'a1', tipo: 'audio' }, { id: 'p3', tipo: 'dot' },
   { id: 'c3', tipo: 'icone', Icone: Type, rotulo: 'TITULO' },
-  { id: 'c4', tipo: 'icone', Icone: CalendarClock, rotulo: '09:30' }, { id: 'p4', tipo: 'dotroxo' },
+  { id: 'c4', tipo: 'icone', Icone: CalendarClock, rotulo: '09:30' }, { id: 'p4', tipo: 'dot-claro' },
   { id: 'c5', tipo: 'icone', Icone: Layers, rotulo: '1080x1920' }, { id: 'b3', tipo: 'bloco' },
   { id: 'c6', tipo: 'icone', Icone: Film, rotulo: 'FINAL' }, { id: 'p5', tipo: 'dot' },
   { id: 'c7', tipo: 'icone', Icone: Music2, rotulo: 'AUDIO' },
@@ -17,9 +17,9 @@ const ITENS = [
 
 function Peca({ item }) {
   if (item.tipo === 'dot') return <span className="bv-particula" aria-hidden="true" />;
-  if (item.tipo === 'dotroxo') return <span className="bv-particula bv-particula-roxa" aria-hidden="true" />;
+  if (item.tipo === 'dot-claro') return <span className="bv-particula bv-particula-clara" aria-hidden="true" />;
   if (item.tipo === 'bloco') return <span className="bv-bloco" aria-hidden="true" />;
-  if (item.tipo === 'blocoroxo') return <span className="bv-bloco bv-bloco-roxo" aria-hidden="true" />;
+  if (item.tipo === 'bloco-claro') return <span className="bv-bloco bv-bloco-claro" aria-hidden="true" />;
   if (item.tipo === 'video') {
     return (
       <span className="bv-card bv-card-video" aria-hidden="true">
@@ -71,7 +71,7 @@ export default function BoasVindas({ aoEntrar }) {
         <p className="bv-sub">Sua ferramenta para editar e agendar publicações para o seu Instagram.</p>
         <div className="bv-palco" role="img" aria-label="Onda animada com elementos de video">
           <svg className="bv-linha-fundo bv-linha-a" height="70" preserveAspectRatio="none" viewBox="0 0 1200 70" aria-hidden="true">
-            <defs><linearGradient id="bvGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#ec4899" /><stop offset="1" stopColor="#8b5cf6" /></linearGradient></defs>
+            <defs><linearGradient id="bvGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#4dff88" /><stop offset="1" stopColor="#7cff9b" /></linearGradient></defs>
             <path d="M0,35 C100,5 200,5 300,35 C400,65 500,65 600,35 C700,5 800,5 900,35 C1000,65 1100,65 1200,35" />
           </svg>
           <svg className="bv-linha-fundo bv-linha-b" height="70" preserveAspectRatio="none" viewBox="0 0 1200 70" aria-hidden="true">

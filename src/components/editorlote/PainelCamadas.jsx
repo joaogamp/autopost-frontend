@@ -306,7 +306,7 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
           {temTemplate ? (
             <>
               <div className="flex items-center gap-3">
-                <div className="w-16 h-20 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+                <div className="w-16 h-20 rounded-lg overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0a0a0a' }}>
                   <img src={templateFundo.url} alt={templateFundo.nome || 'Template'} className="max-w-full max-h-full object-contain" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -351,7 +351,7 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
                   {templateVisivel ? <Eye className="w-3.5 h-3.5 edl-icone-a" /> : <EyeOff className="w-3.5 h-3.5 opacity-70" />}
                   Template visível
                 </span>
-                <span className="relative w-8 h-[18px] rounded-full transition-colors shrink-0" style={{ background: templateVisivel ? 'var(--edl-grad)' : 'rgba(255,255,255,0.15)' }}>
+                <span className="relative w-8 h-[18px] rounded-full transition-colors shrink-0" style={{ background: templateVisivel ? 'var(--edl-verde-fundo)' : 'rgba(255,255,255,0.15)' }}>
                   <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-all shadow" style={{ left: templateVisivel ? 16 : 2 }} />
                 </span>
               </button>
@@ -386,7 +386,7 @@ export default function PainelCamadas({ config, aoAtualizarConfig, elementoSelec
           </div>
           <div
             className={`group flex items-center gap-1.5 rounded-lg pr-1 transition-colors ${areaSelecionada ? '' : 'hover:bg-white/5'}`}
-            style={areaSelecionada ? { background: 'rgba(236,72,153,0.14)', boxShadow: 'inset 0 0 0 1.5px var(--edl-rosa)' } : null}
+            style={areaSelecionada ? { background: 'rgba(77, 255, 136,0.14)', boxShadow: 'inset 0 0 0 1.5px var(--edl-verde)' } : null}
           >
             <button
               type="button"

@@ -260,7 +260,7 @@ export default function Biblioteca({ aoAgendar }) {
             onClick={() => setFiltro(id)}
             className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all ${
               filtro === id
-                ? 'border-rosa-borda text-rosa-hover bg-rosa-dim'
+                ? 'border-verde-borda text-verde-hover bg-verde-dim'
                 : 'border-line text-text-muted hover:text-text-dim bg-surface-hover'
             }`}
           >
@@ -307,7 +307,7 @@ export default function Biblioteca({ aoAgendar }) {
             className="w-full flex items-center justify-between glass-panel rounded-2xl border border-line px-5 py-3 bg-surface hover:border-line-light transition-colors"
           >
             <span className="flex items-center gap-2 text-xs font-bold text-text-dim">
-              <Archive className="w-3.5 h-3.5 text-rosa" />
+              <Archive className="w-3.5 h-3.5 text-verde" />
               Histórico de publicados
               <span className="text-[10px] font-mono text-text-muted">· {publicados.length}</span>
             </span>
@@ -545,7 +545,7 @@ function rotuloFiltro(id) {
 function CicloVida({ estado }) {
   const idx = CICLO.indexOf(estado); // -1 para erro/cancelado
   const cor = (s) =>
-    s === 'publicado' ? 'bg-emerald-500' : s === 'publicando' ? 'bg-amber-500' : 'bg-rosa';
+    s === 'publicado' ? 'bg-emerald-500' : s === 'publicando' ? 'bg-amber-500' : 'bg-verde';
   return (
     <div
       className="flex items-center gap-1"
@@ -632,7 +632,7 @@ function CartaoVideo({ item, originais, aoAgendar, aoPreview, aoExcluir }) {
           {estado === 'pronto' ? (
             <button
               onClick={() => aoAgendar?.(f.id)}
-              className="w-full inline-flex items-center justify-center gap-1.5 bg-rosa hover:bg-rosa-hover text-white py-2 rounded-xl text-[11px] font-bold shadow-md shadow-rosa/20 transition-all"
+              className="w-full inline-flex items-center justify-center gap-1.5 bg-verde hover:bg-verde-hover text-[#06120a] py-2 rounded-xl text-[11px] font-bold shadow-md shadow-verde/20 transition-all"
             >
               <CalendarClock className="w-3.5 h-3.5" />
               Agendar

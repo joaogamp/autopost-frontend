@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Upload, LayoutTemplate, AlertCircle, X, Scissors, Wand2, RotateCcw, Power } from 'lucide-react';
 import {
   criarConfigPadrao,
@@ -7,7 +7,6 @@ import {
   CANVAS_LARGURA,
   CANVAS_ALTURA,
   CORTE_MAXIMO,
-  corteAutomaticoDoVideo,
   resumoDoCorteDoVideo,
   atualizarCorteNoConfig,
   usarCorteAutomaticoDoVideo,
@@ -89,33 +88,6 @@ export default function PainelFluxo({
 
   const templateFundo = (config && config.templateFundo) || {};
   const temTemplate = typeof templateFundo.url === 'string' && templateFundo.url.startsWith('data:image/');
-
-  /* --- DETECÇÃO AUTOMÁTICA DE BORDAS (INDICADOR MÍNIMO — somente leitura) ---
-   * A detecção roda sozinha no import (EditorLote.detectarCorteAutomatico) e
-   * grava SÓ INFORMAÇÃO em `config.overridesPorVideo[videoId].deteccao`. Ela
-   * NUNCA vira corte efetivo sozinha: o vídeo importado nasce sem edição.
-   * Aqui só AVISAMOS que a informação existe (texto pequeno por vídeo).
-   * NÃO é controle novo: sem slider, sem toggle, sem botão. O corte efetivo só
-   * nasce quando o usuário arrasta a linha/slider, ou clica em "Usar detecção". */
-  const cortesAutomaticos = (Array.isArray(itens) ? itens : []).map((item, indice) => {
-    const det = corteAutomaticoDoVideo(config, item?.id);
-    if (!det) return null;
-    const sup = Number(det.superior) || 0;
-    const inf = Number(det.inferior) || 0;
-    // Uma casa decimal, sem zero à direita: mostra o número QUE O DETECTOR
-    // GRAVOU (ex.: 34.5, 9.9) em vez de um inteiro arredondado que pareceria
-    // discordar do valor validado (arredondar 34.5 para "35%" seria enganoso).
-    const pct = (n) => `${Math.round(n * 10) / 10}%`;
-    const partes = [];
-    if (sup > 0) partes.push(`${pct(sup)} topo`);
-    if (inf > 0) partes.push(`${pct(inf)} base`);
-    if (partes.length === 0) return null;
-    return {
-      id: item.id,
-      nome: item.nome || rotuloDeVideo(indice),
-      texto: `corte automático: ${partes.join(' · ')}`,
-    };
-  }).filter(Boolean);
 
   /* --- CORTE MANUAL POR LINHAS (o MESMO vídeo, ajuste do usuário) -----------
    * FONTE SEPARADA da detecção: aqui NENHUM pixel é analisado. O usuário liga
@@ -218,8 +190,8 @@ export default function PainelFluxo({
         <div
           className="rounded-lg border p-2.5"
           style={{
-            borderColor: todosOsVideos ? 'var(--edl-rosa)' : 'rgba(56,189,248,0.55)',
-            background: todosOsVideos ? 'rgba(236,72,153,0.10)' : 'rgba(56,189,248,0.10)',
+            borderColor: todosOsVideos ? 'var(--edl-verde)' : 'rgba(56,189,248,0.55)',
+            background: todosOsVideos ? 'rgba(77, 255, 136,0.10)' : 'rgba(56,189,248,0.10)',
           }}
         >
           <div className="flex items-center justify-between gap-2">
@@ -241,7 +213,7 @@ export default function PainelFluxo({
                 : 'Desligado: editando apenas este vídeo. Ligue para editar todos os vídeos.'}
               onClick={() => aoAlternarEscopo(!todosOsVideos)}
               className="edl-ring-foco shrink-0 w-[46px] h-[26px] rounded-full relative transition-colors"
-              style={{ background: todosOsVideos ? 'var(--edl-rosa)' : 'rgba(56,189,248,0.35)', border: '1.5px solid rgba(255,255,255,0.35)' }}
+              style={{ background: todosOsVideos ? 'var(--edl-verde)' : '#2c2c2c', border: '1.5px solid rgba(255,255,255,0.28)' }}
             >
               <span
                 aria-hidden="true"
@@ -264,7 +236,7 @@ export default function PainelFluxo({
         </button>
         {temTemplate ? (
           <div className="flex items-center gap-2.5 edl-superficie rounded-lg p-2">
-            <div className="w-10 h-14 rounded-md overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0d0d13' }}>
+            <div className="w-10 h-14 rounded-md overflow-hidden shrink-0 flex items-center justify-center border border-[color:var(--edl-borda)]" style={{ background: '#0a0a0a' }}>
               <img src={templateFundo.url} alt={templateFundo.nome || 'Template'} className="max-w-full max-h-full object-contain" />
             </div>
             <div className="flex-1 min-w-0">
@@ -348,7 +320,7 @@ export default function PainelFluxo({
               </div>
 
               {/* (1) DETECÇÃO AUTOMÁTICA — somente leitura (diagnóstico). */}
-              <div className="rounded-lg px-2.5 py-2 border" style={{ borderColor: 'rgba(236,72,153,0.35)', background: 'rgba(236,72,153,0.06)' }}>
+              <div className="rounded-lg px-2.5 py-2 border" style={{ borderColor: 'rgba(77, 255, 136,0.35)', background: 'rgba(77, 255, 136,0.06)' }}>
                 <div className="flex items-center gap-1.5 mb-1">
                   <Wand2 className="w-3 h-3 shrink-0 edl-icone-a" />
                   <span className="text-[9px] font-extrabold uppercase tracking-wider" style={{ color: 'var(--edl-texto-mut)' }}>
@@ -370,7 +342,7 @@ export default function PainelFluxo({
                     onClick={aoUsarAutomatico}
                     title="Aplicar o valor detectado como corte manual deste vídeo (só entra no vídeo final depois disso)"
                     className="edl-ring-foco mt-1.5 w-full flex items-center justify-center gap-1.5 text-[10px] font-extrabold py-1.5 rounded-lg"
-                    style={{ background: 'rgba(236,72,153,0.18)', color: '#fff' }}
+                    style={{ background: 'rgba(77, 255, 136,0.18)', color: '#06120a' }}
                   >
                     <RotateCcw className="w-3 h-3" />
                     Usar detecção
@@ -448,31 +420,6 @@ export default function PainelFluxo({
               </button>
             </>
           )}
-
-          {/* Panorâmica do LOTE: cada vídeo com corte DETECTADO (origem auto),
-              em qualquer modo. Leitura pura. */}
-          {cortesAutomaticos.length > 0 ? (
-            <div className="pt-2 border-t border-[color:var(--edl-borda)]">
-              <p className="text-[9px] font-bold uppercase tracking-wider mb-1.5" style={{ color: 'var(--edl-texto-mut)' }}>
-                Automático no lote
-              </p>
-              <ul className="flex flex-col gap-1">
-                {cortesAutomaticos.map((c) => (
-                  <li key={c.id} className="flex items-start gap-1.5 min-w-0">
-                    <Scissors className="w-3 h-3 shrink-0 mt-px edl-icone-a" />
-                    <span className="min-w-0">
-                      <span className="block text-[9px] font-bold truncate" style={{ color: 'var(--edl-texto-dim)' }}>
-                        {c.nome}
-                      </span>
-                      <span className="block text-[9px] font-semibold truncate" style={{ color: 'var(--edl-texto-mut)' }}>
-                        {c.texto}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </div>
       </div>
 

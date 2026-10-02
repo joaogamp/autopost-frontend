@@ -68,7 +68,7 @@ export default function RegraPublicacao() {
     <div className="glass-panel rounded-2xl p-6 border border-line shadow-sm mb-8">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-rosa-dim border border-rosa-borda text-rosa flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-verde-dim border border-verde-borda text-verde flex items-center justify-center">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
@@ -106,7 +106,7 @@ export default function RegraPublicacao() {
                   type="time"
                   value={horario}
                   onChange={(e) => mudarHorario(i, e.target.value)}
-                  className="bg-surface border border-line rounded-xl px-3 py-1.5 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+                  className="bg-surface border border-line rounded-xl px-3 py-1.5 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
                 />
                 {regra.horarios.length > 1 && (
                   <button
@@ -120,7 +120,7 @@ export default function RegraPublicacao() {
             ))}
             <button
               onClick={adicionarHorario}
-              className="text-xs font-bold text-rosa hover:text-rosa-hover hover:underline pt-1 inline-block"
+              className="text-xs font-bold text-verde hover:text-verde-hover hover:underline pt-1 inline-block"
             >
               + Adicionar horário
             </button>
@@ -138,7 +138,7 @@ export default function RegraPublicacao() {
                   onClick={() => alternarDia(dia.valor)}
                   className={`text-xs font-bold w-10 py-2 rounded-xl border transition-all ${
                     ativo
-                      ? 'border-rosa-borda text-rosa-hover bg-rosa-dim shadow-xs'
+                      ? 'border-verde-borda text-verde-hover bg-verde-dim shadow-xs'
                       : 'border-line text-text-muted hover:border-line-light hover:text-text bg-surface-hover'
                   }`}
                 >
@@ -161,7 +161,7 @@ export default function RegraPublicacao() {
                   onClick={() => alternarRede(rede.id)}
                   className={`text-xs px-4 py-2 rounded-xl border font-bold transition-all ${
                     ativo
-                      ? 'border-rosa-borda text-rosa-hover bg-rosa-dim shadow-xs'
+                      ? 'border-verde-borda text-verde-hover bg-verde-dim shadow-xs'
                       : 'border-line text-text-muted bg-surface-hover hover:text-text-dim'
                   }`}
                 >
@@ -177,7 +177,7 @@ export default function RegraPublicacao() {
         <button
           onClick={salvar}
           disabled={salvando}
-          className="text-xs bg-rosa hover:bg-rosa-hover text-white px-5 py-2.5 rounded-xl font-bold shadow-md shadow-rosa/20 transition-all disabled:opacity-50 flex items-center gap-2"
+          className="text-xs bg-verde hover:bg-verde-hover text-[#06120a] px-5 py-2.5 rounded-xl font-bold shadow-md shadow-verde/20 transition-all disabled:opacity-50 flex items-center gap-2"
         >
           <span>{salvando ? 'Salvando...' : 'Salvar regra'}</span>
         </button>

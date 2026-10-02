@@ -38,8 +38,8 @@ export default function ModalSelecionarTemplate({ aoFechar, aoEscolher, template
       <div className="absolute inset-0 bg-black/60" onClick={aoFechar} />
       <div className="relative w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden border" style={{ background: 'var(--edl-painel)', borderColor: 'var(--edl-borda)' }}>
         <div className="shrink-0 px-5 py-4 border-b flex items-center gap-3" style={{ borderColor: 'var(--edl-borda)' }}>
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--edl-grad)' }}>
-            <LayoutTemplate className="w-4 h-4 text-white" />
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--edl-verde-fundo)' }}>
+            <LayoutTemplate className="w-4 h-4" style={{ color: '#06120a' }} />
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="font-display text-sm font-extrabold text-white leading-none">Adicionar template</h2>
@@ -69,8 +69,8 @@ export default function ModalSelecionarTemplate({ aoFechar, aoEscolher, template
                 const area = t.areaVideo;
                 return (
                   <li key={t.id}>
-                    <button type="button" onClick={() => setSelecionadoId(t.id)} aria-pressed={sel} title={t.nome || t.id} className="edl-ring-foco w-full text-left rounded-xl overflow-hidden border-2 transition-colors" style={sel ? { borderColor: 'var(--edl-rosa)', background: 'rgba(236,72,153,0.10)' } : { borderColor: 'var(--edl-borda)' }}>
-                      <span className="block aspect-[9/16] bg-[#121218] overflow-hidden">
+                    <button type="button" onClick={() => setSelecionadoId(t.id)} aria-pressed={sel} title={t.nome || t.id} className="edl-ring-foco w-full text-left rounded-xl overflow-hidden border-2 transition-colors" style={sel ? { borderColor: 'var(--edl-verde)', background: 'rgba(77, 255, 136,0.10)' } : { borderColor: 'var(--edl-borda)' }}>
+                      <span className="block aspect-[9/16] bg-[#0a0a0a] overflow-hidden">
                         <img src={urlPreviewTemplate(t.id)} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                       </span>
                       <span className="block px-2.5 py-2">

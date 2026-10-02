@@ -9,32 +9,31 @@
   /* ============================================================
      TEMA ESCURO GLOBAL — mesma paleta do Editor em Lote (edl-).
      Painel · Editor · Biblioteca · Agendamento · Contas usam o
-     MESMO fundo preto/quase-preto, superfícies e textos claros.
+     MESMO fundo preto NEUTRO, superfícies e textos claros.
+     IDENTIDADE: preto neutro + branco + verde fluorescente.
+     NENHUM fundo possui componente verde/azul/roxo/rosa — o verde
+     é EXCLUSIVAMENTE acento (botões, ícones, bordas ativas, estados).
      ============================================================ */
-  --color-base: #0a0a0f;
-  --color-surface: #111117;
-  --color-surface-hover: #16161d;
-  --color-surface-card: #16161d;
-  --color-line: #26262f;
-  --color-line-light: #3a3a46;
+  --color-base: #080808;
+  --color-surface: #0d0d0d;
+  --color-surface-hover: #1a1a1a;
+  --color-surface-card: #111111;
+  --color-line: #242424;
+  --color-line-light: #2c2c2c;
 
-  --color-marquee: #ec4899;
-  --color-marquee-hover: #f472b6;
-  --color-marquee-dim: rgba(236, 72, 153, 0.12);
+  /* Destaque verde fluorescente + apoio verde-claro */
+  --color-verde: #4dff88;
+  --color-verde-hover: #7cff9b;
+  --color-verde-dim: rgba(77, 255, 136, 0.10);
+  --color-verde-borda: rgba(77, 255, 136, 0.45);
+  --color-verde-claro: #7cff9b;
+  --color-verde-claro-hover: #a6ffbe;
+  --color-verde-claro-dim: rgba(124, 255, 155, 0.10);
+  --color-verde-claro-borda: rgba(124, 255, 155, 0.45);
 
-  /* Destaques (rosa) + detalhes (roxo) — identidade visual do Editor */
-  --color-rosa: #ec4899;
-  --color-rosa-hover: #f472b6;
-  --color-rosa-dim: rgba(236, 72, 153, 0.12);
-  --color-rosa-borda: rgba(236, 72, 153, 0.35);
-  --color-roxo: #8b5cf6;
-  --color-roxo-hover: #a78bfa;
-  --color-roxo-dim: rgba(139, 92, 246, 0.12);
-  --color-roxo-borda: rgba(139, 92, 246, 0.35);
-
-  --color-text: #f5f5f7;
-  --color-text-dim: #a1a1b0;
-  --color-text-muted: #6c6c7c;
+  --color-text: #f5f7f6;
+  --color-text-dim: #aeb8b2;
+  --color-text-muted: #78857e;
 
   --color-status-aguardando: #64748b;
   --color-status-processando: #2563eb;
@@ -51,20 +50,17 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2c2c38;
+  background: #2c2c2c;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.7), rgba(139, 92, 246, 0.7));
+  background: #4dff88;
 }
 
 body {
   background-color: var(--color-base);
   color: var(--color-text);
   font-family: var(--font-body);
-  background-image:
-    radial-gradient(ellipse at 50% 0%, rgba(236, 72, 153, 0.06) 0%, transparent 55%),
-    radial-gradient(circle at 100% 100%, rgba(139, 92, 246, 0.05) 0%, transparent 45%);
   background-attachment: fixed;
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
@@ -72,7 +68,7 @@ body {
 
 /* Seleção + dropdowns nativos no tema escuro global (mesmo tom do Editor) */
 ::selection {
-  background: rgba(139, 92, 246, 0.45);
+  background: rgba(77, 255, 136, 0.35);
 }
 select option {
   background: var(--color-surface);
@@ -81,29 +77,32 @@ select option {
 
 /* Dark SaaS Glassmorphism utilities — superfícies do tema escuro */
 .glass-panel {
-  background: rgba(17, 17, 23, 0.92);
+  background: rgba(13, 13, 13, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid #26262f;
+  border: 1px solid #242424;
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.55);
 }
 
 .glass-card {
-  background: #16161d;
+  background: #111111;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid #26262f;
+  border: 1px solid #242424;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
 }
 
 .glass-card:hover {
-  border-color: #3a3a46;
+  border-color: rgba(77, 255, 136, 0.30);
   box-shadow: 0 14px 34px -10px rgba(0, 0, 0, 0.6), 0 4px 10px -2px rgba(0, 0, 0, 0.35);
 }
 
 
 /* ============================================================
-   EDITOR EM LOTE — identidade rosa→roxo (preto + rosa + roxo).
+   EDITOR EM LOTE — identidade preto NEUTRO + branco + verde
+   fluorescente. Os FUNDOS (--edl-fundo/painel/card/borda) são
+   cinzas neutros: sem componente verde, azul, roxo ou rosa.
+   O verde fica só em --edl-verde* (ações, ícones, estados).
    A PALETA (--edl-*) agora é global (:root, compartilhada com o
    tema escuro das outras telas). As CLASSES `edl-` continuam
    escopadas ao editor — a navegação e as demais páginas usam os
@@ -112,17 +111,19 @@ select option {
 
 :root,
 .edl-root {
-  --edl-fundo: #0a0a0f;
-  --edl-painel: #111117;
-  --edl-card: #16161d;
-  --edl-borda: #26262f;
-  --edl-borda-hover: #3a3a46;
-  --edl-texto: #f5f5f7;
-  --edl-texto-dim: #a1a1b0;
-  --edl-texto-mut: #6c6c7c;
-  --edl-rosa: #ec4899;
-  --edl-roxo: #8b5cf6;
-  --edl-grad: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  --edl-fundo: #080808;
+  --edl-painel: #0d0d0d;
+  --edl-card: #111111;
+  --edl-borda: #242424;
+  --edl-borda-hover: #2c2c2c;
+  --edl-texto: #f5f7f6;
+  --edl-texto-dim: #aeb8b2;
+  --edl-texto-mut: #78857e;
+  --edl-verde: #4dff88;
+  --edl-verde-claro: #7cff9b;
+  /* Verde sólido (a referência não usa gradiente nos botões de ação). */
+  --edl-verde-fundo: #4dff88;
+  --edl-verde-fundo-hover: #7cff9b;
 
   background-color: var(--edl-fundo);
   color: var(--edl-texto);
@@ -130,7 +131,7 @@ select option {
 }
 
 .edl-root ::selection {
-  background: rgba(139, 92, 246, 0.45);
+  background: rgba(77, 255, 136, 0.35);
 }
 
 /* Painéis / superfícies */
@@ -144,18 +145,19 @@ select option {
   border: 1px solid var(--edl-borda);
 }
 .edl-superficie:hover {
-  border-color: var(--edl-borda-hover);
+  border-color: rgba(77, 255, 136, 0.32);
 }
 
 /* Botões */
 .edl-botao-grad {
-  background: var(--edl-grad);
-  color: #fff;
+  background: var(--edl-verde-fundo);
+  color: #06120a;
   transition: filter 0.15s ease, transform 0.1s ease;
-  box-shadow: 0 2px 12px -2px rgba(236, 72, 153, 0.35);
+  box-shadow: 0 2px 12px -2px rgba(77, 255, 136, 0.35);
 }
 .edl-botao-grad:hover {
-  filter: brightness(1.12) saturate(1.1);
+  background: var(--edl-verde-fundo-hover);
+  filter: brightness(1.05);
 }
 .edl-botao-grad:active {
   transform: scale(0.97);
@@ -167,14 +169,20 @@ select option {
   transition: all 0.15s ease;
 }
 .edl-botao-fantasma:hover {
-  background: rgba(236, 72, 153, 0.08);
-  border-color: var(--edl-borda-hover);
-  color: var(--edl-texto);
+  background: rgba(77, 255, 136, 0.08);
+  border-color: rgba(77, 255, 136, 0.45);
+  color: var(--edl-verde);
+}
+/* Variante discreta do botão SALVAR: fundo escuro + borda/texto verdes
+   (o hover continua vindo do `.edl-botao-fantasma:hover` acima). */
+.edl-botao-verde {
+  color: var(--edl-verde);
+  border-color: var(--edl-verde-borda);
 }
 
-/* Campos de entrada */
+/* Campos de entrada — fundo interno neutro (mais escuro que o card) */
 .edl-input {
-  background: #0d0d13;
+  background: #0a0a0a;
   border: 1px solid var(--edl-borda);
   color: var(--edl-texto);
   border-radius: 0.5rem;
@@ -182,8 +190,8 @@ select option {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .edl-input:focus {
-  border-color: var(--edl-roxo);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
+  border-color: var(--edl-verde);
+  box-shadow: 0 0 0 2px rgba(77, 255, 136, 0.25);
 }
 .edl-input::placeholder {
   color: var(--edl-texto-mut);
@@ -196,21 +204,20 @@ select option {
   transition: all 0.15s ease;
 }
 .edl-tab:hover {
-  color: var(--edl-texto);
-  border-bottom-color: var(--edl-borda-hover);
+  color: var(--edl-verde);
+  border-bottom-color: var(--edl-verde-borda);
 }
 .edl-tab-ativa {
-  color: #fff;
-  border-image: var(--edl-grad) 1;
-  border-bottom: 2px solid;
+  color: var(--edl-verde);
+  border-bottom: 2px solid var(--edl-verde);
 }
 
-/* Tratamento misto rosa+roxo para borda de card selecionado */
+/* Borda verde discreta do card selecionado */
 .edl-selecionado {
   position: relative;
   border-radius: 0.85rem;
   padding: 2px;
-  background: var(--edl-grad);
+  background: var(--edl-verde-borda);
 }
 .edl-selecionado > .edl-selecionado-interno {
   border-radius: 0.78rem;
@@ -218,9 +225,9 @@ select option {
   height: 100%;
 }
 
-/* Barra de progresso com gradiente */
+/* Barra de progresso */
 .edl-progresso {
-  background: var(--edl-grad);
+  background: var(--edl-verde);
   border-radius: 9999px;
   transition: width 0.3s ease;
 }
@@ -239,20 +246,20 @@ select option {
 
 /* Selo "BASE" (card do vídeo base) — discreto, sem brilho/glow */
 .edl-selo-base {
-  background: rgba(10, 10, 16, 0.55);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(8, 8, 8, 0.55);
+  color: rgba(245, 247, 246, 0.9);
   letter-spacing: 0.08em;
 }
 
 /* Lixeira discreta (lista de vídeos do Editor + card do vídeo base):
    compacta, sem brilho/glow — só escurece e pinta o ícone no hover. */
 .edl-lixeira {
-  background: rgba(10, 10, 16, 0.5);
-  color: rgba(255, 255, 255, 0.82);
+  background: rgba(8, 8, 8, 0.5);
+  color: rgba(245, 247, 246, 0.82);
   transition: color 0.12s ease, background-color 0.12s ease;
 }
 .edl-lixeira:hover {
-  background: rgba(10, 10, 16, 0.72);
+  background: rgba(8, 8, 8, 0.72);
   color: #f87171;
 }
 
@@ -262,8 +269,8 @@ select option {
    camada do vídeo. Aqui só o affordance: no hover a linha acende e a alça
    central cresce — indicando que é arrastável com o mouse. */
 .edl-corredor-corte:hover {
-  border-top-color: rgba(226, 232, 240, 0.95) !important;
-  border-bottom-color: rgba(226, 232, 240, 0.95) !important;
+  border-top-color: var(--edl-verde) !important;
+  border-bottom-color: var(--edl-verde) !important;
 }
 .edl-corredor-corte:hover > span {
   transform: translate(-50%, -50%) scale(1.25);
@@ -299,7 +306,7 @@ select option {
 
 /* Item 4 — handles/alças SÓ aparecem no elemento SELECIONADO (classe
    `edl-elemento-selecionado`, aplicada por Camadas ⇄ Preview). Elemento
-   não selecionado fica 100% limpo — sem bola rosa, sem tracinhos, nem no
+   não selecionado fica 100% limpo — sem bola de seleção, sem tracinhos, nem no
    hover. Ferramentas reais preservadas: área do vídeo, linhas de corte, drag. */
 .edl-texto-canvas [role="slider"],
 .edl-logo [role="slider"] {
@@ -322,11 +329,11 @@ select option {
   background: transparent;
 }
 .edl-root ::-webkit-scrollbar-thumb {
-  background: #2c2c38;
+  background: #2c2c2c;
   border-radius: 9999px;
 }
 .edl-root ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, rgba(236, 72, 153, 0.7), rgba(139, 92, 246, 0.7));
+  background: #4dff88;
 }
 
 /* Indicador de status */
@@ -338,7 +345,7 @@ select option {
 }
 
 .edl-grad-texto {
-  background: var(--edl-grad);
+  background: var(--edl-verde);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -346,12 +353,12 @@ select option {
 
 .edl-ring-foco:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 0 2px rgba(77, 255, 136, 0.5);
 }
 
-/* Ícones de ação alternando rosa/roxo */
-.edl-icone-a { color: var(--edl-rosa); }
-.edl-icone-b { color: var(--edl-roxo); }
+/* Ícones de ação em verde (principal) e verde-claro (apoio) */
+.edl-icone-a { color: var(--edl-verde); }
+.edl-icone-b { color: var(--edl-verde-claro); }
 
 /* Controles nativos dentro do editor: tema escuro + opções legíveis */
 .edl-root {
@@ -365,7 +372,7 @@ select option {
 /* SELEÇÃO DE ELEMENTO (Camadas ⇄ Preview): indicação DISCRETA — um contorno
    sólido neutro SÓ no elemento selecionado. Some ao clicar fora
    (deseleção), sem caixas permanentes. outline não altera layout.
-   (Antes: tracejado rosa ocupando toda a área — removido.) */
+   (Antes: tracejado de seleção ocupando toda a área — removido.) */
 .edl-elemento-selecionado {
   outline: 1px solid rgba(148, 163, 184, 0.8);
   outline-offset: 2px;

@@ -26,7 +26,7 @@ function corDaBarra(status) {
   if (status === 'concluido') return 'linear-gradient(90deg,#22c55e,#4ade80)';
   if (status === 'erro') return 'linear-gradient(90deg,#ef4444,#f87171)';
   if (status === 'aguardando') return 'linear-gradient(90deg,#f59e0b,#fbbf24)';
-  return 'linear-gradient(90deg,var(--edl-rosa),var(--edl-roxo))';
+  return 'linear-gradient(90deg,var(--edl-verde),var(--edl-verde-claro))';
 }
 
 function textoProgresso(item, percentual) {
@@ -46,7 +46,7 @@ function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar, aoRemover })
         <h2 className="font-display text-xs font-extrabold text-white">Vídeos importados</h2>
         <span
           className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0"
-          style={{ background: 'rgba(139,92,246,0.15)', color: 'var(--edl-roxo)' }}
+          style={{ background: 'rgba(124, 255, 155,0.15)', color: 'var(--edl-verde-claro)' }}
         >
           {itens.length}
         </span>
@@ -85,10 +85,10 @@ function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar, aoRemover })
                     className={`edl-ring-foco w-full flex items-center gap-2 rounded-lg pl-1.5 pr-8 py-1.5 text-left transition-colors border ${
                       selecionado ? 'border-transparent' : 'border-transparent hover:bg-white/5'
                     }`}
-                    style={selecionado ? { background: 'rgba(236,72,153,0.14)', boxShadow: 'inset 0 0 0 1.5px var(--edl-rosa)' } : null}
+                    style={selecionado ? { background: 'rgba(77, 255, 136,0.14)', boxShadow: 'inset 0 0 0 1.5px var(--edl-verde)' } : null}
                   >
                     {/* Mini-thumbnail 9:16 */}
-                    <span className="w-9 h-16 rounded-md overflow-hidden bg-[#121218] shrink-0 flex items-center justify-center">
+                    <span className="w-9 h-16 rounded-md overflow-hidden bg-[#0a0a0a] shrink-0 flex items-center justify-center">
                       {item.thumbnail ? (
                         <img src={item.thumbnail} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       ) : (
@@ -120,7 +120,7 @@ function ListaVideos({ itens, idSelecionado, aoSelecionar, aoFocar, aoRemover })
                     {selecionado && (
                       <span
                         className="shrink-0 w-2 h-2 rounded-full"
-                        style={{ background: 'var(--edl-grad)' }}
+                        style={{ background: 'var(--edl-verde-fundo)' }}
                         aria-hidden="true"
                       />
                     )}

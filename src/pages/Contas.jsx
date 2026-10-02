@@ -123,9 +123,9 @@ export default function Contas() {
                 <div className="p-4 rounded-xl bg-surface-hover border border-line space-y-2">
                   {contas.instagram.username && (
                     <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-rosa" />
+                      <User className="w-4 h-4 text-verde" />
                       <span className="text-xs text-text-muted font-bold">Conta:</span>
-                      <p className="text-sm font-extrabold text-rosa">@{contas.instagram.username.replace(/^@/, '')}</p>
+                      <p className="text-sm font-extrabold text-verde">@{contas.instagram.username.replace(/^@/, '')}</p>
                     </div>
                   )}
                   <p className="text-xs text-text-muted font-mono font-medium flex items-center gap-1.5">
@@ -151,7 +151,7 @@ export default function Contas() {
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
                     placeholder="Cole o token do Graph API aqui"
-                    className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs text-text outline-none focus:border-rosa transition-colors font-medium"
+                    className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs text-text outline-none focus:border-verde transition-colors font-medium"
                   />
                 </div>
                 <div>
@@ -162,13 +162,13 @@ export default function Contas() {
                     value={igUserId}
                     onChange={(e) => setIgUserId(e.target.value)}
                     placeholder="Deixe vazio: o ID é detectado pelo token"
-                    className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs font-mono font-semibold text-text outline-none focus:border-rosa transition-colors"
+                    className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 text-xs font-mono font-semibold text-text outline-none focus:border-verde transition-colors"
                   />
                 </div>
                 <button
                   onClick={detectar}
                   disabled={detectando || conectando}
-                  className="w-full bg-surface-hover border border-line hover:border-rosa text-text px-4 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full bg-surface-hover border border-line hover:border-verde text-text px-4 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <Search className="w-3.5 h-3.5" />
                   <span>{detectando ? 'Detectando contas...' : 'Detectar contas deste token'}</span>
@@ -183,9 +183,9 @@ export default function Contas() {
                         key={c.id}
                         onClick={() => conectar(String(c.id))}
                         disabled={conectando}
-                        className="w-full text-left px-3 py-2 rounded-lg bg-surface border border-line hover:border-rosa transition-colors flex items-center justify-between gap-2 disabled:opacity-50"
+                        className="w-full text-left px-3 py-2 rounded-lg bg-surface border border-line hover:border-verde transition-colors flex items-center justify-between gap-2 disabled:opacity-50"
                       >
-                        <span className="text-xs font-extrabold text-rosa truncate">
+                        <span className="text-xs font-extrabold text-verde truncate">
                           @{String(c.username || 'desconhecido').replace(/^@/, '')}
                         </span>
                         <span className="text-[10px] text-text-muted font-mono shrink-0">
@@ -200,7 +200,7 @@ export default function Contas() {
                 <button
                   onClick={() => conectar()}
                   disabled={conectando}
-                  className="w-full bg-rosa hover:bg-rosa-hover text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-rosa/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full bg-verde hover:bg-verde-hover text-[#06120a] px-4 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-verde/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <span>{conectando ? 'Testando conexão...' : 'Conectar Instagram'}</span>
                 </button>
@@ -238,7 +238,7 @@ export default function Contas() {
       </div>
 
       <div className="glass-panel p-4.5 rounded-2xl border border-line max-w-4xl flex items-start gap-3 bg-surface shadow-xs">
-        <Info className="w-5 h-5 text-rosa shrink-0 mt-0.5" />
+        <Info className="w-5 h-5 text-verde shrink-0 mt-0.5" />
         <p className="text-xs text-text-dim leading-relaxed font-medium">
           O <RedeLabel rede="instagram" /> baixa o vídeo através de uma URL pública no momento da publicação — o servidor
           precisa estar acessível pela internet (notadamente Oracle Cloud/public IP) na hora de publicar de verdade.
