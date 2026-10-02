@@ -1,36 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { listarFinais, listarAgendamentos, excluirFinal, excluirTodosOsVideos, buscarBiblioteca, urlArquivo } from '../lib/api';
+import { listarFinais, listarAgendamentos, excluirFinal, excluirTodosOsVideos, buscarBiblioteca, buscarContas, urlArquivo } from '../lib/api';
 import { statusUi, CICLO } from '../lib/status';
 import { formatarData } from '../lib/fuso';
 import StatusDot from '../components/StatusDot';
 import RedeIcon from '../components/RedeIcon';
-import { AlertTriangle, Archive, CalendarClock, ChevronDown, Loader2, Play, RefreshCw, Trash2, X } from 'lucide-react';
+import {
+  templateExibicao,
+  idCurto,
+  dataCurta,
+  descricaoDoAgendamento,
+  hashtagsDaDescricao,
+  duracaoTexto,
+  tamanhoLegivel,
+  orientacaoExclusao,
+  contagemPorEstado,
+} from '../lib/bibliotecaExibicao';
+import {
+  AlertTriangle, Archive, CalendarClock, ChevronDown, FileText,
+  Loader2, Lock, Play, RefreshCw, Trash2, X,
+} from 'lucide-react';
 
 /** Estados da Biblioteca com botão de excluir (PROGRAMADO orienta cancelar). */
 const EXCLUIVEL_BIBLIOTECA = new Set(['pronto', 'erro']);
 
 const INTERVALO_MS = 30 * 1000; // polling existente mantido (1 único timer)
-
-/** Nome do template p/ EXIBIÇÃO: 'undefined' (templates salvos com o bug antigo)
- * e vazio viram um rótulo neutro — os dados no servidor NÃO são alterados. */
-function templateExibicao(nome) {
-  const t = String(nome || '').trim();
-  return !t || t.toLowerCase() === 'undefined' ? 'Editor em Lote' : t;
-}
-
-/** Id curto estável: a ÚNICA forma confiável de distinguir cópias homônimas
- * (o downloader em massa gera vários arquivos com o MESMO nome de legenda e,
- * às vezes, CONTEÚDO diferente — o nome sozinho não identifica o vídeo). */
-function idCurto(id) {
-  return id ? String(id).slice(0, 8) : '';
-}
-
-/** Data compacta (dd/mm hh:mm) do FINAL — distingue re-processamentos do mesmo original. */
-function dataCurta(iso) {
-  const d = new Date(iso || '');
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
 
 /** Resumo textual da EXCLUSÃO EM MASSA (DELETE /api/biblioteca, sem id). */
 function resumoExclusaoTodos(r) {
@@ -101,7 +94,14 @@ export default function Biblioteca({ aoAgendar }) {
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
   const [filtro, setFiltro] = useState('todos');
+  // PAINEL DE DETALHES (substitui a antiga "prévia" solta): abre com o mesmo
+  // mecanismo de vídeo já usado antes (urlArquivo + <video controls>) e
+  // concentra TODA a ficha do vídeo. `preview` guarda o item aberto; o ÚNICO
+  // gatilho é o botão "Ver detalhes" do card (a thumbnail é só imagem).
   const [preview, setPreview] = useState(null);
+  // CONTA DE DESTINO (GET /api/contas) — só para EXIBIR o @usuário real da conta
+  // conectada. Leitura pura, nenhuma escrita e nenhuma mudança de backend.
+  const [contaIg, setContaIg] = useState(null);
   const [historicoAberto, setHistoricoAberto] = useState(false);
   const [excluindo, setExcluindo] = useState(null); // item { final, estado } em confirmação
   const [excluindoAgora, setExcluindoAgora] = useState(false);
@@ -168,6 +168,12 @@ export default function Biblioteca({ aoAgendar }) {
       const mapaOrig = {};
       for (const v of Array.isArray(bib) ? bib : []) mapaOrig[v.id] = v;
       setOriginais(mapaOrig);
+      // Conta de destino: leitura APARTE e tolerante a falha — se /api/contas
+      // não responder, a Biblioteca continua funcionando e apenas deixa de
+      // mostrar o @usuário (nunca quebra a listagem por causa disso).
+      buscarContas()
+        .then((c) => setContaIg(c?.instagram || null))
+        .catch(() => setContaIg(null));
       setErro('');
     } catch (e) {
       setErro(e?.message || 'Não foi possível carregar a Biblioteca.');
@@ -181,6 +187,22 @@ export default function Biblioteca({ aoAgendar }) {
     const t = setInterval(carregar, INTERVALO_MS);
     return () => clearInterval(t);
   }, [carregar]);
+
+  // ESC fecha a camada que estiver no topo (mesmo padrão de closure das telas
+  // existentes do projeto). Só um listener, registrado só enquanto há painel.
+  const algumAberto = Boolean(preview || excluindo || confirmarTodos || resultadoExcluirTodos);
+  useEffect(() => {
+    if (!algumAberto) return undefined;
+    function aoTeclar(e) {
+      if (e.key !== 'Escape') return;
+      if (preview) setPreview(null);
+      else if (excluindo) { if (!excluindoAgora) setExcluindo(null); }
+      else if (confirmarTodos) { if (!excluindoTodos) setConfirmarTodos(false); }
+      else if (resultadoExcluirTodos) setResultadoExcluirTodos(null);
+    }
+    window.addEventListener('keydown', aoTeclar);
+    return () => window.removeEventListener('keydown', aoTeclar);
+  }, [algumAberto, preview, excluindo, excluindoAgora, confirmarTodos, excluindoTodos, resultadoExcluirTodos]);
 
   const itens = useMemo(
     () =>
@@ -203,11 +225,9 @@ export default function Biblioteca({ aoAgendar }) {
     [finaisTodos, ags]
   );
 
-  const contagem = useMemo(() => {
-    const c = { todos: itens.length, pronto: 0, programado: 0, publicando: 0, publicado: 0, erro: 0, cancelado: 0 };
-    for (const it of itens) c[it.estado] = (c[it.estado] || 0) + 1;
-    return c;
-  }, [itens]);
+  // CONTAGEM por estado — só os estados que FILTROS realmente oferece
+  // (todos/pronto/programado/publicando/erro); ver `contagemPorEstado`.
+  const contagem = useMemo(() => contagemPorEstado(itens), [itens]);
 
   /** Total exibido na Biblioteca: operacionais (grade) + histórico de publicados. */
   const totalBiblioteca = itens.length + publicados.length;
@@ -252,22 +272,44 @@ export default function Biblioteca({ aoAgendar }) {
         </div>
       </div>
 
-      {/* Filtros por estado do ciclo */}
-      <div className="flex flex-wrap gap-1.5 mb-6">
-        {FILTROS.map(([id, rotulo]) => (
-          <button
-            key={id}
-            onClick={() => setFiltro(id)}
-            className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all ${
-              filtro === id
-                ? 'border-verde-borda text-verde-hover bg-verde-dim'
-                : 'border-line text-text-muted hover:text-text-dim bg-surface-hover'
-            }`}
-          >
-            {rotulo}
-            {contagem[id] ? <span className="font-mono"> · {contagem[id]}</span> : null}
-          </button>
-        ))}
+      {/* FILTROS por estado do ciclo — mesmos estados e mesma regra de sempre
+          (a lista continua sendo `itens`, sem mudar nada no que é filtrado).
+          A CONTAGEM ao lado de cada estado é sempre real e sempre visível
+          (inclusive 0), para o usuário enxergar de imediato onde estão os
+          vídeos. `contagem` sai dos próprios itens já carregados — nenhum
+          número é inventado. */}
+      <div
+        className="flex flex-wrap gap-2 mb-6"
+        role="group"
+        aria-label="Filtrar vídeos por estado"
+      >
+        {FILTROS.map(([id, rotulo]) => {
+          const ativo = filtro === id;
+          const total = contagem[id] || 0;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFiltro(id)}
+              aria-pressed={ativo}
+              title={`${total} vídeo(s) em "${rotulo}"`}
+              className={`inline-flex items-center gap-2 text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-colors ${
+                ativo
+                  ? 'border-verde-borda text-verde-hover bg-verde-dim'
+                  : 'border-line text-text-muted hover:text-text-dim hover:border-line-light bg-surface'
+              }`}
+            >
+              <span>{rotulo}</span>
+              <span
+                className={`font-mono text-[10px] min-w-[1.5rem] text-center px-1.5 py-0.5 rounded-md ${
+                  ativo ? 'bg-verde/15 text-verde-hover' : 'bg-surface-hover text-text-muted'
+                }`}
+              >
+                {total}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {loading ? (
@@ -291,9 +333,21 @@ export default function Biblioteca({ aoAgendar }) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        /* GRADE RESPONSIVA — 1 coluna no celular (o card tem thumbnail + nome +
+           meta, então 2 colunas espremiam o conteúdo), 2 no notebook pequeno,
+           3 em telas médias e 4/5 em telas grandes. A largura máxima do
+           contêiner (max-w-7xl) impede cards largos demais em monitores 4K. */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
           {visiveis.map((item) => (
-            <CartaoVideo key={item.final.id} item={item} originais={originais} aoAgendar={aoAgendar} aoPreview={setPreview} aoExcluir={(it) => { setExcluindo(it); setErroExcluir(''); }} />
+            <CartaoVideo
+              key={item.final.id}
+              item={item}
+              originais={originais}
+              contaIg={contaIg}
+              aoAgendar={aoAgendar}
+              aoPreview={setPreview}
+              aoExcluir={(it) => { setExcluindo(it); setErroExcluir(''); }}
+            />
           ))}
         </div>
       )}
@@ -486,51 +540,20 @@ export default function Biblioteca({ aoAgendar }) {
         </div>
       ) : null}
 
-      {/* Prévia do vídeo final */}
+      {/* PAINEL DE DETALHES — tudo sobre a publicação num lugar só, para não
+          obrigar o usuário a voltar ao Agendamento. O PLAYER é o MESMO
+          mecanismo de preview que já existia (urlArquivo(urlFinal) +
+          <video controls>): nada de segunda implementação de vídeo, upload ou
+          URL. Fecha com ESC, no X, ou clicando fora. */}
       {preview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setPreview(null)}
-        >
-          <div
-            className="w-full max-w-lg rounded-2xl border border-line bg-surface overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-line">
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold text-text truncate">{preview.final.nomeFinal || 'Vídeo'}</p>
-                {/* IDENTIDADE DO ORIGINAL — o que elimina a dúvida "esse final é do vídeo que eu editei?":
-                    nome/duração do ORIGINAL que gerou este final + id curto da cópia + data do final. */}
-                <p
-                  className="text-[10px] text-text-muted font-medium truncate mt-0.5"
-                  title={`Original: ${originais[preview.final.originalId]?.nomeOriginal || preview.final.originalId || 'desconhecido'}`}
-                >
-                  Original: {originais[preview.final.originalId]?.nomeOriginal || preview.final.originalId || 'desconhecido'}
-                  {originais[preview.final.originalId]?.duracaoSegundos
-                    ? ` (${originais[preview.final.originalId].duracaoSegundos}s)`
-                    : ''}
-                  {preview.final.originalId ? ` · cópia #${idCurto(preview.final.originalId)}` : ''}
-                  {preview.final.criadoEm ? ` · final ${dataCurta(preview.final.criadoEm)}` : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => setPreview(null)}
-                className="p-1.5 rounded-lg text-text-dim hover:text-text hover:bg-surface-hover transition-colors ml-2 shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <video src={urlArquivo(preview.final.urlFinal)} controls className="w-full max-h-[70vh] bg-black" />
-            <div className="px-4 py-2.5 flex items-center justify-between gap-3">
-              <p className="text-xs text-text-muted font-mono truncate">
-                {preview.ag
-                  ? `${formatarData(preview.ag.data)} • ${preview.ag.horario}`
-                  : 'Sem publicação programada'}
-              </p>
-              <StatusDot status={preview.estado} comRotulo />
-            </div>
-          </div>
-        </div>
+        <PainelDetalhes
+          item={preview}
+          originais={originais}
+          contaIg={contaIg}
+          aoFechar={() => setPreview(null)}
+          aoAgendar={aoAgendar}
+          aoExcluir={(it) => { setPreview(null); setExcluindo(it); setErroExcluir(''); }}
+        />
       )}
     </div>
   );
@@ -541,127 +564,501 @@ function rotuloFiltro(id) {
   return f ? f[1] : id;
 }
 
-/** Mini-stepper do ciclo: PRONTO → PROGRAMADO → PUBLICANDO → PUBLICADO. */
-function CicloVida({ estado }) {
-  const idx = CICLO.indexOf(estado); // -1 para erro/cancelado
-  const cor = (s) =>
-    s === 'publicado' ? 'bg-emerald-500' : s === 'publicando' ? 'bg-amber-500' : 'bg-verde';
+/**
+ * CICLO DE VIDA — as 4 etapas reais do vídeo: PRONTO → PROGRAMADO →
+ * PUBLICANDO → PUBLICADO. NÃO é barra de upload/processamento: os itens desta
+ * tela já estão CONCLUÍDOS na fila; o que se acompanha aqui é a etapa de
+ * PUBLICAÇÃO. Etapas passadas ficam em verde, a atual em destaque, as futuras
+ * neutras. ERRO/CANCELADO ficam fora do ciclo.
+ */
+const ETAPAS_CICLO = [
+  { estado: 'pronto', rotulo: 'Pronto' },
+  { estado: 'programado', rotulo: 'Programado' },
+  { estado: 'publicando', rotulo: 'Publicando' },
+  { estado: 'publicado', rotulo: 'Publicado' },
+];
+
+function CicloVida({ estado, comRotulos = false }) {
+  const idx = CICLO.indexOf(estado); // -1 para erro/cancelado (fora do ciclo)
+  const etapaAtual = ETAPAS_CICLO.find((e) => e.estado === estado);
+
+  if (comRotulos) {
+    return (
+      <ol className="flex items-center gap-1.5" aria-label="Etapa atual do ciclo de publicação">
+        {ETAPAS_CICLO.map((etapa, i) => (
+          <li key={etapa.estado} className="flex items-center gap-1.5 min-w-0">
+            <span
+              className={`text-[10px] font-bold whitespace-nowrap ${
+                idx === i ? 'text-verde-hover' : idx > i ? 'text-text-dim' : 'text-text-muted'
+              }`}
+            >
+              {etapa.rotulo}
+            </span>
+            {i < ETAPAS_CICLO.length - 1 && (
+              <span aria-hidden="true" className={`h-px w-4 sm:w-6 ${idx > i ? 'bg-verde-borda' : 'bg-line'}`} />
+            )}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
   return (
     <div
       className="flex items-center gap-1"
-      title="Ciclo: PRONTO → PROGRAMADO → PUBLICANDO → PUBLICADO"
+      title={`Etapa ${idx + 1} de ${CICLO.length}: ${etapaAtual ? etapaAtual.rotulo : 'fora do ciclo (erro/cancelado)'}`}
+      aria-label={`Ciclo de publicação — etapa atual: ${etapaAtual ? etapaAtual.rotulo : 'fora do ciclo'}`}
     >
-      {CICLO.map((s, i) => (
-        <span
-          key={s}
-          className={`h-1 flex-1 rounded-full transition-colors ${idx >= i ? cor(s) : 'bg-slate-700'}`}
-        />
-      ))}
+      {CICLO.map((s, i) => {
+        const cor =
+          s === 'publicado' ? 'bg-emerald-500' : s === 'publicando' ? 'bg-amber-500' : 'bg-verde';
+        const classes =
+          idx >= i ? (s === 'publicando' ? `${cor} animate-pulse` : cor) : 'bg-line-light';
+        return <span key={s} className={`h-1 flex-1 rounded-full transition-colors ${classes}`} />;
+      })}
     </div>
   );
 }
 
-/** Cartão de vídeo com o ciclo de vida e as ações (Agendar/Excluir). */
-function CartaoVideo({ item, originais, aoAgendar, aoPreview, aoExcluir }) {
-  const { final: f, estado, ag } = item;
-  const thumb = f.thumbnailFinal ? urlArquivo(f.thumbnailFinal) : null;
-  const video = f.urlFinal ? urlArquivo(f.urlFinal) : null;
-  const orig = originais ? originais[f.originalId] : null;
+/** Linha "rótulo: valor" da ficha de detalhes — some se não houver valor real. */
+function LinhaDado({ rotulo, children, mono = false }) {
+  if (children === null || children === undefined || children === '' || children === false) return null;
   return (
-    <div className="glass-panel rounded-2xl border border-line overflow-hidden bg-surface flex flex-col">
-      <div className="relative h-44 bg-slate-900">
+    <div className="flex items-start justify-between gap-4 py-1.5">
+      <dt className="text-[11px] font-medium text-text-muted shrink-0">{rotulo}</dt>
+      <dd className={`text-[11px] font-semibold text-text-dim text-right min-w-0 break-words ${mono ? 'font-mono' : ''}`}>
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+/** Orientações de exclusão por estado — mesma regra de sempre, texto sob demanda. */
+
+/**
+ * DESCRIÇÃO COMPLETA — texto cru do agendamento, exibido como está.
+ * `whitespace-pre-wrap` preserva quebras de linha, espaços, hashtags, emojis e
+ * acentuação; nada é remontado nem cortado. Se for longo, o bloco ROLA.
+ */
+function DescricaoCompleta({ texto }) {
+  return (
+    <section aria-label="Descrição da publicação">
+      <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-text-dim mb-2">
+        <FileText className="w-3.5 h-3.5 text-verde" />
+        Descrição
+      </h4>
+      <div className="rounded-xl border border-line bg-base px-3.5 py-3 max-h-64 overflow-y-auto">
+        <p className="text-xs text-text whitespace-pre-wrap break-words leading-relaxed">{texto}</p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * PAINEL DE DETALHES — ficha completa da publicação, para não obrigar o usuário
+ * a voltar à tela de Agendamento. O PLAYER usa o MESMO mecanismo de preview que
+ * já existia na Biblioteca (`urlArquivo(urlFinal)` + `<video controls>`): não
+ * há segunda implementação de carregamento de vídeo nem mudança no upload.
+ *
+ * Fecha por ESC (listener no componente pai), no X ou clicando fora.
+ */
+function PainelDetalhes({ item, originais, contaIg, aoFechar, aoAgendar, aoExcluir }) {
+  const { final: f, estado, ag } = item;
+  const orig = (originais && originais[f.originalId]) || null;
+  const urlVideo = f.urlFinal ? urlArquivo(f.urlFinal) : null;
+  const descricao = descricaoDoAgendamento(ag);
+  const hashtags = hashtagsDaDescricao(descricao);
+  const duracao = duracaoTexto(orig?.duracaoSegundos);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/85 p-3 sm:p-4 overflow-y-auto"
+      onClick={aoFechar}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Detalhes do vídeo ${f.nomeFinal || ''}`}
+    >
+      <div
+        className="w-full max-w-3xl rounded-2xl border border-line bg-surface overflow-hidden my-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* CABEÇALHO — nome do vídeo + status. */}
+        <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-line">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-bold text-text truncate" title={f.nomeFinal}>
+              {f.nomeFinal || 'Vídeo'}
+            </h3>
+            {/* IDENTIDADE DO ORIGINAL — elimina a dúvida "esse final é o vídeo que eu editei?". */}
+            <p
+              className="text-[10px] text-text-muted font-medium truncate mt-0.5"
+              title={`Original: ${orig?.nomeOriginal || f.originalId || 'desconhecido'}`}
+            >
+              Original: {orig?.nomeOriginal || f.originalId || 'desconhecido'}
+              {orig?.duracaoSegundos ? ` (${orig.duracaoSegundos}s)` : ''}
+              {f.originalId ? ` · cópia #${idCurto(f.originalId)}` : ''}
+              {f.criadoEm ? ` · final ${dataCurta(f.criadoEm)}` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <StatusDot status={estado} comRotulo />
+            <button
+              type="button"
+              onClick={aoFechar}
+              aria-label="Fechar detalhes"
+              className="p-1.5 rounded-lg text-text-dim hover:text-text hover:bg-surface-hover transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        {/* COLUNA PRINCIPAL — player, descrição completa e dados técnicos. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="p-4 sm:p-5 flex flex-col gap-5 min-w-0">
+            {urlVideo ? (
+              <video
+                src={urlVideo}
+                controls
+                preload="metadata"
+                className="w-full max-h-[45vh] rounded-xl bg-black border border-line"
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-line-light bg-base py-10 text-center text-[11px] text-text-muted font-medium">
+                Arquivo de vídeo indisponível para este registro.
+              </div>
+            )}
+
+            {descricao ? (
+              <>
+                <DescricaoCompleta texto={descricao} />
+                {hashtags.length > 0 && (
+                  <section aria-label="Hashtags da descrição">
+                    <h4 className="text-[11px] font-bold uppercase tracking-wide text-text-dim mb-2">
+                      Hashtags ({hashtags.length})
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {hashtags.map((h) => (
+                        <span
+                          key={h}
+                          className="text-[11px] font-medium text-verde-hover bg-verde-dim border border-verde-borda/50 rounded-lg px-2 py-0.5"
+                        >
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            ) : (
+              /* Vídeo sem descrição: informamos o motivo real, sem quebrar o layout. */
+              <section aria-label="Descrição da publicação">
+                <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-text-dim mb-2">
+                  <FileText className="w-3.5 h-3.5 text-text-muted" />
+                  Descrição
+                </h4>
+                <p className="rounded-xl border border-dashed border-line-light bg-base px-3.5 py-4 text-xs text-text-muted font-medium">
+                  {ag
+                    ? 'Este agendamento foi criado sem descrição — a publicação vai sem legenda.'
+                    : 'Este vídeo ainda não foi agendado, então ainda não existe descrição definida.'}
+                </p>
+              </section>
+            )}
+
+            {/* DADOS TÉCNICOS — ficam AQUI, e não no card, exatamente para não
+                poluir a visão rápida da grade. */}
+            <section aria-label="Dados técnicos">
+              <h4 className="text-[11px] font-bold uppercase tracking-wide text-text-dim mb-1.5">
+                Dados técnicos
+              </h4>
+              <dl className="divide-y divide-line">
+                <LinhaDado rotulo="ID do vídeo final" mono>{f.id}</LinhaDado>
+                <LinhaDado rotulo="ID do original" mono>{f.originalId || '—'}</LinhaDado>
+                <LinhaDado rotulo="ID do agendamento" mono>{ag?.id || '—'}</LinhaDado>
+                <LinhaDado rotulo="ID do template" mono>{f.templateId || '—'}</LinhaDado>
+                <LinhaDado rotulo="Arquivo final (servidor)" mono>
+                  {f.caminhoArquivoFinal || f.urlFinal || '—'}
+                </LinhaDado>
+                <LinhaDado rotulo="Thumbnail (servidor)" mono>{f.thumbnailFinal || '—'}</LinhaDado>
+              </dl>
+            </section>
+          </div>
+          {/* COLUNA LATERAL — ficha de leitura rápida + ações do vídeo. */}
+          <aside className="p-4 sm:p-5 border-t lg:border-t-0 lg:border-l border-line bg-surface-hover/40 flex flex-col gap-5 min-w-0">
+            <section aria-label="Resumo da publicação">
+              <h4 className="text-[11px] font-bold uppercase tracking-wide text-text-dim mb-1.5">
+                Publicação
+              </h4>
+              <dl className="divide-y divide-line">
+                <LinhaDado rotulo="Status">
+                  <StatusDot status={estado} comRotulo />
+                </LinhaDado>
+                <LinhaDado rotulo="Data e horário">
+                  {ag ? `${formatarData(ag.data)} às ${ag.horario}` : null}
+                </LinhaDado>
+                <LinhaDado rotulo="Conta">
+                  <span className="inline-flex items-center justify-end gap-1.5">
+                    <RedeIcon rede="instagram" className="w-3 h-3 shrink-0" />
+                    Instagram
+                    {contaIg?.username ? <span className="text-text-muted">· @{contaIg.username}</span> : null}
+                  </span>
+                </LinhaDado>
+                <LinhaDado rotulo="Template">{templateExibicao(f.templateNome)}</LinhaDado>
+                <LinhaDado rotulo="Duração">{duracao}</LinhaDado>
+                {/* PROCESSAMENTO — a Biblioteca só lista finais CONCLUÍDOS (ver `itens`),
+                    então o percentual é sempre 100%: mostrar `f.percentual`
+                    aqui sugeriria um processamento em curso que não existe. */}
+                <LinhaDado rotulo="Progresso">
+                  <span className="inline-flex items-center justify-end gap-2">
+                    <span className="w-20"><CicloVida estado={estado} /></span>
+                    <span>100%</span>
+                  </span>
+                </LinhaDado>
+                <LinhaDado rotulo="Etapa atual">
+                  {ETAPAS_CICLO.find((e) => e.estado === estado)?.rotulo || 'Fora do ciclo'}
+                </LinhaDado>
+                <LinhaDado rotulo="Processamento">
+                  {f.status === 'concluido' ? 'Processado e disponível' : `Processamento: ${f.status}`}
+                </LinhaDado>
+                <LinhaDado rotulo="Concluído em" mono>
+                  {f.concluidoEm ? dataCurta(f.concluidoEm) : '—'}
+                </LinhaDado>
+                <LinhaDado rotulo="Criado em" mono>
+                  {f.criadoEm ? dataCurta(f.criadoEm) : '—'}
+                </LinhaDado>
+                <LinhaDado rotulo="Resolução" mono>
+                  {orig?.largura && orig?.altura ? `${orig.largura}×${orig.altura}` : null}
+                </LinhaDado>
+                <LinhaDado rotulo="Tamanho do original">{tamanhoLegivel(orig?.tamanhoBytes)}</LinhaDado>
+              </dl>
+            </section>
+
+            {/* CICLO — as etapas reais do sistema, nomeadas. */}
+            <section aria-label="Etapas do ciclo">
+              <h4 className="text-[11px] font-bold uppercase tracking-wide text-text-dim mb-2">
+                Etapa da publicação
+              </h4>
+              <CicloVida estado={estado} comRotulos />
+              {item.total > 1 && (
+                <p className="text-[10px] text-text-muted font-medium mt-2">
+                  Este vídeo tem {item.total} agendamento(s) vinculados — ver o mais recente.
+                </p>
+              )}
+            </section>
+
+            {estado === 'erro' && (ag?.erroMensagem || f.erroMensagem) && (
+              <section aria-label="Erro registrado">
+                <h4 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-rose-300 mb-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Erro
+                </h4>
+                <p className="text-[11px] text-rose-300/90 break-words">
+                  {ag?.erroMensagem || f.erroMensagem}
+                </p>
+              </section>
+            )}
+
+            {/* A REGRA de exclusão continua valendo: o texto pesado saiu do card
+                e passou a ser explicado aqui, sob demanda. */}
+            <section aria-label="Sobre a exclusão">
+              <p className="flex items-start gap-1.5 text-[10px] text-text-muted leading-relaxed">
+                <Lock className="w-3 h-3 shrink-0 mt-0.5" />
+                <span>{orientacaoExclusao(estado)}</span>
+              </p>
+            </section>
+
+            {/* AÇÕES — as mesmas ações que já existiam no card. */}
+            <div className="mt-auto flex flex-col gap-2 pt-1">
+              {estado === 'pronto' && (
+                <button
+                  type="button"
+                  onClick={() => aoAgendar?.(f.id)}
+                  className="inline-flex items-center justify-center gap-1.5 bg-verde hover:bg-verde-hover text-[#06120a] py-2.5 rounded-xl text-[11px] font-bold transition-colors"
+                >
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  Agendar
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={aoFechar}
+                className="inline-flex items-center justify-center gap-1.5 border border-line text-text-dim hover:text-text hover:border-line-light py-2.5 rounded-xl text-[11px] font-bold transition-colors"
+              >
+                Fechar
+              </button>
+              {EXCLUIVEL_BIBLIOTECA.has(estado) ? (
+                <button
+                  type="button"
+                  onClick={() => aoExcluir?.(item)}
+                  className="inline-flex items-center justify-center gap-1.5 border border-rose-500/40 text-rose-300 hover:text-white hover:bg-rose-500/10 py-2.5 rounded-xl text-[11px] font-bold transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir
+                </button>
+              ) : null}
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * CARTÃO DE VÍDEO — hierarquia visual pensada para leitura rápida:
+ *   1. THUMBNAIL (elemento principal, proporção 16:9)
+ *   2. STATUS (sobreposto no canto da thumbnail)
+ *   3. NOME do vídeo (2 linhas, com tooltip quando truncado)
+ *   4. DATA/HORÁRIO
+ *   5. CONTA/DESTINO
+ *   6. TEMPLATE
+ *   7. AÇÃO "Ver detalhes"
+ *
+ * Tudo que é técnico (IDs, hash, caminhos do servidor, processamento) foi
+ * movido para o PAINEL DE DETALHES. As AÇÕES que já existiam — Agendar e
+ * Excluir — foram preservadas, junto da regra que só permite excluir em PRONTO
+ * e ERRO. A mensagem "cancele no Agendamento antes de excluir" saiu do card
+ * (ocupava espaço repetido em todo card) e virou um tooltip discreto + texto
+ * completo dentro dos detalhes; a REGRA em si continua idêntica.
+ */
+function CartaoVideo({ item, originais, contaIg, aoAgendar, aoPreview, aoExcluir }) {
+  const { final: f, estado, ag } = item;
+  const orig = (originais && originais[f.originalId]) || null;
+  const thumb = f.thumbnailFinal ? urlArquivo(f.thumbnailFinal) : null;
+  const nome = f.nomeFinal || 'Vídeo';
+  const descricao = descricaoDoAgendamento(ag);
+  const temDescricao = Boolean(descricao.trim());
+  // PRÉVIA da descrição (1ª linha não vazia) — texto puro, apenas para o
+  // usuário ver que existe descrição. O texto COMPLETO fica no painel.
+  const previaDescricao = temDescricao ? descricao.trim().split('\n').find((l) => l.trim()) : '';
+  // Orientação de exclusão calculada UMA vez (reaproveitada no title e no
+  // aria-label do ícone de cadeado).
+  const avisoExclusao = orientacaoExclusao(estado);
+
+  return (
+    <article className="glass-panel rounded-2xl border border-line overflow-hidden bg-surface flex flex-col hover:border-line-light transition-colors">
+      {/* 1 + 2 — THUMBNAIL com STATUS sobreposto. A imagem é o elemento visual
+          principal. NÃO é botão: o único gatilho dos detalhes é "Ver detalhes". */}
+      <div className="relative aspect-video w-full bg-black">
         {thumb ? (
-          <img src={thumb} alt="" className="w-full h-full object-cover" />
+          <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-text-muted text-[10px] font-medium">
             sem thumb
           </div>
-        )}
-        {video && (
-          <button
-            onClick={() => aoPreview(item)}
-            title="Visualizar"
-            className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/40 transition-colors group/thumb"
-          >
-            <Play
-              className="w-6 h-6 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity"
-              fill="currentColor"
-            />
-          </button>
         )}
         <div className="absolute top-2 left-2">
           <StatusDot status={estado} comRotulo />
         </div>
       </div>
 
-      <div className="p-3 flex-1 flex flex-col gap-1.5">
-        <p className="text-xs font-bold text-text truncate" title={f.nomeFinal}>
-          {f.nomeFinal || 'Vídeo'}
-        </p>
-        <p className="text-[10px] text-text-muted font-medium truncate">
+      {/* 3 a 7 — nome, data/horário, conta/destino, template e ações. */}
+      <div className="p-3.5 flex flex-col gap-2 flex-1">
+        <h3 className="text-xs font-bold text-text leading-snug line-clamp-2" title={nome}>
+          {nome}
+        </h3>
+        {/* 4 e 5 — DATA/HORÁRIO + CONTA/DESTINO. Sem agendamento, mostramos quando o
+            vídeo foi concluído (informação real do registro). */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-text-dim">
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarClock className="w-3 h-3 shrink-0 text-text-muted" />
+            {ag ? `${formatarData(ag.data)} • ${ag.horario}` : dataCurta(f.criadoEm) || '—'}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <RedeIcon rede="instagram" className="w-3 h-3 shrink-0" />
+            Instagram
+            {contaIg?.username ? <span className="text-text-muted">· @{contaIg.username}</span> : null}
+          </span>
+        </div>
+
+        {/* 6 — TEMPLATE (secundário, nunca o dado principal). */}
+        <p className="text-[10px] text-text-muted font-medium truncate" title={templateExibicao(f.templateNome)}>
           {`Template: ${templateExibicao(f.templateNome)}`}
         </p>
 
-        {/* ORIGINAL por trás deste final + data do final — distingue cópias
-            homônimas (mesmo nome ≠ mesmo vídeo) e re-processamentos. */}
+        {/* IDENTIFICAÇÃO DO VÍDEO — impede confundir vídeos de NOMES IGUAIS.
+            Mesma origem e mesma regra do card anterior (id curto do ORIGINAL,
+            duração do ORIGINAL e data de criação do FINAL). Sem agendamento
+            — estado PRONTO — é esta linha que identifica o vídeo na grade. */}
         <p
           className="text-[10px] text-text-dim font-medium truncate"
           title={`Original: ${orig?.nomeOriginal || f.originalId || '—'}${orig?.duracaoSegundos ? ` (${orig.duracaoSegundos}s)` : ''} · final criado em ${dataCurta(f.criadoEm) || '?'}`}
         >
           #{idCurto(f.originalId) || '—'}
-          {orig?.duracaoSegundos ? ` · ${orig.duracaoSegundos}s` : ''}
+          {orig?.duracaoSegundos ? ` · ${duracaoTexto(orig.duracaoSegundos)}` : ''}
           {f.criadoEm ? ` · ${dataCurta(f.criadoEm)}` : ''}
         </p>
 
-        {ag && (
-          <p className="text-[11px] font-mono text-text-dim flex items-center gap-1.5">
-            {formatarData(ag.data)} • {ag.horario}
-            <RedeIcon rede="instagram" className="w-3 h-3" />
+        {/* DESCRIÇÃO — só uma PRÉVIA de uma linha no card; o texto completo
+            (com hashtags, quebras de linha e emojis) fica no painel de detalhes.
+            É TEXTO, não botão: o único gatilho dos detalhes é "Ver detalhes". */}
+        {temDescricao ? (
+          <p
+            className="flex items-start gap-1.5 text-[10px] text-text-muted"
+            title="A descrição completa aparece em Ver detalhes"
+          >
+            <FileText className="w-3 h-3 shrink-0 mt-0.5" />
+            <span className="line-clamp-1">{previaDescricao}</span>
           </p>
-        )}
+        ) : null}
 
-        {estado === 'erro' && ag?.erroMensagem && (
-          <p className="text-[10px] text-rose-300/90 truncate" title={ag.erroMensagem}>
-            {ag.erroMensagem}
+        {/* Erro: uma linha curta aqui; o texto completo fica nos detalhes. */}
+        {estado === 'erro' && (ag?.erroMensagem || f.erroMensagem) ? (
+          <p className="text-[10px] text-rose-300/90 line-clamp-2" title={ag?.erroMensagem || f.erroMensagem}>
+            {ag?.erroMensagem || f.erroMensagem}
           </p>
-        )}
+        ) : null}
 
-        <CicloVida estado={estado} />
+        {/* PROGRESSO — barra do ciclo de publicação (PRONTO → PROGRAMADO →
+            PUBLICANDO → PUBLICADO). Mesma informação de antes, com o tooltip
+            dizendo qual etapa está em curso. */}
+        <div className="mt-0.5">
+          <CicloVida estado={estado} />
+        </div>
 
-        <div className="mt-auto pt-2 flex flex-col gap-1.5">
+        {/* 7 — AÇÕES. "Ver detalhes" é a ação principal; Agendar e Excluir
+            continuam disponíveis exatamente como antes. */}
+        <div className="mt-auto pt-2.5 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => aoPreview?.(item)}
+            title={`Ver detalhes de ${nome}`}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 border border-line text-text-dim hover:text-text hover:border-line-light hover:bg-surface-hover py-2 rounded-xl text-[11px] font-bold transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Ver detalhes
+          </button>
           {estado === 'pronto' ? (
             <button
+              type="button"
               onClick={() => aoAgendar?.(f.id)}
-              className="w-full inline-flex items-center justify-center gap-1.5 bg-verde hover:bg-verde-hover text-[#06120a] py-2 rounded-xl text-[11px] font-bold shadow-md shadow-verde/20 transition-all"
+              title="Enviar este vídeo para a tela de Agendamento"
+              aria-label={`Agendar ${nome}`}
+              className="inline-flex items-center justify-center gap-1.5 bg-verde hover:bg-verde-hover text-[#06120a] py-2 px-3 rounded-xl text-[11px] font-bold transition-colors"
             >
               <CalendarClock className="w-3.5 h-3.5" />
               Agendar
             </button>
-          ) : estado === 'programado' ? (
-            <p className="text-[10px] text-text-muted font-medium text-center py-1">
-              Cancele na tela Agendamento antes de excluir
-            </p>
-          ) : estado === 'erro' ? (
-            <p className="text-[10px] text-text-muted font-medium text-center py-1">
-              Falhou — exclua ou reagende no Agendamento
-            </p>
-          ) : (
-            <p className="text-[10px] text-text-muted font-medium text-center py-1">
-              Gerenciar na tela Agendamento
-            </p>
-          )}
+          ) : null}
           {EXCLUIVEL_BIBLIOTECA.has(estado) ? (
             <button
+              type="button"
               onClick={() => aoExcluir?.(item)}
-              title={`Excluir "${f.nomeFinal || 'Vídeo'}" (remove o arquivo final)`}
-              className="w-full inline-flex items-center justify-center gap-1.5 border border-line text-text-muted hover:text-rose-300 hover:border-rose-500/40 hover:bg-rose-500/10 py-2 rounded-xl text-[11px] font-bold transition-all"
+              title={`Excluir "${nome}" (remove o arquivo final)`}
+              aria-label={`Excluir ${nome}`}
+              className="inline-flex items-center justify-center border border-line text-text-muted hover:text-rose-300 hover:border-rose-500/40 hover:bg-rose-500/10 py-2 px-2.5 rounded-xl transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              Excluir
             </button>
-          ) : null}
+          ) : (
+            /* A REGRA de exclusão continua intacta: em PROGRAMADO/PUBLICANDO/
+               PUBLICADO o botão some. Em vez do texto pesado que ocupava todos
+               os cards, fica um ícone discreto com a explicação no tooltip e o
+               texto completo no painel de detalhes. */
+            <span title={avisoExclusao} aria-label={avisoExclusao} className="shrink-0">
+              <Lock className="w-3.5 h-3.5 text-text-muted" />
+            </span>
+          )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }
